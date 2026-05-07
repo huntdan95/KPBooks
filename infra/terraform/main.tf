@@ -96,7 +96,8 @@ resource "google_sql_database_instance" "main" {
   depends_on       = [google_project_service.services]
 
   settings {
-    tier              = var.db_tier
+    tier    = var.db_tier
+    edition = "ENTERPRISE"
     availability_type = "ZONAL"
     disk_autoresize   = true
     disk_size         = 20
