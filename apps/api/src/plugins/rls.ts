@@ -11,7 +11,12 @@ declare module 'fastify' {
 }
 
 const plugin: FastifyPluginAsync = async (app) => {
-  app.decorateRequest('withTenantTx', null);
+  app.decorateRequest('withTenantTx', function withTenantTxUninitialized<T>(
+    this: FastifyRequest,
+    _fn: (tx: Database) => Promise<T>,
+  ): Promise<T> {
+    return Promise.reject(new Error('withTenantTx not initialised — onRequest hook missing'));
+  });
 
   app.addHook('onRequest', async function setTenantTxRunner(req: FastifyRequest) {
     req.withTenantTx = async <T>(fn: (tx: Database) => Promise<T>): Promise<T> => {

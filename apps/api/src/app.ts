@@ -43,11 +43,12 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
 
   app.setErrorHandler((err, req, reply) => {
     req.log.error({ err }, 'request failed');
-    if (err.validation) {
-      return reply.status(400).send({ error: 'validation_failed', details: err.validation });
+    const e = err as Error & { validation?: unknown; statusCode?: number };
+    if (e.validation) {
+      return reply.status(400).send({ error: 'validation_failed', details: e.validation });
     }
-    if ('statusCode' in err && typeof err.statusCode === 'number') {
-      return reply.status(err.statusCode).send({ error: err.name, message: err.message });
+    if (typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 600) {
+      return reply.status(e.statusCode).send({ error: e.name ?? 'error', message: e.message });
     }
     return reply.status(500).send({ error: 'internal_error' });
   });

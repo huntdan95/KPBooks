@@ -12,9 +12,9 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { accounts } from './accounts.js';
-import { companies, users } from './companies.js';
-import { journalSourceTypeEnum } from './enums.js';
+import { accounts } from './accounts';
+import { companies, users } from './companies';
+import { journalSourceTypeEnum } from './enums';
 
 /**
  * journal_entries

@@ -19,18 +19,29 @@ infra/
 
 ## Local dev
 
-Prereqs: Node 20, pnpm 9, Docker Desktop, gcloud CLI, Firebase CLI.
+Prereqs: Node 20+, pnpm 9, Firebase CLI. Docker is **optional** — the test suite uses an embedded Postgres binary so you can verify everything without Docker.
 
 ```bash
 # Install everything
 pnpm install
 
-# Local Postgres
-pnpm db:up
+# Run the full test suite (boots an in-process Postgres, applies migrations,
+# runs unit + integration tests). First run downloads ~70MB of Postgres binary.
+pnpm test
 
-# Generate Drizzle migration from current schema, then apply
-pnpm --filter @kpbooks/db generate
-pnpm db:migrate     # applies generated 0000_* and the hand-written 0001_init_rls.sql
+# Typecheck the whole workspace
+pnpm typecheck
+```
+
+For interactive dev with a long-lived Postgres:
+
+```bash
+# Either Docker:
+pnpm db:up                                    # starts Postgres in docker-compose
+# Or any other Postgres reachable via DATABASE_URL.
+
+pnpm --filter @kpbooks/db generate            # generates 0000_*.sql from schema
+pnpm db:migrate                                # applies all *.sql in lex order
 
 # Start API + Web in parallel
 pnpm dev
@@ -40,6 +51,15 @@ pnpm dev
 
 You'll need a Firebase Admin service-account JSON for local API runs. Download from
 GCP Console → IAM & Admin → Service Accounts → `kpbooks-api@...iam.gserviceaccount.com` → Keys, save somewhere outside the repo, and set `GOOGLE_APPLICATION_CREDENTIALS` in `apps/api/.env`.
+
+## Verification status (Phase 0)
+
+Run `pnpm test` from the repo root:
+
+| Package | Tests | What it covers |
+|---|---|---|
+| `@kpbooks/money` | 12 unit | NUMERIC(19,4) precision, banker rounding, currency-mismatch rejection, balanced helper, minor-units round-trip |
+| `@kpbooks/db` | 14 integration | DB triggers and RLS in a real Postgres instance: deferred balance constraint (incl. property-based fast-check), single-line entry rejection, debit-xor-credit constraint, RLS company isolation across companies + write-side WITH CHECK, fail-closed when GUC missing, closed-period guard with admin override path, locked-entry immutability + cascade-aware cleanup |
 
 ## Cloud deploy (after Terraform apply)
 

@@ -8,8 +8,8 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { accountSubtypeEnum, accountTypeEnum } from './enums.js';
-import { companies } from './companies.js';
+import { accountSubtypeEnum, accountTypeEnum } from './enums';
+import { companies } from './companies';
 
 /**
  * accounts (Chart of Accounts)

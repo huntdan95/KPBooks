@@ -20,17 +20,18 @@ export interface ApiOptions extends Omit<RequestInit, 'body'> {
 }
 
 export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
+  const { body, companyId, headers: rawHeaders, ...rest } = opts;
   const token = await getIdToken();
-  const headers = new Headers(opts.headers);
+  const headers = new Headers(rawHeaders);
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  if (opts.companyId) headers.set('x-kpbooks-company', opts.companyId);
-  if (opts.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (companyId) headers.set('x-kpbooks-company', companyId);
+  if (body !== undefined) headers.set('Content-Type', 'application/json');
 
-  const res = await fetch(`${BASE}${path}`, {
-    ...opts,
-    headers,
-    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-  });
+  const init: RequestInit = { ...rest, headers };
+  if (body !== undefined) {
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(`${BASE}${path}`, init);
 
   if (!res.ok) {
     let body: unknown;

@@ -50,7 +50,11 @@ export class Money {
     return new Money(new Decimal(0), currency);
   }
 
-  static fromMinorUnits(minor: bigint | number, currency: CurrencyCode, exponent = SCALE): Money {
+  static fromMinorUnits(
+    minor: bigint | number,
+    currency: CurrencyCode,
+    exponent: number = SCALE,
+  ): Money {
     const d = new Decimal(minor.toString()).div(new Decimal(10).pow(exponent));
     return new Money(d.toDecimalPlaces(SCALE, Decimal.ROUND_HALF_EVEN), currency);
   }
@@ -122,7 +126,7 @@ export class Money {
   }
 
   /** Minor units (integer string) — useful for ACH/NACHA and APIs that demand cents */
-  toMinorUnits(exponent = SCALE): string {
+  toMinorUnits(exponent: number = SCALE): string {
     return this.amount.mul(new Decimal(10).pow(exponent)).toFixed(0);
   }
 

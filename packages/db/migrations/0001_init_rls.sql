@@ -6,14 +6,14 @@
 --
 -- Idempotent so you can re-run on dev DBs.
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 1. Application role configured by the app on every request transaction.
 --    The Cloud Run API plugin runs:
 --        SET LOCAL app.current_company = '<uuid>';
 --        SET LOCAL app.current_user    = '<uuid>';
 --        SET LOCAL app.current_role    = 'bookkeeper' | 'admin' | ...
 --    Without these, the RLS policies below reject all reads and writes.
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION app_current_company() RETURNS uuid
   LANGUAGE sql STABLE AS $$
@@ -35,16 +35,23 @@ CREATE OR REPLACE FUNCTION app_is_admin() RETURNS boolean
   SELECT app_current_role() IN ('owner', 'admin')
 $$;
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 2. RLS policies. Default-deny by enabling RLS, then permit company-scoped rows.
 --    `users` and `memberships` are loaded by the auth plugin BEFORE the GUC is
 --    set, so we use a "service" bypass via the role rather than RLS for those.
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
+-- ENABLE plus FORCE: even table owners and superusers see RLS policies fire.
+-- Without FORCE, a superuser connection (or the table owner) bypasses RLS
+-- entirely. FORCE is the correct default for a defense-in-depth model.
 ALTER TABLE companies          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE companies          FORCE  ROW LEVEL SECURITY;
 ALTER TABLE accounts           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE accounts           FORCE  ROW LEVEL SECURITY;
 ALTER TABLE journal_entries    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE journal_entries    FORCE  ROW LEVEL SECURITY;
 ALTER TABLE journal_lines      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE journal_lines      FORCE  ROW LEVEL SECURITY;
 
 -- companies: a user sees only the companies they're a member of.
 DROP POLICY IF EXISTS companies_member_access ON companies;
@@ -78,11 +85,11 @@ CREATE POLICY journal_lines_company_isolation ON journal_lines
   USING (company_id = app_current_company())
   WITH CHECK (company_id = app_current_company());
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 3. Closed-period guard. Inserts/updates with entry_date <= closed_through_date
 --    are blocked unless app_is_admin() and an override flag is set on the txn.
 --    The override is a per-transaction GUC so an admin must explicitly opt in.
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION ledger_enforce_closed_period() RETURNS trigger
   LANGUAGE plpgsql AS $$
@@ -115,12 +122,12 @@ CREATE TRIGGER journal_entries_closed_period_trg
   BEFORE INSERT OR UPDATE ON journal_entries
   FOR EACH ROW EXECUTE FUNCTION ledger_enforce_closed_period();
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 4. Deferred balance constraint. Per (entry_id, currency), debits must equal
 --    credits. DEFERRABLE INITIALLY DEFERRED so the trigger fires at COMMIT
 --    rather than mid-statement — this lets posting.service insert the entry
 --    and its lines in the same transaction without ordering acrobatics.
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION ledger_assert_balanced() RETURNS trigger
   LANGUAGE plpgsql AS $$
@@ -174,20 +181,18 @@ CREATE CONSTRAINT TRIGGER journal_entries_min_lines_trg
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION ledger_assert_min_two_lines();
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 5. Locked entries are immutable. Editing a posted entry produces a reversal.
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION ledger_block_locked_entry_change() RETURNS trigger
   LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'UPDATE' AND OLD.locked AND NEW.locked THEN
-    -- Allow the locked flag itself to be set; reject any other changes.
-    IF (NEW.id, NEW.company_id, NEW.entry_date, NEW.source_type, NEW.source_id) IS DISTINCT FROM
-       (OLD.id, OLD.company_id, OLD.entry_date, OLD.source_type, OLD.source_id) THEN
-      RAISE EXCEPTION 'journal_entry % is locked', OLD.id
-        USING ERRCODE = 'check_violation';
-    END IF;
+  -- An already-locked entry is immutable. The first transition (false -> true)
+  -- is allowed because OLD.locked is still false at that point.
+  IF TG_OP = 'UPDATE' AND OLD.locked THEN
+    RAISE EXCEPTION 'journal_entry % is locked', OLD.id
+      USING ERRCODE = 'check_violation';
   ELSIF TG_OP = 'DELETE' AND OLD.locked THEN
     RAISE EXCEPTION 'journal_entry % is locked, cannot delete', OLD.id
       USING ERRCODE = 'check_violation';
@@ -222,9 +227,9 @@ CREATE TRIGGER journal_lines_lock_trg
   BEFORE UPDATE OR DELETE ON journal_lines
   FOR EACH ROW EXECUTE FUNCTION ledger_block_locked_line_change();
 
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 -- 6. updated_at touchers (avoid ORM forgetting).
--- ────────────────────────────────────────────────────────────────────────────
+-- ----------------------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION touch_updated_at() RETURNS trigger
   LANGUAGE plpgsql AS $$

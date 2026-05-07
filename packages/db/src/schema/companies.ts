@@ -1,16 +1,18 @@
 import { sql } from 'drizzle-orm';
 import {
+  check,
   date,
   index,
   jsonb,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { membershipRoleEnum } from './enums.js';
+import { membershipRoleEnum } from './enums';
 
 /**
  * companies
@@ -24,7 +26,8 @@ export const companies = pgTable(
     name: text('name').notNull(),
     legalName: text('legal_name'),
     ein: text('ein'),
-    fiscalYearStart: date('fiscal_year_start', { mode: 'string' }).notNull().default('01-01'),
+    /** First month of the fiscal year, 1-12. Most US clients use January (1). */
+    fiscalYearStartMonth: smallint('fiscal_year_start_month').notNull().default(1),
     baseCurrency: text('base_currency').notNull().default('USD'),
     closedThroughDate: date('closed_through_date', { mode: 'string' }),
     address: jsonb('address').$type<Record<string, unknown>>(),
@@ -33,6 +36,10 @@ export const companies = pgTable(
   },
   (t) => ({
     nameIdx: index('companies_name_idx').on(t.name),
+    fiscalMonthRange: check(
+      'companies_fiscal_month_range',
+      sql`${t.fiscalYearStartMonth} BETWEEN 1 AND 12`,
+    ),
   }),
 );
 
