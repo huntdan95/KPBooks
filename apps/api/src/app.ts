@@ -1,0 +1,56 @@
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import sensible from '@fastify/sensible';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { type Config, corsOrigins } from './config.js';
+import { dbPlugin } from './plugins/db.js';
+import { firebaseAuthPlugin } from './plugins/firebase-auth.js';
+import { rlsContextPlugin } from './plugins/rls.js';
+import { healthRoutes } from './routes/health.js';
+import { ledgerRoutes } from './routes/ledger.js';
+
+export async function buildApp(config: Config): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: {
+      level: config.LOG_LEVEL,
+      ...(config.NODE_ENV === 'development'
+        ? { transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss.l' } } }
+        : {}),
+    },
+    trustProxy: true,
+    disableRequestLogging: false,
+    requestIdHeader: 'x-request-id',
+    genReqId: () => crypto.randomUUID(),
+  });
+
+  await app.register(sensible);
+  await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(cors, {
+    origin: corsOrigins(config),
+    credentials: true,
+  });
+
+  // Order matters: db before auth before rls before routes.
+  await app.register(dbPlugin, { url: config.DATABASE_URL });
+  await app.register(firebaseAuthPlugin, {
+    projectId: config.FIREBASE_PROJECT_ID,
+    credentialsPath: config.GOOGLE_APPLICATION_CREDENTIALS,
+  });
+  await app.register(rlsContextPlugin);
+
+  await app.register(healthRoutes, { prefix: '/v1' });
+  await app.register(ledgerRoutes, { prefix: '/v1' });
+
+  app.setErrorHandler((err, req, reply) => {
+    req.log.error({ err }, 'request failed');
+    if (err.validation) {
+      return reply.status(400).send({ error: 'validation_failed', details: err.validation });
+    }
+    if ('statusCode' in err && typeof err.statusCode === 'number') {
+      return reply.status(err.statusCode).send({ error: err.name, message: err.message });
+    }
+    return reply.status(500).send({ error: 'internal_error' });
+  });
+
+  return app;
+}

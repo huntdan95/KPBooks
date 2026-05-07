@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["vite/client"]
+  },
+  "include": ["src/**/*"]
+}
