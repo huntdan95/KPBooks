@@ -240,6 +240,119 @@ export async function balanceSheet(db: Database, asOf: string): Promise<BalanceS
   };
 }
 
+/**
+ * Aging buckets follow QuickBooks convention:
+ *   current   -- not yet due (asOf <= due_date)
+ *   1-30      -- 1 to 30 days past due
+ *   31-60     -- 31 to 60 days past due
+ *   61-90     -- 61 to 90 days past due
+ *   over 90   -- more than 90 days past due
+ *
+ * Only invoices/bills with status IN ('open', 'partial') contribute -- paid
+ * docs have balance_due = 0 already, void docs are excluded by status.
+ */
+export interface AgingRow {
+  counterpartyId: string;
+  counterpartyName: string;
+  current: string;
+  days1to30: string;
+  days31to60: string;
+  days61to90: string;
+  days91plus: string;
+  total: string;
+}
+
+export interface AgingReport {
+  asOf: string;
+  rows: AgingRow[];
+  totals: Omit<AgingRow, 'counterpartyId' | 'counterpartyName'>;
+}
+
+export async function arAging(db: Database, asOf: string): Promise<AgingReport> {
+  const rows = await db.execute(sql`
+    SELECT
+      c.id   AS counterparty_id,
+      c.display_name AS counterparty_name,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - i.due_date) <= 0 THEN i.balance_due ELSE 0 END), 0) AS current,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - i.due_date) BETWEEN 1 AND 30 THEN i.balance_due ELSE 0 END), 0) AS days1to30,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - i.due_date) BETWEEN 31 AND 60 THEN i.balance_due ELSE 0 END), 0) AS days31to60,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - i.due_date) BETWEEN 61 AND 90 THEN i.balance_due ELSE 0 END), 0) AS days61to90,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - i.due_date) > 90 THEN i.balance_due ELSE 0 END), 0) AS days91plus,
+      COALESCE(SUM(i.balance_due), 0) AS total
+    FROM customers c
+    INNER JOIN invoices i ON i.customer_id = c.id
+    WHERE i.status IN ('open', 'partial')
+      AND i.invoice_date <= ${asOf}::date
+    GROUP BY c.id, c.display_name
+    HAVING COALESCE(SUM(i.balance_due), 0) > 0
+    ORDER BY c.display_name
+  `);
+  return summarise(asOf, rows as unknown as Array<Record<string, unknown>>);
+}
+
+export async function apAging(db: Database, asOf: string): Promise<AgingReport> {
+  const rows = await db.execute(sql`
+    SELECT
+      v.id   AS counterparty_id,
+      v.display_name AS counterparty_name,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - b.due_date) <= 0 THEN b.balance_due ELSE 0 END), 0) AS current,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - b.due_date) BETWEEN 1 AND 30 THEN b.balance_due ELSE 0 END), 0) AS days1to30,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - b.due_date) BETWEEN 31 AND 60 THEN b.balance_due ELSE 0 END), 0) AS days31to60,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - b.due_date) BETWEEN 61 AND 90 THEN b.balance_due ELSE 0 END), 0) AS days61to90,
+      COALESCE(SUM(CASE WHEN (${asOf}::date - b.due_date) > 90 THEN b.balance_due ELSE 0 END), 0) AS days91plus,
+      COALESCE(SUM(b.balance_due), 0) AS total
+    FROM vendors v
+    INNER JOIN bills b ON b.vendor_id = v.id
+    WHERE b.status IN ('open', 'partial')
+      AND b.bill_date <= ${asOf}::date
+    GROUP BY v.id, v.display_name
+    HAVING COALESCE(SUM(b.balance_due), 0) > 0
+    ORDER BY v.display_name
+  `);
+  return summarise(asOf, rows as unknown as Array<Record<string, unknown>>);
+}
+
+function summarise(asOf: string, rows: Array<Record<string, unknown>>): AgingReport {
+  const SCALE = 10000n;
+  let tCurrent = 0n;
+  let t1to30 = 0n;
+  let t31to60 = 0n;
+  let t61to90 = 0n;
+  let t91plus = 0n;
+  let tAll = 0n;
+  const out: AgingRow[] = rows.map((r) => {
+    const row: AgingRow = {
+      counterpartyId: String(r.counterparty_id),
+      counterpartyName: String(r.counterparty_name),
+      current: String(r.current ?? '0'),
+      days1to30: String(r.days1to30 ?? '0'),
+      days31to60: String(r.days31to60 ?? '0'),
+      days61to90: String(r.days61to90 ?? '0'),
+      days91plus: String(r.days91plus ?? '0'),
+      total: String(r.total ?? '0'),
+    };
+    tCurrent += decimalToMinor(row.current, SCALE);
+    t1to30 += decimalToMinor(row.days1to30, SCALE);
+    t31to60 += decimalToMinor(row.days31to60, SCALE);
+    t61to90 += decimalToMinor(row.days61to90, SCALE);
+    t91plus += decimalToMinor(row.days91plus, SCALE);
+    tAll += decimalToMinor(row.total, SCALE);
+    return row;
+  });
+  return {
+    asOf,
+    rows: out,
+    totals: {
+      current: minorToDecimal(tCurrent, SCALE),
+      days1to30: minorToDecimal(t1to30, SCALE),
+      days31to60: minorToDecimal(t31to60, SCALE),
+      days61to90: minorToDecimal(t61to90, SCALE),
+      days91plus: minorToDecimal(t91plus, SCALE),
+      total: minorToDecimal(tAll, SCALE),
+    },
+  };
+}
+
 // Local minor-unit helpers — bigint arithmetic avoids float traps without pulling Decimal into report wiring.
 function decimalToMinor(s: string, scale: bigint): bigint {
   const [sign, rest] = s.startsWith('-') ? [-1n, s.slice(1)] : [1n, s];

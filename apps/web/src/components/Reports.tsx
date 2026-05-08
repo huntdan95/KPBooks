@@ -1,14 +1,17 @@
 import { useState } from 'react';
+import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
 import { ProfitAndLoss } from './ProfitAndLoss';
 import { TrialBalance } from './TrialBalance';
 
-type ReportView = 'trial-balance' | 'pnl' | 'balance-sheet';
+type ReportView = 'trial-balance' | 'pnl' | 'balance-sheet' | 'ar-aging' | 'ap-aging';
 
 const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'trial-balance', label: 'Trial Balance' },
   { id: 'pnl', label: 'Profit & Loss' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
+  { id: 'ar-aging', label: 'A/R Aging' },
+  { id: 'ap-aging', label: 'A/P Aging' },
 ];
 
 export function Reports() {
@@ -42,6 +45,8 @@ export function Reports() {
       {view === 'trial-balance' && <TrialBalance />}
       {view === 'pnl' && <ProfitAndLoss />}
       {view === 'balance-sheet' && <BalanceSheet />}
+      {view === 'ar-aging' && <Aging mode="ar" />}
+      {view === 'ap-aging' && <Aging mode="ap" />}
     </div>
   );
 }

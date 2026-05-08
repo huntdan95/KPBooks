@@ -3,7 +3,13 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { PostingError, postEntry, postingSchemas } from '../modules/ledger/posting.service.js';
-import { balanceSheet, profitAndLoss, trialBalance } from '../modules/ledger/reports.service.js';
+import {
+  apAging,
+  arAging,
+  balanceSheet,
+  profitAndLoss,
+  trialBalance,
+} from '../modules/ledger/reports.service.js';
 
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
@@ -138,5 +144,15 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/balance-sheet', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => balanceSheet(tx, asOf));
+  });
+
+  app.get('/ledger/reports/ar-aging', async (req) => {
+    const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
+    return req.withTenantTx(async (tx) => arAging(tx, asOf));
+  });
+
+  app.get('/ledger/reports/ap-aging', async (req) => {
+    const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
+    return req.withTenantTx(async (tx) => apAging(tx, asOf));
   });
 };
