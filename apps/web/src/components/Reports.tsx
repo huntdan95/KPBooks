@@ -3,6 +3,7 @@ import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
 import { PeriodClose } from './PeriodClose';
 import { ProfitAndLoss } from './ProfitAndLoss';
+import { StatementOfCashFlows } from './StatementOfCashFlows';
 import { TaxRates } from './TaxRates';
 import { TrialBalance } from './TrialBalance';
 
@@ -10,6 +11,7 @@ type ReportView =
   | 'trial-balance'
   | 'pnl'
   | 'balance-sheet'
+  | 'cash-flows'
   | 'ar-aging'
   | 'ap-aging'
   | 'period-close'
@@ -19,6 +21,7 @@ const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'trial-balance', label: 'Trial Balance' },
   { id: 'pnl', label: 'Profit & Loss' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
+  { id: 'cash-flows', label: 'Cash Flows' },
   { id: 'ar-aging', label: 'A/R Aging' },
   { id: 'ap-aging', label: 'A/P Aging' },
   { id: 'period-close', label: 'Close Period' },
@@ -56,6 +59,7 @@ export function Reports() {
       {view === 'trial-balance' && <TrialBalance />}
       {view === 'pnl' && <ProfitAndLoss />}
       {view === 'balance-sheet' && <BalanceSheet />}
+      {view === 'cash-flows' && <StatementOfCashFlows />}
       {view === 'ar-aging' && <Aging mode="ar" />}
       {view === 'ap-aging' && <Aging mode="ap" />}
       {view === 'period-close' && <PeriodClose />}

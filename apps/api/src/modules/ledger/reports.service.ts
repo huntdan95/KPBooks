@@ -444,6 +444,182 @@ export async function nineteenNinetyNineSummary(
   };
 }
 
+// ─── Statement of Cash Flows (indirect method) ────────────────────────────
+
+export interface CashFlowLine {
+  accountId: string;
+  code: string;
+  name: string;
+  /** Effect on cash for the period: positive = source of cash, negative = use of cash. */
+  amount: string;
+}
+
+export interface StatementOfCashFlows {
+  start: string;
+  end: string;
+  /** Net income for the period (from P&L), starts the operating section. */
+  netIncome: string;
+  /** Working-capital adjustments (changes in AR, AP, etc.). */
+  operatingAdjustments: CashFlowLine[];
+  /** netIncome + sum(operatingAdjustments). */
+  totalOperating: string;
+  /** Changes in fixed/other assets. */
+  investing: CashFlowLine[];
+  totalInvesting: string;
+  /** Changes in long-term debt and equity (excluding retained earnings). */
+  financing: CashFlowLine[];
+  totalFinancing: string;
+  /** totalOperating + totalInvesting + totalFinancing. */
+  netChange: string;
+  /** Sum of bank-subtype account balances at start of period. */
+  beginningCash: string;
+  /** Sum of bank-subtype account balances at end of period. */
+  endingCash: string;
+  /** netChange - (endingCash - beginningCash); should be 0.0000 for a balanced period.
+   *  Non-zero means direct edits to retained earnings or bank-equity entries that
+   *  bypass the indirect-method assumptions. */
+  imbalance: string;
+}
+
+const SUBTYPE_TO_SCF_SECTION: Record<string, 'operating' | 'investing' | 'financing'> = {
+  // current-asset working capital -> operating
+  accounts_receivable: 'operating',
+  other_current_asset: 'operating',
+  // long-lived assets -> investing
+  fixed_asset: 'investing',
+  other_asset: 'investing',
+  // current liabilities -> operating
+  accounts_payable: 'operating',
+  credit_card: 'operating',
+  other_current_liability: 'operating',
+  // long-term funding -> financing
+  long_term_liability: 'financing',
+  equity: 'financing',
+  // bank: excluded (this IS cash, the result we're explaining)
+  // retained_earnings: excluded (already counted via netIncome)
+};
+
+/**
+ * Statement of Cash Flows, indirect method. Starts from net income and
+ * reconciles to the period change in cash by walking every non-cash balance
+ * sheet account's start-vs-end change, signed by normal-balance convention
+ * (asset up = cash out; liability/equity up = cash in). Bucketed by subtype.
+ *
+ * Caveat: depreciation is not separately broken out. In the indirect method
+ * it's typically added back in operating, but since this report buckets by
+ * subtype, depreciation flows through "fixed_asset" change in investing.
+ * The total cash flow is still correct -- only the section attribution
+ * differs from a textbook presentation.
+ */
+export async function statementOfCashFlows(
+  db: Database,
+  start: string,
+  end: string,
+): Promise<StatementOfCashFlows> {
+  const pl = await profitAndLoss(db, start, end);
+
+  const rows = await db.execute(sql`
+    SELECT
+      a.id      AS account_id,
+      a.code    AS code,
+      a.name    AS name,
+      a.type    AS type,
+      a.subtype AS subtype,
+      CASE
+        WHEN a.type = 'asset'
+          THEN COALESCE(SUM(CASE WHEN je.entry_date <= ${end}::date   THEN jl.debit  ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date <= ${end}::date   THEN jl.credit ELSE 0 END), 0)
+        ELSE
+             COALESCE(SUM(CASE WHEN je.entry_date <= ${end}::date   THEN jl.credit ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN je.entry_date <= ${end}::date   THEN jl.debit  ELSE 0 END), 0)
+      END AS balance_end,
+      CASE
+        WHEN a.type = 'asset'
+          THEN COALESCE(SUM(CASE WHEN je.entry_date <  ${start}::date THEN jl.debit  ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date <  ${start}::date THEN jl.credit ELSE 0 END), 0)
+        ELSE
+             COALESCE(SUM(CASE WHEN je.entry_date <  ${start}::date THEN jl.credit ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN je.entry_date <  ${start}::date THEN jl.debit  ELSE 0 END), 0)
+      END AS balance_start
+    FROM accounts a
+    LEFT JOIN journal_lines jl ON jl.account_id = a.id
+    LEFT JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE a.type IN ('asset', 'liability', 'equity')
+      AND a.is_active = true
+    GROUP BY a.id, a.code, a.name, a.type, a.subtype
+    ORDER BY a.code
+  `);
+
+  const SCALE = 10000n;
+  const operating: CashFlowLine[] = [];
+  const investing: CashFlowLine[] = [];
+  const financing: CashFlowLine[] = [];
+  let beginCash = 0n;
+  let endCash = 0n;
+  let opAdjTotal = 0n;
+  let invTotal = 0n;
+  let finTotal = 0n;
+
+  for (const r of rows as unknown as Array<Record<string, unknown>>) {
+    const subtype = String(r.subtype);
+    const type = String(r.type);
+    const balStart = decimalToMinor(String(r.balance_start ?? '0'), SCALE);
+    const balEnd = decimalToMinor(String(r.balance_end ?? '0'), SCALE);
+
+    if (subtype === 'bank') {
+      beginCash += balStart;
+      endCash += balEnd;
+      continue;
+    }
+    if (subtype === 'retained_earnings') continue;
+
+    const change = balEnd - balStart;
+    if (change === 0n) continue;
+    // Asset up consumes cash; liability/equity up provides cash.
+    const cashEffect = type === 'asset' ? -change : change;
+
+    const line: CashFlowLine = {
+      accountId: String(r.account_id),
+      code: String(r.code),
+      name: String(r.name),
+      amount: minorToDecimal(cashEffect, SCALE),
+    };
+
+    const section = SUBTYPE_TO_SCF_SECTION[subtype] ?? 'operating';
+    if (section === 'operating') {
+      operating.push(line);
+      opAdjTotal += cashEffect;
+    } else if (section === 'investing') {
+      investing.push(line);
+      invTotal += cashEffect;
+    } else {
+      financing.push(line);
+      finTotal += cashEffect;
+    }
+  }
+
+  const netIncomeMinor = decimalToMinor(pl.netIncome, SCALE);
+  const totalOperating = netIncomeMinor + opAdjTotal;
+  const netChange = totalOperating + invTotal + finTotal;
+  const expectedCashChange = endCash - beginCash;
+
+  return {
+    start,
+    end,
+    netIncome: pl.netIncome,
+    operatingAdjustments: operating,
+    totalOperating: minorToDecimal(totalOperating, SCALE),
+    investing,
+    totalInvesting: minorToDecimal(invTotal, SCALE),
+    financing,
+    totalFinancing: minorToDecimal(finTotal, SCALE),
+    netChange: minorToDecimal(netChange, SCALE),
+    beginningCash: minorToDecimal(beginCash, SCALE),
+    endingCash: minorToDecimal(endCash, SCALE),
+    imbalance: minorToDecimal(netChange - expectedCashChange, SCALE),
+  };
+}
+
 // Local minor-unit helpers — bigint arithmetic avoids float traps without pulling Decimal into report wiring.
 function decimalToMinor(s: string, scale: bigint): bigint {
   const [sign, rest] = s.startsWith('-') ? [-1n, s.slice(1)] : [1n, s];

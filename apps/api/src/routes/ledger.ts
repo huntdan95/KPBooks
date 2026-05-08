@@ -9,6 +9,7 @@ import {
   balanceSheet,
   nineteenNinetyNineSummary,
   profitAndLoss,
+  statementOfCashFlows,
   trialBalance,
 } from '../modules/ledger/reports.service.js';
 
@@ -145,6 +146,11 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/balance-sheet', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => balanceSheet(tx, asOf));
+  });
+
+  app.get('/ledger/reports/statement-of-cash-flows', async (req) => {
+    const { start, end } = z.object({ start: DateOnly, end: DateOnly }).parse(req.query);
+    return req.withTenantTx(async (tx) => statementOfCashFlows(tx, start, end));
   });
 
   app.get('/ledger/reports/ar-aging', async (req) => {
