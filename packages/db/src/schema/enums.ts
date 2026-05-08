@@ -64,3 +64,18 @@ export const billStatusEnum = pgEnum('bill_status', [
   'paid',
   'void',
 ]);
+
+export const paymentTypeEnum = pgEnum('payment_type', [
+  'customer_received',
+  'vendor_sent',
+]);
+
+export const paymentMethodEnum = pgEnum('payment_method', [
+  'check',
+  'cash',
+  'eft',
+  'credit_card',
+  'other',
+]);
+
+export const paymentStatusEnum = pgEnum('payment_status', ['posted', 'void']);

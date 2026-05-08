@@ -13,6 +13,7 @@ import { healthRoutes } from './routes/health.js';
 import { invoicesRoutes } from './routes/invoices.js';
 import { ledgerRoutes } from './routes/ledger.js';
 import { meRoutes } from './routes/me.js';
+import { paymentsRoutes } from './routes/payments.js';
 import { vendorsRoutes } from './routes/vendors.js';
 
 export async function buildApp(config: Config): Promise<FastifyInstance> {
@@ -51,6 +52,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(vendorsRoutes, { prefix: '/v1' });
   await app.register(invoicesRoutes, { prefix: '/v1' });
   await app.register(billsRoutes, { prefix: '/v1' });
+  await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {

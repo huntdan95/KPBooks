@@ -9,6 +9,7 @@ import { BillsList } from './BillsList';
 import { CustomersList } from './CustomersList';
 import { InvoicesList } from './InvoicesList';
 import { JournalEntryForm } from './JournalEntryForm';
+import { PaymentsList } from './PaymentsList';
 import { TrialBalance } from './TrialBalance';
 import { VendorsList } from './VendorsList';
 
@@ -24,6 +25,7 @@ type View =
   | 'vendors'
   | 'invoices'
   | 'bills'
+  | 'payments'
   | 'new-entry'
   | 'trial-balance';
 
@@ -33,6 +35,7 @@ const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'vendors', label: 'Vendors' },
   { id: 'invoices', label: 'Invoices' },
   { id: 'bills', label: 'Bills' },
+  { id: 'payments', label: 'Payments' },
   { id: 'new-entry', label: 'New Entry' },
   { id: 'trial-balance', label: 'Trial Balance' },
 ];
@@ -111,6 +114,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
         {view === 'vendors' && <VendorsList />}
         {view === 'invoices' && <InvoicesList />}
         {view === 'bills' && <BillsList />}
+        {view === 'payments' && <PaymentsList />}
         {view === 'new-entry' && <JournalEntryForm />}
         {view === 'trial-balance' && <TrialBalance />}
         <ReadyzSelfTest />

@@ -9,6 +9,7 @@ import { Money } from '@kpbooks/money';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { PostingError, postEntry, reverseEntry } from '../ledger/posting.service.js';
+import { hasActiveApplications } from '../payments/posting.service.js';
 
 /**
  * bills/posting.service -- A/P mirror of invoices/posting.service. Posts a
@@ -260,6 +261,13 @@ export async function voidBill(
   }
   if (b.status === 'void') {
     throw new BillError(`bill ${billId} is already voided`, 'already_voided');
+  }
+
+  if (await hasActiveApplications(tx, { kind: 'bill', id: billId })) {
+    throw new BillError(
+      `bill ${billId} has active payments applied; void those payments first`,
+      'invalid_input',
+    );
   }
 
   const reversal = await reverseEntry(tx, ctx, b.postedJournalEntryId, {

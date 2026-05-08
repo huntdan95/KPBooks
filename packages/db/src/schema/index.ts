@@ -6,3 +6,4 @@ export * from './ledger';
 export * from './invoices';
 export * from './vendors';
 export * from './bills';
+export * from './payments';

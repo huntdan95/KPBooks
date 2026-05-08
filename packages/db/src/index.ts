@@ -11,6 +11,8 @@ export {
   journalEntries,
   journalLines,
   memberships,
+  paymentApplications,
+  payments,
   users,
   vendors,
 } from './schema/index.js';
@@ -35,8 +37,12 @@ export type {
   NewJournalEntry,
   NewJournalLine,
   NewMembership,
+  NewPayment,
+  NewPaymentApplication,
   NewUser,
   NewVendor,
+  Payment,
+  PaymentApplication,
   User,
   Vendor,
 } from './schema/index.js';
