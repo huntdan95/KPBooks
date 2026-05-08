@@ -50,7 +50,13 @@ const plugin: FastifyPluginAsync<FirebaseAuthOptions> = async (app, opts) => {
 
     let decoded: DecodedIdToken;
     try {
-      decoded = await auth.verifyIdToken(idToken, true);
+      // Cryptographic-only verification (signature + standard claims). Cheap
+      // and stateless. We deliberately don't pass checkRevoked: true here —
+      // that path calls the Firebase Auth admin getUser API and would need
+      // roles/firebaseauth.viewer on the Cloud Run service account just to
+      // boot. If we ever need revocation we'll add it as an opt-in for
+      // sensitive endpoints, not the default path.
+      decoded = await auth.verifyIdToken(idToken);
     } catch (err) {
       req.log.warn({ err }, 'invalid id token');
       throw app.httpErrors.unauthorized('invalid id token');
