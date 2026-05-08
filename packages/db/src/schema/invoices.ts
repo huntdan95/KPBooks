@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   index,
@@ -17,6 +18,7 @@ import { companies } from './companies';
 import { customers } from './customers';
 import { invoiceStatusEnum } from './enums';
 import { journalEntries } from './ledger';
+import { taxRates } from './tax-rates';
 
 /**
  * invoices
@@ -47,7 +49,9 @@ export const invoices = pgTable(
     memo: text('memo'),
     /** Subtotal of all lines before any future tax. */
     subtotal: numeric('subtotal', { precision: 19, scale: 4 }).notNull().default('0'),
-    /** Reserved for sales-tax module; currently always 0. */
+    /** Tax rate applied to taxable lines on this invoice. Null = no tax. */
+    taxRateId: uuid('tax_rate_id').references(() => taxRates.id, { onDelete: 'restrict' }),
+    /** Computed tax = sum(taxable line amounts) * (tax_rate.rate_percent / 100). */
     taxAmount: numeric('tax_amount', { precision: 19, scale: 4 }).notNull().default('0'),
     total: numeric('total', { precision: 19, scale: 4 }).notNull().default('0'),
     /**
@@ -110,6 +114,8 @@ export const invoiceLines = pgTable(
     unitPrice: numeric('unit_price', { precision: 19, scale: 4 }).notNull().default('0'),
     /** quantity * unit_price — the actual amount that posts to the GL. */
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    /** When true, this line contributes to the invoice's tax calculation. */
+    taxable: boolean('taxable').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

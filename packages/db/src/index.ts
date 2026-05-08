@@ -15,6 +15,7 @@ export {
   paymentApplications,
   payments,
   reconciliations,
+  taxRates,
   users,
   vendors,
 } from './schema/index.js';
@@ -46,9 +47,11 @@ export type {
   NewUser,
   NewVendor,
   NewReconciliation,
+  NewTaxRate,
   Payment,
   PaymentApplication,
   Reconciliation,
+  TaxRate,
   User,
   Vendor,
 } from './schema/index.js';

@@ -3,6 +3,7 @@ import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
 import { PeriodClose } from './PeriodClose';
 import { ProfitAndLoss } from './ProfitAndLoss';
+import { TaxRates } from './TaxRates';
 import { TrialBalance } from './TrialBalance';
 
 type ReportView =
@@ -11,7 +12,8 @@ type ReportView =
   | 'balance-sheet'
   | 'ar-aging'
   | 'ap-aging'
-  | 'period-close';
+  | 'period-close'
+  | 'tax-rates';
 
 const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'trial-balance', label: 'Trial Balance' },
@@ -20,6 +22,7 @@ const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'ar-aging', label: 'A/R Aging' },
   { id: 'ap-aging', label: 'A/P Aging' },
   { id: 'period-close', label: 'Close Period' },
+  { id: 'tax-rates', label: 'Tax Rates' },
 ];
 
 export function Reports() {
@@ -56,6 +59,7 @@ export function Reports() {
       {view === 'ar-aging' && <Aging mode="ar" />}
       {view === 'ap-aging' && <Aging mode="ap" />}
       {view === 'period-close' && <PeriodClose />}
+      {view === 'tax-rates' && <TaxRates />}
     </div>
   );
 }

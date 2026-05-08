@@ -4,6 +4,7 @@ import {
   customers,
   invoiceLines,
   invoices,
+  taxRates,
 } from '@kpbooks/db';
 import { Money } from '@kpbooks/money';
 import { and, eq } from 'drizzle-orm';
@@ -30,6 +31,7 @@ const LineInput = z.object({
   description: z.string().min(1).max(500),
   quantity: z.union([z.string(), z.number()]).default('1'),
   unitPrice: z.union([z.string(), z.number()]).default('0'),
+  taxable: z.boolean().default(false),
 });
 
 export const CreateInvoiceSchema = z
@@ -42,6 +44,8 @@ export const CreateInvoiceSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
       .optional(),
     memo: z.string().max(500).optional(),
+    /** Optional tax rate to apply to taxable lines; null = no tax. */
+    taxRateId: z.string().uuid().optional(),
     lines: z.array(LineInput).min(1, 'invoice needs at least one line'),
   })
   .strict();
@@ -58,8 +62,11 @@ export class InvoiceError extends Error {
     message: string,
     public readonly code:
       | 'no_ar_account'
+      | 'no_tax_payable_account'
       | 'unknown_customer'
       | 'unknown_revenue_account'
+      | 'unknown_tax_rate'
+      | 'inactive_tax_rate'
       | 'cross_company_account'
       | 'inactive_account'
       | 'duplicate_number'
@@ -97,6 +104,29 @@ async function findArAccount(tx: Database, companyId: string): Promise<string> {
     );
   }
   return first.id;
+}
+
+/**
+ * Find the company's sales-tax payable account. v1 looks up by name
+ * "Sales Tax Payable" (the seeded default). If multiple match, takes
+ * the first by code. Throws when tax > 0 but no account exists.
+ */
+async function findSalesTaxPayableAccount(
+  tx: Database,
+  companyId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.companyId, companyId),
+        eq(accounts.name, 'Sales Tax Payable'),
+        eq(accounts.isActive, true),
+      ),
+    )
+    .orderBy(accounts.code);
+  return rows[0]?.id ?? null;
 }
 
 export async function createInvoice(
@@ -147,6 +177,26 @@ export async function createInvoice(
 
   const arAccountId = await findArAccount(tx, ctx.companyId);
 
+  // Resolve tax rate if provided.
+  let taxRate: { id: string; ratePercent: string } | null = null;
+  if (data.taxRateId) {
+    const [row] = await tx
+      .select({
+        id: taxRates.id,
+        ratePercent: taxRates.ratePercent,
+        isActive: taxRates.isActive,
+      })
+      .from(taxRates)
+      .where(eq(taxRates.id, data.taxRateId));
+    if (!row) {
+      throw new InvoiceError(`tax rate ${data.taxRateId} not found`, 'unknown_tax_rate');
+    }
+    if (!row.isActive) {
+      throw new InvoiceError(`tax rate ${data.taxRateId} is inactive`, 'inactive_tax_rate');
+    }
+    taxRate = { id: row.id, ratePercent: row.ratePercent };
+  }
+
   // Compute per-line amounts and totals using Money to avoid float drift.
   const computedLines = data.lines.map((l, idx) => {
     const qty = Money.of(typeof l.quantity === 'number' ? l.quantity.toString() : l.quantity, 'USD');
@@ -162,6 +212,7 @@ export async function createInvoice(
       quantity: qty.toPgNumeric(),
       unitPrice: price.toPgNumeric(),
       amount,
+      taxable: l.taxable,
     };
   });
 
@@ -169,7 +220,33 @@ export async function createInvoice(
     (acc, l) => acc.add(l.amount),
     Money.zero('USD'),
   );
-  const total = subtotal; // tax is 0 in v1
+
+  // Tax = sum(taxable lines) * (rate / 100). Computed in Money so the
+  // posted JE matches the stored taxAmount to the cent.
+  let taxAmount = Money.zero('USD');
+  let taxPayableAccountId: string | null = null;
+  if (taxRate) {
+    const taxableSubtotal = computedLines.reduce(
+      (acc, l) => (l.taxable ? acc.add(l.amount) : acc),
+      Money.zero('USD'),
+    );
+    // ratePercent is e.g. "8.7500"; divide by 100 for fraction.
+    const ratePercent = Number(taxRate.ratePercent);
+    if (Number.isFinite(ratePercent) && ratePercent > 0) {
+      taxAmount = taxableSubtotal.mul((ratePercent / 100).toString());
+    }
+    if (!taxAmount.isZero()) {
+      taxPayableAccountId = await findSalesTaxPayableAccount(tx, ctx.companyId);
+      if (!taxPayableAccountId) {
+        throw new InvoiceError(
+          'tax > 0 but no active "Sales Tax Payable" account exists; create one in Chart of Accounts (liability / other_current_liability)',
+          'no_tax_payable_account',
+        );
+      }
+    }
+  }
+
+  const total = subtotal.add(taxAmount);
 
   // Reject zero-total invoices — almost always an input bug, never legitimate.
   if (total.isZero()) {
@@ -207,6 +284,17 @@ export async function createInvoice(
           fxRate: '1',
           memo: l.description,
         })),
+        ...(taxPayableAccountId && !taxAmount.isZero()
+          ? [
+              {
+                accountId: taxPayableAccountId,
+                credit: taxAmount.toPgNumeric(),
+                currency: 'USD' as const,
+                fxRate: '1',
+                memo: `Sales tax (${taxRate!.ratePercent}%)`,
+              },
+            ]
+          : []),
       ],
     });
     entryId = result.id;
@@ -230,7 +318,8 @@ export async function createInvoice(
       status: 'open',
       memo: data.memo ?? null,
       subtotal: subtotal.toPgNumeric(),
-      taxAmount: '0.0000',
+      taxRateId: taxRate?.id ?? null,
+      taxAmount: taxAmount.toPgNumeric(),
       total: total.toPgNumeric(),
       balanceDue: total.toPgNumeric(),
       postedJournalEntryId: entryId,
@@ -261,6 +350,7 @@ export async function createInvoice(
       quantity: l.quantity,
       unitPrice: l.unitPrice,
       amount: l.amount.toPgNumeric(),
+      taxable: l.taxable,
     })),
   );
 

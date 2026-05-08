@@ -3,6 +3,7 @@ export * from './companies';
 export * from './accounts';
 export * from './customers';
 export * from './ledger';
+export * from './tax-rates';
 export * from './invoices';
 export * from './vendors';
 export * from './bills';

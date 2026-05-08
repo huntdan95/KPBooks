@@ -36,6 +36,14 @@ interface LineDraft {
   description: string;
   quantity: string;
   unitPrice: string;
+  taxable: boolean;
+}
+
+interface TaxRate {
+  id: string;
+  name: string;
+  ratePercent: string;
+  isActive: boolean;
 }
 
 interface CreateBody {
@@ -44,11 +52,24 @@ interface CreateBody {
   invoiceDate: string;
   dueDate?: string | undefined;
   memo?: string | undefined;
-  lines: { accountId: string; description: string; quantity: string; unitPrice: string }[];
+  taxRateId?: string | undefined;
+  lines: {
+    accountId: string;
+    description: string;
+    quantity: string;
+    unitPrice: string;
+    taxable: boolean;
+  }[];
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
-const blankLine = (): LineDraft => ({ accountId: '', description: '', quantity: '1', unitPrice: '' });
+const blankLine = (): LineDraft => ({
+  accountId: '',
+  description: '',
+  quantity: '1',
+  unitPrice: '',
+  taxable: false,
+});
 
 const STATUS_COLOR: Record<InvoiceListRow['status'], string> = {
   open: 'bg-amber-50 text-amber-700 ring-amber-600/20',
@@ -244,6 +265,7 @@ function NewInvoice({
   invoiceCount: number;
 }) {
   const { companyId } = useCurrentCompany();
+  const queryClient = useQueryClient();
 
   const customersQuery = useQuery({
     queryKey: ['customers', companyId],
@@ -254,6 +276,11 @@ function NewInvoice({
     queryKey: ['accounts', companyId],
     enabled: Boolean(companyId),
     queryFn: () => api<{ accounts: Account[] }>('/ledger/accounts?active=true', { companyId }),
+  });
+  const taxRatesQuery = useQuery({
+    queryKey: ['tax-rates', companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => api<{ taxRates: TaxRate[] }>('/tax-rates?active=true', { companyId }),
   });
 
   const customers = useMemo(
@@ -275,6 +302,7 @@ function NewInvoice({
     invoiceDate: string;
     dueDate: string;
     memo: string;
+    taxRateId: string;
     lines: LineDraft[];
   }>(() => ({
     customerId: '',
@@ -282,8 +310,34 @@ function NewInvoice({
     invoiceDate: today(),
     dueDate: '',
     memo: '',
+    taxRateId: '',
     lines: [blankLine()],
   }));
+
+  // Inline new-tax-rate form state. Toggled from the rate dropdown's
+  // "+ Add new rate…" option.
+  const [newRateName, setNewRateName] = useState('');
+  const [newRatePercent, setNewRatePercent] = useState('');
+  const [showNewRateForm, setShowNewRateForm] = useState(false);
+
+  const taxRates = taxRatesQuery.data?.taxRates ?? [];
+  const selectedTaxRate = taxRates.find((r) => r.id === draft.taxRateId) ?? null;
+
+  const createRateMutation = useMutation({
+    mutationFn: async () =>
+      api<TaxRate>('/tax-rates', {
+        method: 'POST',
+        companyId,
+        body: { name: newRateName.trim(), ratePercent: newRatePercent },
+      }),
+    onSuccess: (rate) => {
+      setShowNewRateForm(false);
+      setNewRateName('');
+      setNewRatePercent('');
+      setDraft((d) => ({ ...d, taxRateId: rate.id }));
+      void queryClient.invalidateQueries({ queryKey: ['tax-rates', companyId] });
+    },
+  });
 
   const selectedCustomer = useMemo(
     () => customers.find((c) => c.id === draft.customerId),
@@ -319,6 +373,28 @@ function NewInvoice({
   const computedLineAmounts = draft.lines.map((l) => mulQtyPrice(l.quantity, l.unitPrice));
   const subtotal = computedLineAmounts.reduce((acc, amt) => addCents(acc, amt), '0');
 
+  // Tax = sum(taxable line amounts) * rate / 100. Computed in 4dp BigInt
+  // micros so the displayed total matches the server-side Money math exactly.
+  const taxableSubtotal = draft.lines.reduce(
+    (acc, l, i) => (l.taxable ? addCents(acc, computedLineAmounts[i] ?? '0') : acc),
+    '0',
+  );
+  const taxAmount = (() => {
+    if (!selectedTaxRate) return '0';
+    const rate = Number(selectedTaxRate.ratePercent);
+    if (!Number.isFinite(rate) || rate === 0) return '0';
+    // micros * (rate/100) -> back to 4dp
+    const ts = BigInt(Math.round(Number(taxableSubtotal) * 10000));
+    const fraction = rate / 100;
+    const micros = BigInt(Math.round(Number(ts) * fraction));
+    const negative = micros < 0n;
+    const abs = negative ? -micros : micros;
+    const whole = abs / 10000n;
+    const frac = abs % 10000n;
+    return `${negative ? '-' : ''}${whole}.${String(frac).padStart(4, '0')}`;
+  })();
+  const total = addCents(subtotal, taxAmount);
+
   const allLinesValid = draft.lines.every(
     (l, i) =>
       l.accountId &&
@@ -339,11 +415,13 @@ function NewInvoice({
         invoiceDate: draft.invoiceDate,
         dueDate: draft.dueDate ? draft.dueDate : undefined,
         memo: draft.memo.trim() ? draft.memo.trim() : undefined,
+        taxRateId: draft.taxRateId || undefined,
         lines: draft.lines.map((l) => ({
           accountId: l.accountId,
           description: l.description.trim(),
           quantity: l.quantity || '1',
           unitPrice: l.unitPrice || '0',
+          taxable: l.taxable,
         })),
       };
       return api<{ id: string; postedJournalEntryId: string; total: string }>('/invoices', {
@@ -467,6 +545,7 @@ function NewInvoice({
                 <th className="px-3 py-2 text-right font-medium">Qty</th>
                 <th className="px-3 py-2 text-right font-medium">Unit price</th>
                 <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="px-3 py-2 text-center font-medium">Tax</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -520,6 +599,19 @@ function NewInvoice({
                   <td className="px-3 py-2 text-right font-mono text-slate-900">
                     {formatUsd(computedLineAmounts[idx] ?? '0')}
                   </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={line.taxable}
+                      onChange={(e) => updateLine(idx, { taxable: e.target.checked })}
+                      disabled={!draft.taxRateId}
+                      title={
+                        draft.taxRateId
+                          ? 'Apply the selected tax rate to this line'
+                          : 'Pick a tax rate below to enable'
+                      }
+                    />
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <button
                       type="button"
@@ -540,17 +632,112 @@ function NewInvoice({
                   Subtotal
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(subtotal)}</td>
-                <td></td>
+                <td colSpan={2}></td>
               </tr>
+              {selectedTaxRate && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-2 text-right text-slate-600">
+                    Tax ({Number(selectedTaxRate.ratePercent).toFixed(2)}% of {formatUsd(taxableSubtotal)})
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-slate-900">
+                    {formatUsd(taxAmount)}
+                  </td>
+                  <td colSpan={2}></td>
+                </tr>
+              )}
               <tr>
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-700">
                   Total
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(subtotal)}</td>
-                <td></td>
+                <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(total)}</td>
+                <td colSpan={2}></td>
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        {/* ----------- Tax rate picker + inline create ------------- */}
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            <span>Sales tax rate</span>
+            <select
+              value={draft.taxRateId}
+              onChange={(e) => {
+                if (e.target.value === '__add__') {
+                  setShowNewRateForm(true);
+                  setDraft((d) => ({ ...d, taxRateId: '' }));
+                } else {
+                  setShowNewRateForm(false);
+                  setDraft((d) => ({ ...d, taxRateId: e.target.value }));
+                }
+              }}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
+            >
+              <option value="">No tax</option>
+              {taxRates.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} — {Number(r.ratePercent).toFixed(2)}%
+                </option>
+              ))}
+              <option value="__add__">+ Add new rate…</option>
+            </select>
+          </label>
+          {showNewRateForm && (
+            <>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <span>New rate name</span>
+                <input
+                  type="text"
+                  value={newRateName}
+                  onChange={(e) => setNewRateName(e.target.value)}
+                  maxLength={120}
+                  placeholder="CA Sales Tax"
+                  className="rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <span>Percent</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={newRatePercent}
+                  onChange={(e) => setNewRatePercent(e.target.value.replace(/[^0-9.]/g, ''))}
+                  maxLength={8}
+                  placeholder="8.75"
+                  className="w-24 rounded-md border border-slate-300 px-2 py-1.5 font-mono text-sm focus:border-slate-900 focus:outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => createRateMutation.mutate()}
+                disabled={!newRateName.trim() || !newRatePercent || createRateMutation.isPending}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {createRateMutation.isPending ? 'Saving…' : 'Save rate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewRateForm(false);
+                  setNewRateName('');
+                  setNewRatePercent('');
+                }}
+                className="text-sm text-slate-600 hover:text-slate-900"
+              >
+                Cancel
+              </button>
+              {createRateMutation.isError && (
+                <span className="text-xs text-rose-600">
+                  {formatError(createRateMutation.error)}
+                </span>
+              )}
+            </>
+          )}
+          {selectedTaxRate && !showNewRateForm && (
+            <span className="text-xs text-slate-500">
+              Tick the Tax box on each line that should be taxed; tax = sum of those × rate.
+            </span>
+          )}
         </div>
       </div>
 

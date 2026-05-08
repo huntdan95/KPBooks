@@ -16,6 +16,7 @@ import { invoicesRoutes } from './routes/invoices.js';
 import { ledgerRoutes } from './routes/ledger.js';
 import { meRoutes } from './routes/me.js';
 import { paymentsRoutes } from './routes/payments.js';
+import { taxRatesRoutes } from './routes/tax-rates.js';
 import { vendorsRoutes } from './routes/vendors.js';
 
 export async function buildApp(config: Config): Promise<FastifyInstance> {
@@ -60,6 +61,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(importsRoutes, { prefix: '/v1' });
   await app.register(bankingRoutes, { prefix: '/v1' });
+  await app.register(taxRatesRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {
