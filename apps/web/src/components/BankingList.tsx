@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { Reconcile } from './Reconcile';
 
 type BankTxnStatus = 'unmatched' | 'suggested' | 'posted' | 'ignored';
 type Confidence = 'high' | 'medium' | 'low';
@@ -71,6 +72,7 @@ export function BankingList() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [view, setView] = useState<'transactions' | 'reconcile'>('transactions');
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<BankTxnStatus | ''>('unmatched');
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -214,13 +216,44 @@ export function BankingList() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">Banking</h2>
-        <p className="text-sm text-slate-500">
-          Import a bank or credit-card CSV statement. Claude auto-suggests an expense or income
-          account for each line; review the suggestions and post the ones you approve.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Banking</h2>
+          <p className="text-sm text-slate-500">
+            Import a bank or credit-card CSV statement, categorize each line (Claude can suggest),
+            then reconcile against the bank's monthly statement.
+          </p>
+        </div>
+        <div className="flex gap-1 border-b border-slate-200">
+          {(
+            [
+              { id: 'transactions', label: 'Transactions' },
+              { id: 'reconcile', label: 'Reconcile' },
+            ] as const
+          ).map((tab) => {
+            const active = view === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setView(tab.id)}
+                className={
+                  'border-b-2 px-3 py-1.5 text-sm transition-colors -mb-px ' +
+                  (active
+                    ? 'border-slate-900 font-medium text-slate-900'
+                    : 'border-transparent text-slate-500 hover:text-slate-800')
+                }
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {view === 'reconcile' && <Reconcile />}
+      {view === 'transactions' && (
+        <>
 
       {/* ----------- Bank account picker + import ------------- */}
       <section className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
@@ -477,6 +510,8 @@ export function BankingList() {
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
           Ignore failed: {formatError(ignoreMutation.error)}
         </div>
+      )}
+        </>
       )}
     </div>
   );

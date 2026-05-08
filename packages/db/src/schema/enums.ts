@@ -88,3 +88,8 @@ export const bankTransactionStatusEnum = pgEnum('bank_transaction_status', [
 ]);
 
 export const aiConfidenceEnum = pgEnum('ai_confidence', ['high', 'medium', 'low']);
+
+export const reconciliationStatusEnum = pgEnum('reconciliation_status', [
+  'in_progress',
+  'completed',
+]);

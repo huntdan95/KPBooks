@@ -13,6 +13,7 @@ import { accounts } from './accounts';
 import { aiConfidenceEnum, bankTransactionStatusEnum } from './enums';
 import { companies } from './companies';
 import { journalEntries } from './ledger';
+import { reconciliations } from './reconciliations';
 
 /**
  * bank_transactions
@@ -73,6 +74,12 @@ export const bankTransactions = pgTable(
      * Used to detect duplicate imports (re-uploading the same statement).
      */
     dedupeHash: text('dedupe_hash').notNull(),
+    /** When the user marked this txn as cleared on a statement. */
+    clearedAt: timestamp('cleared_at', { withTimezone: true }),
+    /** Reconciliation this txn was cleared into; finalised reconciliations lock the row. */
+    reconciliationId: uuid('reconciliation_id').references(() => reconciliations.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -81,12 +88,23 @@ export const bankTransactions = pgTable(
     companyStatusIdx: index('bank_transactions_company_status_idx').on(t.companyId, t.status),
     companyDateIdx: index('bank_transactions_company_date_idx').on(t.companyId, t.transactionDate),
     importBatchIdx: index('bank_transactions_import_batch_idx').on(t.importBatchId),
+    reconciliationIdx: index('bank_transactions_reconciliation_idx').on(t.reconciliationId),
     /** Dedup at the DB layer so a re-uploaded statement doesn't double-post. */
     companyDedupeIdx: index('bank_transactions_company_dedupe_idx').on(t.companyId, t.dedupeHash),
     nonZeroAmount: check('bank_transactions_nonzero_amount', sql`${t.amount} <> 0`),
     postedConsistency: check(
       'bank_transactions_posted_consistency',
       sql`(${t.status} = 'posted') = (${t.postedJournalEntryId} IS NOT NULL)`,
+    ),
+    /** A row can only be cleared if it's posted -- can't reconcile an unposted txn. */
+    clearedRequiresPosted: check(
+      'bank_transactions_cleared_requires_posted',
+      sql`(${t.clearedAt} IS NULL) OR (${t.status} = 'posted')`,
+    ),
+    /** clearedAt and reconciliationId rise + fall together. */
+    clearedReconConsistency: check(
+      'bank_transactions_cleared_recon_consistency',
+      sql`(${t.clearedAt} IS NULL) = (${t.reconciliationId} IS NULL)`,
     ),
   }),
 );

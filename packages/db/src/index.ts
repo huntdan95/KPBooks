@@ -14,6 +14,7 @@ export {
   memberships,
   paymentApplications,
   payments,
+  reconciliations,
   users,
   vendors,
 } from './schema/index.js';
@@ -44,8 +45,10 @@ export type {
   NewPaymentApplication,
   NewUser,
   NewVendor,
+  NewReconciliation,
   Payment,
   PaymentApplication,
+  Reconciliation,
   User,
   Vendor,
 } from './schema/index.js';

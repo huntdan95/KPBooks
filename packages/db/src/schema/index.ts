@@ -7,4 +7,5 @@ export * from './invoices';
 export * from './vendors';
 export * from './bills';
 export * from './payments';
+export * from './reconciliations';
 export * from './banking';
