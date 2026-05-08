@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
+import { JournalEntryForm } from './JournalEntryForm';
+import { TrialBalance } from './TrialBalance';
 
 interface Membership {
   companyId: string;
@@ -11,9 +14,18 @@ interface Membership {
   role: 'owner' | 'admin' | 'bookkeeper' | 'viewer';
 }
 
+type View = 'accounts' | 'new-entry' | 'trial-balance';
+
+const TABS: ReadonlyArray<{ id: View; label: string }> = [
+  { id: 'accounts', label: 'Chart of Accounts' },
+  { id: 'new-entry', label: 'New Entry' },
+  { id: 'trial-balance', label: 'Trial Balance' },
+];
+
 export function AppShell({ memberships }: { memberships: Membership[] }) {
   const { user } = useAuth();
   const { companyId, setCompanyId } = useCurrentCompany();
+  const [view, setView] = useState<View>('accounts');
 
   // If the stored companyId isn't in the user's memberships (e.g. revoked),
   // fall back to the first available company.
@@ -51,6 +63,26 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             </button>
           </div>
         </div>
+        <nav className="mx-auto flex max-w-5xl gap-1 px-6">
+          {TABS.map((tab) => {
+            const isActive = view === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setView(tab.id)}
+                className={
+                  'border-b-2 px-3 py-2 text-sm transition-colors ' +
+                  (isActive
+                    ? 'border-slate-900 font-medium text-slate-900'
+                    : 'border-transparent text-slate-500 hover:text-slate-800')
+                }
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
       </header>
       <main className="mx-auto max-w-5xl space-y-6 px-6 py-6">
         {active && (
@@ -59,7 +91,9 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             <span className="font-medium text-slate-900">{active.role}</span>.
           </div>
         )}
-        <AccountsList />
+        {view === 'accounts' && <AccountsList />}
+        {view === 'new-entry' && <JournalEntryForm />}
+        {view === 'trial-balance' && <TrialBalance />}
         <ReadyzSelfTest />
       </main>
     </div>
