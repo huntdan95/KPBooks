@@ -38,7 +38,6 @@ export let dbAvailable = false;
 
 beforeAll(async () => {
   const url = process.env.DATABASE_URL;
-  const adminUrl = process.env.ADMIN_DATABASE_URL ?? url;
   if (!url) {
     console.warn(
       '\n  DATABASE_URL not set — db integration tests will skip.' +
@@ -46,6 +45,7 @@ beforeAll(async () => {
     );
     return;
   }
+  const adminUrl = process.env.ADMIN_DATABASE_URL ?? url;
   _sql = postgres(url, { max: 5, prepare: false });
   _adminSql = postgres(adminUrl, { max: 2, prepare: false });
   dbAvailable = true;

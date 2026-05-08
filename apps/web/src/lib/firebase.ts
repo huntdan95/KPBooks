@@ -5,6 +5,8 @@ import {
   browserLocalPersistence,
   getAuth,
   setPersistence,
+  signInWithPopup,
+  signOut as fbSignOut,
 } from 'firebase/auth';
 
 /**
@@ -31,4 +33,12 @@ export async function getIdToken(): Promise<string | null> {
   const user = auth.currentUser;
   if (!user) return null;
   return user.getIdToken();
+}
+
+export async function signInWithGoogle(): Promise<void> {
+  await signInWithPopup(auth, googleProvider);
+}
+
+export async function signOut(): Promise<void> {
+  await fbSignOut(auth);
 }

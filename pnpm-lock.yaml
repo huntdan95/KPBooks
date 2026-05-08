@@ -11,9 +11,15 @@ importers:
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.39
+      drizzle-kit:
+        specifier: ^0.28.0
+        version: 0.28.1
       prettier:
         specifier: ^3.3.3
         version: 3.8.3
+      tsx:
+        specifier: ^4.19.1
+        version: 4.21.0
       typescript:
         specifier: ^5.6.2
         version: 5.9.3
@@ -149,18 +155,12 @@ importers:
       '@types/node':
         specifier: ^20.14.0
         version: 20.19.39
-      drizzle-kit:
-        specifier: ^0.28.0
-        version: 0.28.1
       embedded-postgres:
         specifier: 18.3.0-beta.17
         version: 18.3.0-beta.17
       fast-check:
         specifier: ^3.22.0
         version: 3.23.2
-      tsx:
-        specifier: ^4.19.1
-        version: 4.21.0
       typescript:
         specifier: ^5.6.2
         version: 5.9.3
