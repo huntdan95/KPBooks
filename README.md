@@ -14,7 +14,7 @@ packages/
   db/           Drizzle schema + RLS + deferred ledger trigger migration
   money/        Decimal.js wrapper. Never use raw `number` for money.
 infra/
-  terraform/    GCP project resources (Cloud SQL, Artifact Registry, IAM, secrets)
+  terraform/    GCP project resources (Artifact Registry, IAM, Secret Manager, attachments bucket)
 ```
 
 ## Local dev
@@ -88,7 +88,8 @@ Then push to `main` and Cloud Build runs `cloudbuild.yaml` — typecheck, test, 
 - ✅ Firebase Auth verification on the API
 - ✅ Cloud Run Dockerfile + Cloud Build pipeline
 - ✅ Firebase Hosting + SPA routing config
-- ✅ Terraform skeleton for Cloud SQL, IAM, Secret Manager, Artifact Registry
+- ✅ Terraform skeleton for IAM, Secret Manager, Artifact Registry, attachments bucket
+- ✅ Postgres on Neon (connection string in `kpbooks-database-url` Secret Manager secret)
 
 ## What's next (Phase 0 → 1 transition)
 

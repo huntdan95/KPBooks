@@ -61,9 +61,9 @@ export async function setup(): Promise<void> {
     throw new Error(`migrate failed with exit code ${result.status}`);
   }
 
-  // Create a non-superuser application role. In production Cloud SQL the app
-  // never connects as a superuser; mirror that here so RLS actually fires
-  // against the test workload (superusers bypass RLS unconditionally).
+  // Create a non-superuser application role. In production the app never
+  // connects as a superuser; mirror that here so RLS actually fires against
+  // the test workload (superusers bypass RLS unconditionally).
   const appPassword = 'kpbooks_app';
   const adminSql = postgres(adminUrl, { max: 1, prepare: false });
   try {

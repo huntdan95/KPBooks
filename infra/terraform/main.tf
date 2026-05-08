@@ -14,10 +14,6 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
   }
 }
 
@@ -31,18 +27,6 @@ variable "region" {
   default = "us-central1"
 }
 
-variable "db_tier" {
-  type        = string
-  default     = "db-g1-small"
-  description = "Cloud SQL machine tier. Bump to db-custom-* before production."
-}
-
-variable "db_deletion_protection" {
-  type        = bool
-  default     = true
-  description = "Cloud SQL deletion protection. Default true for safety; pass -var=db_deletion_protection=false in dev to allow terraform destroy."
-}
-
 provider "google" {
   project = var.project_id
   region  = var.region
@@ -51,7 +35,6 @@ provider "google" {
 # ─── APIs we need enabled ────────────────────────────────────────────────────
 resource "google_project_service" "services" {
   for_each = toset([
-    "sqladmin.googleapis.com",
     "run.googleapis.com",
     "cloudbuild.googleapis.com",
     "artifactregistry.googleapis.com",
@@ -94,67 +77,16 @@ resource "google_service_account" "ci" {
   display_name = "KPBooks Cloud Build"
 }
 
-# ─── Cloud SQL (Postgres 16) ─────────────────────────────────────────────────
-resource "google_sql_database_instance" "main" {
-  name             = "kpbooks"
-  database_version = "POSTGRES_16"
-  region           = var.region
-  depends_on       = [google_project_service.services]
-
-  settings {
-    tier    = var.db_tier
-    edition = "ENTERPRISE"
-    availability_type = "ZONAL"
-    disk_autoresize   = true
-    disk_size         = 20
-
-    backup_configuration {
-      enabled                        = true
-      point_in_time_recovery_enabled = true
-      start_time                     = "03:00"
-      transaction_log_retention_days = 7
-    }
-
-    ip_configuration {
-      ipv4_enabled = true
-    }
-
-    insights_config {
-      query_insights_enabled = true
-    }
-  }
-
-  deletion_protection = var.db_deletion_protection
-}
-
-resource "google_sql_database" "kpbooks" {
-  name     = "kpbooks"
-  instance = google_sql_database_instance.main.name
-}
-
-resource "random_password" "kpbooks_user" {
-  length  = 32
-  special = true
-}
-
-resource "google_sql_user" "kpbooks" {
-  name     = "kpbooks"
-  instance = google_sql_database_instance.main.name
-  password = random_password.kpbooks_user.result
-}
-
 # ─── Secret Manager ──────────────────────────────────────────────────────────
+# The DATABASE_URL value is populated outside Terraform — currently a Neon
+# Postgres connection string. Add new versions via:
+#   echo -n "postgresql://..." | gcloud secrets versions add kpbooks-database-url --data-file=-
 resource "google_secret_manager_secret" "database_url" {
   secret_id  = "kpbooks-database-url"
   depends_on = [google_project_service.services]
   replication {
     auto {}
   }
-}
-
-resource "google_secret_manager_secret_version" "database_url" {
-  secret      = google_secret_manager_secret.database_url.id
-  secret_data = "postgres://kpbooks:${random_password.kpbooks_user.result}@/kpbooks?host=/cloudsql/${google_sql_database_instance.main.connection_name}"
 }
 
 # Anthropic API key — populated outside Terraform via:
@@ -169,18 +101,6 @@ resource "google_secret_manager_secret" "anthropic_api_key" {
 }
 
 # ─── IAM ─────────────────────────────────────────────────────────────────────
-resource "google_project_iam_member" "api_cloudsql" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.api.email}"
-}
-
-resource "google_project_iam_member" "worker_cloudsql" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.worker.email}"
-}
-
 resource "google_secret_manager_secret_iam_member" "api_db_url" {
   secret_id = google_secret_manager_secret.database_url.id
   role      = "roles/secretmanager.secretAccessor"
@@ -235,11 +155,6 @@ resource "google_storage_bucket_iam_member" "api_attachments" {
 }
 
 # ─── Outputs ─────────────────────────────────────────────────────────────────
-output "cloudsql_connection_name" {
-  value       = google_sql_database_instance.main.connection_name
-  description = "Pass this to Cloud Run --add-cloudsql-instances"
-}
-
 output "api_service_account" {
   value = google_service_account.api.email
 }

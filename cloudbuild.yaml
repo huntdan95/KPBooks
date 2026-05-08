@@ -6,10 +6,9 @@
 #
 # Trigger: push to main on github.com/huntdan95/KPBooks
 # Substitutions to set in the Cloud Build trigger:
-#   _REGION         (e.g. us-central1)
-#   _AR_REPO        (e.g. kpbooks)
-#   _SERVICE        (e.g. kpbooks-api)
-#   _CLOUDSQL_CONN  (e.g. kpbooks-91c48:us-central1:kpbooks)
+#   _REGION   (e.g. us-central1)
+#   _AR_REPO  (e.g. kpbooks)
+#   _SERVICE  (e.g. kpbooks-api)
 
 steps:
   - name: 'gcr.io/cloud-builders/npm'
@@ -67,7 +66,6 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--service-account=kpbooks-api@$PROJECT_ID.iam.gserviceaccount.com'
-      - '--add-cloudsql-instances=${_CLOUDSQL_CONN}'
       - '--set-env-vars=NODE_ENV=production,FIREBASE_PROJECT_ID=$PROJECT_ID'
       - '--set-secrets=DATABASE_URL=kpbooks-database-url:latest'
 
