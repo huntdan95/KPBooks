@@ -37,6 +37,12 @@ variable "db_tier" {
   description = "Cloud SQL machine tier. Bump to db-custom-* before production."
 }
 
+variable "db_deletion_protection" {
+  type        = bool
+  default     = true
+  description = "Cloud SQL deletion protection. Default true for safety; pass -var=db_deletion_protection=false in dev to allow terraform destroy."
+}
+
 provider "google" {
   project = var.project_id
   region  = var.region
@@ -118,7 +124,7 @@ resource "google_sql_database_instance" "main" {
     }
   }
 
-  deletion_protection = true
+  deletion_protection = var.db_deletion_protection
 }
 
 resource "google_sql_database" "kpbooks" {
