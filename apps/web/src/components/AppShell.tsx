@@ -39,7 +39,7 @@ const PAGE_TITLE: Record<View, string> = {
   bills: 'Bills',
   vendors: 'Vendors',
   mileage: 'Mileage',
-  workers: 'Workers',
+  workers: 'Workers / 1099',
   banking: 'Banking',
   payments: 'Payments',
   accounts: 'Chart of Accounts',
@@ -83,6 +83,18 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
       setView(primary as View);
     }
   }
+
+  // Components rendered deep in the tree (e.g. Workers detail -> "open 1099
+  // prep") can ask the shell to navigate by dispatching a `kpb:navigate` event
+  // with the view id as `detail`. Avoids prop-drilling through every tab.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent<string>).detail;
+      if (typeof target === 'string') handleNavigate(target);
+    };
+    window.addEventListener('kpb:navigate', handler);
+    return () => window.removeEventListener('kpb:navigate', handler);
+  }, []);
 
   return (
     <div className="flex min-h-screen bg-slate-100">

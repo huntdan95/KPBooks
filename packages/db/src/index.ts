@@ -21,6 +21,7 @@ export {
   taxRates,
   users,
   vendors,
+  workerDocuments,
 } from './schema/index.js';
 export type {
   Account,
@@ -55,6 +56,7 @@ export type {
   NewPaymentApplication,
   NewUser,
   NewVendor,
+  NewWorkerDocument,
   NewReconciliation,
   NewTaxRate,
   Payment,
@@ -63,4 +65,5 @@ export type {
   TaxRate,
   User,
   Vendor,
+  WorkerDocument,
 } from './schema/index.js';

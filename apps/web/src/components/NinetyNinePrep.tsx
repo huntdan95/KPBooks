@@ -143,7 +143,13 @@ export function NinetyNinePrep() {
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {visible.map((r) => (
-                    <tr key={r.vendorId} className={r.meetsThreshold ? '' : 'opacity-60'}>
+                    <tr
+                      key={r.vendorId}
+                      onClick={() => window.dispatchEvent(new CustomEvent('kpb:navigate', { detail: 'workers' }))}
+                      className={
+                        'cursor-pointer hover:bg-slate-50 ' + (r.meetsThreshold ? '' : 'opacity-60')
+                      }
+                    >
                       <td className="px-4 py-2 text-slate-900">
                         <div className="font-medium">{r.displayName}</div>
                         {!r.meetsThreshold && (

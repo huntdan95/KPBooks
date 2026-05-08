@@ -61,7 +61,7 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: 'Workers',
-    items: [{ id: 'workers', label: 'Employees' }],
+    items: [{ id: 'workers', label: 'Workers / 1099' }],
   },
   {
     label: 'Banking',

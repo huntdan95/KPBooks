@@ -2,6 +2,15 @@ import { getIdToken } from './firebase.js';
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/v1';
 
+/** API base URL with the /v1 suffix. Exposed so non-JSON endpoints (e.g. file downloads) can build their own fetch. */
+export function getApiBase(): string {
+  return BASE;
+}
+
+/** Get a Firebase ID token for the current user, or null if not signed in.
+ *  Same source the api() helper uses; exposed for direct fetch() calls. */
+export { getIdToken };
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,

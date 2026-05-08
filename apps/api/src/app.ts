@@ -20,6 +20,7 @@ import { meRoutes } from './routes/me.js';
 import { paymentsRoutes } from './routes/payments.js';
 import { taxRatesRoutes } from './routes/tax-rates.js';
 import { vendorsRoutes } from './routes/vendors.js';
+import { workersRoutes } from './routes/workers.js';
 
 export async function buildApp(config: Config): Promise<FastifyInstance> {
   const app = Fastify({
@@ -30,9 +31,10 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         : {}),
     },
     trustProxy: true,
-    // Default Fastify limit is 1 MiB; raise to 8 MiB to fit IIF imports for
-    // companies with hundreds of accounts/customers/vendors.
-    bodyLimit: 8 * 1024 * 1024,
+    // Default Fastify limit is 1 MiB; raise to 16 MiB to fit IIF imports
+    // (hundreds of accounts/customers/vendors) and base64-encoded W-9 / W-4
+    // / I-9 PDFs uploaded via /workers/:vendorId/documents (10 MiB raw -> ~14 MiB base64).
+    bodyLimit: 16 * 1024 * 1024,
     disableRequestLogging: false,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
@@ -65,6 +67,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(importsRoutes, { prefix: '/v1' });
   await app.register(bankingRoutes, { prefix: '/v1' });
   await app.register(taxRatesRoutes, { prefix: '/v1' });
+  await app.register(workersRoutes, { prefix: '/v1' });
   await app.register(chatRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 

@@ -12,7 +12,9 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { accounts } from './accounts';
 import { companies } from './companies';
+import { payRateBasisEnum, workerTypeEnum } from './enums';
 
 /**
  * vendors
@@ -46,6 +48,26 @@ export const vendors = pgTable(
     /** A/P opening balance carried over from a prior system (QB import). */
     openingBalance: numeric('opening_balance', { precision: 19, scale: 4 }).notNull().default('0'),
     openingBalanceDate: date('opening_balance_date', { mode: 'string' }),
+    // ---- Worker fields (added in slice #25) -----------------------------
+    /**
+     * Whether this vendor is a worker we track in the Workers tab.
+     * 'contractor' surfaces in 1099 prep when is_1099_vendor is also set.
+     * 'employee' is informational only -- ACH payroll is intentionally not
+     * built per the office workflow (printed checks, picked up in person).
+     */
+    workerType: workerTypeEnum('worker_type').notNull().default('not_a_worker'),
+    /** Job title or role, e.g. "Lead carpenter" or "Bookkeeper". */
+    title: text('title'),
+    hireDate: date('hire_date', { mode: 'string' }),
+    terminationDate: date('termination_date', { mode: 'string' }),
+    /** Display-only pay rate; we don't compute paychecks from this. */
+    payRate: numeric('pay_rate', { precision: 19, scale: 4 }),
+    payRateBasis: payRateBasisEnum('pay_rate_basis'),
+    /** Default expense GL account when paying this worker (e.g. "Contract Labor"). */
+    defaultExpenseAccountId: uuid('default_expense_account_id').references(() => accounts.id, {
+      onDelete: 'set null',
+    }),
+    workersCompClass: text('workers_comp_class'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -55,6 +77,7 @@ export const vendors = pgTable(
       .where(sql`${t.accountNumber} IS NOT NULL`),
     companyDisplayNameIdx: index('vendors_company_display_name_idx').on(t.companyId, t.displayName),
     companyActiveIdx: index('vendors_company_active_idx').on(t.companyId, t.isActive),
+    companyWorkerTypeIdx: index('vendors_company_worker_type_idx').on(t.companyId, t.workerType),
   }),
 );
 
