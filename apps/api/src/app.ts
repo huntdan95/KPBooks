@@ -10,6 +10,7 @@ import { companiesRoutes } from './routes/companies.js';
 import { billsRoutes } from './routes/bills.js';
 import { customersRoutes } from './routes/customers.js';
 import { healthRoutes } from './routes/health.js';
+import { importsRoutes } from './routes/imports.js';
 import { invoicesRoutes } from './routes/invoices.js';
 import { ledgerRoutes } from './routes/ledger.js';
 import { meRoutes } from './routes/me.js';
@@ -25,6 +26,9 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         : {}),
     },
     trustProxy: true,
+    // Default Fastify limit is 1 MiB; raise to 8 MiB to fit IIF imports for
+    // companies with hundreds of accounts/customers/vendors.
+    bodyLimit: 8 * 1024 * 1024,
     disableRequestLogging: false,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),
@@ -53,6 +57,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(invoicesRoutes, { prefix: '/v1' });
   await app.register(billsRoutes, { prefix: '/v1' });
   await app.register(paymentsRoutes, { prefix: '/v1' });
+  await app.register(importsRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {

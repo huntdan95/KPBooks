@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
 import { BillsList } from './BillsList';
 import { CustomersList } from './CustomersList';
+import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
 import { JournalEntryForm } from './JournalEntryForm';
 import { PaymentsList } from './PaymentsList';
@@ -27,7 +28,8 @@ type View =
   | 'bills'
   | 'payments'
   | 'new-entry'
-  | 'reports';
+  | 'reports'
+  | 'import';
 
 const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'accounts', label: 'Chart of Accounts' },
@@ -38,6 +40,7 @@ const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'payments', label: 'Payments' },
   { id: 'new-entry', label: 'New Entry' },
   { id: 'reports', label: 'Reports' },
+  { id: 'import', label: 'Import' },
 ];
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -117,6 +120,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
         {view === 'payments' && <PaymentsList />}
         {view === 'new-entry' && <JournalEntryForm />}
         {view === 'reports' && <Reports />}
+        {view === 'import' && <Imports />}
         <ReadyzSelfTest />
       </main>
     </div>
