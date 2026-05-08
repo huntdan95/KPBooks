@@ -48,10 +48,39 @@ interface ParsedVendor {
   is1099Vendor: boolean;
   taxId?: string;
 }
+interface ParsedSplit {
+  account: string;
+  amount: string;
+  name?: string;
+  memo?: string;
+  classRef?: string;
+}
+interface ParsedTransaction {
+  rowNumber: number;
+  qbType: string;
+  sourceType:
+    | 'invoice'
+    | 'bill'
+    | 'payment'
+    | 'bank_transaction'
+    | 'reconciliation'
+    | 'payroll'
+    | 'import'
+    | 'manual';
+  posts: boolean;
+  date: string;
+  docNum?: string;
+  memo?: string;
+  reference?: string;
+  lines: ParsedSplit[];
+}
 interface IifPreview {
   accounts: ParsedAccount[];
   customers: ParsedCustomer[];
   vendors: ParsedVendor[];
+  transactions: ParsedTransaction[];
+  transactionCounts: Record<string, number>;
+  nonPostingSkipped: number;
   unrecognizedSections: string[];
   warnings: string[];
 }
@@ -63,6 +92,11 @@ interface CommitResult {
   vendorsCreated: number;
   vendorsSkipped: number;
   conflicts: { kind: 'account' | 'customer' | 'vendor'; identifier: string; reason: string }[];
+}
+interface TransactionCommitResult {
+  posted: number;
+  skipped: number;
+  errors: { rowNumber: number; qbType: string; reason: string }[];
 }
 
 type Stage = 'upload' | 'preview' | 'committed';
@@ -77,10 +111,12 @@ export function Imports() {
   const [preview, setPreview] = useState<IifPreview | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [committed, setCommitted] = useState<CommitResult | null>(null);
+  const [committedTxns, setCommittedTxns] = useState<TransactionCommitResult | null>(null);
   // Per-row include flags so users can opt rows out before commit.
   const [accountInclude, setAccountInclude] = useState<boolean[]>([]);
   const [customerInclude, setCustomerInclude] = useState<boolean[]>([]);
   const [vendorInclude, setVendorInclude] = useState<boolean[]>([]);
+  const [includeTransactions, setIncludeTransactions] = useState<boolean>(true);
 
   const previewMutation = useMutation({
     mutationFn: async (text: string) =>
@@ -115,19 +151,40 @@ export function Imports() {
       const vendors = preview.vendors
         .filter((_, i) => vendorInclude[i])
         .map((v) => stripUndef(v));
-      return api<CommitResult>('/imports/iif/commit', {
+      // Step 1: lists (accounts/customers/vendors). Has to land before
+      // transactions so the by-name account lookup resolves.
+      const listsResult = await api<CommitResult>('/imports/iif/commit', {
         method: 'POST',
         companyId,
         body: { accounts, customers, vendors },
       });
+
+      // Step 2: transactions. Optional via the includeTransactions toggle.
+      let txResult: TransactionCommitResult = { posted: 0, skipped: 0, errors: [] };
+      if (includeTransactions && preview.transactions.length > 0) {
+        txResult = await api<TransactionCommitResult>(
+          '/imports/iif/commit-transactions',
+          {
+            method: 'POST',
+            companyId,
+            body: { transactions: preview.transactions },
+          },
+        );
+      }
+
+      return { listsResult, txResult };
     },
-    onSuccess: (data) => {
-      setCommitted(data);
+    onSuccess: ({ listsResult, txResult }) => {
+      setCommitted(listsResult);
+      setCommittedTxns(txResult);
       setStage('committed');
-      // Refresh downstream lists.
+      // Refresh downstream lists + ledger views.
       void queryClient.invalidateQueries({ queryKey: ['accounts', companyId] });
       void queryClient.invalidateQueries({ queryKey: ['customers', companyId] });
       void queryClient.invalidateQueries({ queryKey: ['vendors', companyId] });
+      void queryClient.invalidateQueries({ queryKey: ['trial-balance', companyId] });
+      void queryClient.invalidateQueries({ queryKey: ['pnl', companyId] });
+      void queryClient.invalidateQueries({ queryKey: ['balance-sheet', companyId] });
     },
   });
 
@@ -137,9 +194,11 @@ export function Imports() {
     setPreview(null);
     setParseError(null);
     setCommitted(null);
+    setCommittedTxns(null);
     setAccountInclude([]);
     setCustomerInclude([]);
     setVendorInclude([]);
+    setIncludeTransactions(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
@@ -203,7 +262,10 @@ export function Imports() {
             <p className="font-medium text-slate-900">Preview from {fileName}</p>
             <p className="text-slate-600">
               {preview.accounts.length} accounts · {preview.customers.length} customers ·{' '}
-              {preview.vendors.length} vendors
+              {preview.vendors.length} vendors · {preview.transactions.length} postable transactions
+              {preview.nonPostingSkipped > 0 && (
+                <> · {preview.nonPostingSkipped} non-posting (estimates / orders)</>
+              )}
             </p>
             {preview.unrecognizedSections.length > 0 && (
               <p className="mt-1 text-xs text-amber-700">
@@ -357,6 +419,64 @@ export function Imports() {
             </PreviewSection>
           )}
 
+          {preview.transactions.length > 0 && (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-slate-700">
+                  Transactions{' '}
+                  <span className="text-slate-500">({preview.transactions.length} postable)</span>
+                </h3>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={includeTransactions}
+                    onChange={(e) => setIncludeTransactions(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Import transactions
+                </label>
+              </div>
+
+              <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium">QB type</th>
+                      <th className="px-4 py-2 text-left font-medium">Maps to</th>
+                      <th className="px-4 py-2 text-right font-medium">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {Object.entries(preview.transactionCounts)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([qbType, count]) => {
+                        // The first txn of this type tells us how it'll map.
+                        const sample = preview.transactions.find((t) => t.qbType === qbType);
+                        const mapsTo = sample
+                          ? sample.posts
+                            ? `journal_entry (${sample.sourceType})`
+                            : 'skipped (non-posting)'
+                          : 'skipped (non-posting)';
+                        return (
+                          <tr key={qbType}>
+                            <td className="px-4 py-2 font-mono text-slate-900">{qbType}</td>
+                            <td className="px-4 py-2 text-slate-700">{mapsTo}</td>
+                            <td className="px-4 py-2 text-right font-mono text-slate-900">{count}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Each posting transaction becomes one journal_entry. Sign rule: positive amount = debit,
+                negative = credit. Transactions whose accounts aren't in the chart of accounts after the
+                lists step are skipped and reported.
+              </p>
+            </section>
+          )}
+
           <div className="flex items-center gap-3 border-t border-slate-200 pt-4">
             <button
               type="button"
@@ -400,18 +520,42 @@ export function Imports() {
                 {committed.vendorsCreated} vendors created
                 {committed.vendorsSkipped > 0 ? `, ${committed.vendorsSkipped} skipped` : ''}
               </li>
+              {committedTxns && (
+                <li>
+                  {committedTxns.posted} transactions posted
+                  {committedTxns.skipped > 0 ? `, ${committedTxns.skipped} skipped` : ''}
+                </li>
+              )}
             </ul>
           </div>
 
           {committed.conflicts.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <p className="font-medium">{committed.conflicts.length} skipped due to conflicts:</p>
+              <p className="font-medium">{committed.conflicts.length} list rows skipped:</p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {committed.conflicts.map((c, i) => (
                   <li key={i}>
                     <span className="font-medium">{c.kind}</span>: {c.identifier} — {c.reason}
                   </li>
                 ))}
+              </ul>
+            </div>
+          )}
+
+          {committedTxns && committedTxns.errors.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">
+                {committedTxns.errors.length} transaction(s) skipped:
+              </p>
+              <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+                {committedTxns.errors.slice(0, 200).map((e, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{e.qbType}</span> at row {e.rowNumber} — {e.reason}
+                  </li>
+                ))}
+                {committedTxns.errors.length > 200 && (
+                  <li>… and {committedTxns.errors.length - 200} more</li>
+                )}
               </ul>
             </div>
           )}

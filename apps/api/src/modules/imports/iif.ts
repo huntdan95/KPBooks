@@ -6,6 +6,7 @@ import {
 } from '@kpbooks/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
+import { PostingError, postEntry } from '../ledger/posting.service.js';
 
 /**
  * iif.ts -- parser + committer for QuickBooks IIF (Intuit Interchange Format)
@@ -76,10 +77,49 @@ export interface ParsedVendor {
   taxId?: string | undefined;
 }
 
+export interface ParsedSplit {
+  account: string;
+  amount: string; // signed decimal string (e.g. "-250.0000")
+  name?: string | undefined;
+  memo?: string | undefined;
+  classRef?: string | undefined;
+}
+
+export interface ParsedTransaction {
+  /** Source row number (1-based) of the TRNS line, useful for error display. */
+  rowNumber: number;
+  /** Raw TRNSTYPE value: INVOICE, BILL, CHECK, etc. */
+  qbType: string;
+  /** Mapped sourceType for journal_entries.source_type. */
+  sourceType:
+    | 'invoice'
+    | 'bill'
+    | 'payment'
+    | 'bank_transaction'
+    | 'reconciliation'
+    | 'payroll'
+    | 'import'
+    | 'manual';
+  /** Whether this transaction posts to the GL or is a non-posting document
+   * (estimates, sales orders, purchase orders). Non-posting are excluded. */
+  posts: boolean;
+  date: string; // YYYY-MM-DD
+  docNum?: string | undefined;
+  memo?: string | undefined;
+  reference?: string | undefined;
+  /** TRNS row + zero or more SPL rows, all with signed amounts. */
+  lines: ParsedSplit[];
+}
+
 export interface IifPreview {
   accounts: ParsedAccount[];
   customers: ParsedCustomer[];
   vendors: ParsedVendor[];
+  transactions: ParsedTransaction[];
+  /** Per-TRNSTYPE counts so the UI can summarise without iterating in JS. */
+  transactionCounts: Record<string, number>;
+  /** Non-posting transaction types we deliberately skipped. */
+  nonPostingSkipped: number;
   /** Lines we couldn't classify -- shown so the user knows what was ignored. */
   unrecognizedSections: string[];
   /** Parser warnings (unmapped account types, malformed rows, etc.). */
@@ -115,18 +155,147 @@ const TYPE_CODE_PREFIX: Record<AccountType, number> = {
   expense: 5000,
 };
 
+/**
+ * QB TRNSTYPE -> KPBooks journal source_type. Non-posting types map to
+ * `posts: false` so we skip them entirely (estimates, sales orders, purchase
+ * orders, item receipts that are also booked separately as a BILL, etc.).
+ */
+const TRNSTYPE_MAP: Record<
+  string,
+  { sourceType: ParsedTransaction['sourceType']; posts: boolean }
+> = {
+  INVOICE: { sourceType: 'invoice', posts: true },
+  'CASH SALE': { sourceType: 'invoice', posts: true },
+  CASHSALE: { sourceType: 'invoice', posts: true },
+  'CREDIT MEMO': { sourceType: 'invoice', posts: true },
+  CREDMEMO: { sourceType: 'invoice', posts: true },
+  BILL: { sourceType: 'bill', posts: true },
+  'BILL REFUND': { sourceType: 'bill', posts: true },
+  'VENDOR CREDIT': { sourceType: 'bill', posts: true },
+  VENDCRED: { sourceType: 'bill', posts: true },
+  PAYMENT: { sourceType: 'payment', posts: true },
+  RCPT: { sourceType: 'payment', posts: true },
+  'BILL PMT-CHECK': { sourceType: 'payment', posts: true },
+  BILLPMT: { sourceType: 'payment', posts: true },
+  'BILL PMT-CCARD': { sourceType: 'payment', posts: true },
+  CHECK: { sourceType: 'bank_transaction', posts: true },
+  CHK: { sourceType: 'bank_transaction', posts: true },
+  DEPOSIT: { sourceType: 'bank_transaction', posts: true },
+  DEP: { sourceType: 'bank_transaction', posts: true },
+  TRANSFER: { sourceType: 'bank_transaction', posts: true },
+  XFER: { sourceType: 'bank_transaction', posts: true },
+  'CREDIT CARD CHARGE': { sourceType: 'bank_transaction', posts: true },
+  'CCARD CHARGE': { sourceType: 'bank_transaction', posts: true },
+  'CREDIT CARD CREDIT': { sourceType: 'bank_transaction', posts: true },
+  'CCARD CREDIT': { sourceType: 'bank_transaction', posts: true },
+  'GENERAL JOURNAL': { sourceType: 'manual', posts: true },
+  'GEN JRNL': { sourceType: 'manual', posts: true },
+  GENJRNL: { sourceType: 'manual', posts: true },
+  PAYCHECK: { sourceType: 'payroll', posts: true },
+  'PAY CHECK': { sourceType: 'payroll', posts: true },
+  'LIABILITY CHECK': { sourceType: 'payroll', posts: true },
+  LIABCHECK: { sourceType: 'payroll', posts: true },
+  'INVENTORY ADJUST': { sourceType: 'manual', posts: true },
+  INVADJUST: { sourceType: 'manual', posts: true },
+  'ITEM RECEIPT': { sourceType: 'bill', posts: true },
+  ITEMRCPT: { sourceType: 'bill', posts: true },
+  // Non-posting documents.
+  ESTIMATE: { sourceType: 'import', posts: false },
+  'SALES ORDER': { sourceType: 'import', posts: false },
+  'PURCHASE ORDER': { sourceType: 'import', posts: false },
+  PURCHORD: { sourceType: 'import', posts: false },
+  SALESORD: { sourceType: 'import', posts: false },
+  STATEMENT: { sourceType: 'import', posts: false },
+};
+
+function lookupTrnsType(
+  raw: string,
+): { sourceType: ParsedTransaction['sourceType']; posts: boolean } {
+  const upper = raw.toUpperCase();
+  return TRNSTYPE_MAP[upper] ?? { sourceType: 'import', posts: true };
+}
+
+/** Parse "01/15/2026" / "1/15/2026" / "01/15/26" / "2026-01-15" -> "YYYY-MM-DD". */
+export function normaliseDate(raw: string): string | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const month = parseInt(m[1]!, 10);
+  const day = parseInt(m[2]!, 10);
+  let year = parseInt(m[3]!, 10);
+  if (m[3]!.length === 2) {
+    // Two-digit years: 00-49 -> 2000s, 50-99 -> 1900s. QB exports are usually
+    // recent; this matches QB's own convention.
+    year = year < 50 ? 2000 + year : 1900 + year;
+  }
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${year}-${mm}-${dd}`;
+}
+
+/** Strip $ , spaces; map "(123.45)" -> "-123.45". Returns canonical 4dp string. */
+export function normaliseAmount(raw: string): string | null {
+  let s = raw.trim();
+  if (!s) return null;
+  let negative = false;
+  // Accounting parens: (123.45) means negative.
+  if (s.startsWith('(') && s.endsWith(')')) {
+    negative = true;
+    s = s.slice(1, -1).trim();
+  }
+  // Strip currency symbol, commas, spaces.
+  s = s.replace(/[$,\s]/g, '');
+  if (s.startsWith('-')) {
+    negative = !negative;
+    s = s.slice(1);
+  } else if (s.startsWith('+')) {
+    s = s.slice(1);
+  }
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  // Force 4 decimal places to match NUMERIC(19,4).
+  const [whole = '0', frac = ''] = s.split('.');
+  const padded = (frac + '0000').slice(0, 4);
+  return `${negative ? '-' : ''}${whole}.${padded}`;
+}
+
 // ------------------------- Parser -------------------------------------------
 
 export function parseIif(text: string): IifPreview {
   const accounts: ParsedAccount[] = [];
   const customers: ParsedCustomer[] = [];
   const vendors: ParsedVendor[] = [];
+  const transactions: ParsedTransaction[] = [];
+  const transactionCounts: Record<string, number> = {};
+  let nonPostingSkipped = 0;
   const unrecognizedSections: string[] = [];
   const warnings: string[] = [];
   const seenSections = new Set<string>();
 
   // Maps section tag -> column index map.
   const headers: Record<string, Record<string, number>> = {};
+
+  // TRNS+SPL+ENDTRNS state machine.
+  let pendingTransaction: ParsedTransaction | null = null;
+
+  const finalisePending = (rowNo: number) => {
+    if (!pendingTransaction) return;
+    const { qbType, posts } = pendingTransaction;
+    transactionCounts[qbType] = (transactionCounts[qbType] ?? 0) + 1;
+    if (posts && pendingTransaction.lines.length >= 2) {
+      transactions.push(pendingTransaction);
+    } else if (!posts) {
+      nonPostingSkipped++;
+    } else {
+      // posting type but <2 lines: malformed.
+      warnings.push(
+        `row ${rowNo}: ${qbType} block has only ${pendingTransaction.lines.length} line(s); skipping`,
+      );
+    }
+    pendingTransaction = null;
+  };
 
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   for (let i = 0; i < lines.length; i++) {
@@ -182,27 +351,66 @@ export function parseIif(text: string): IifPreview {
       continue;
     }
 
+    if (tag === 'TRNS') {
+      const cols = headers.TRNS;
+      if (!cols) {
+        warnings.push(`row ${i + 1}: TRNS row before TRNS header; skipping`);
+        continue;
+      }
+      // Implicit ENDTRNS for any pending transaction without one.
+      if (pendingTransaction) {
+        warnings.push(`row ${i + 1}: TRNS encountered while previous block had no ENDTRNS`);
+        finalisePending(i + 1);
+      }
+      pendingTransaction = parseTrnsRow(cells, cols, i + 1, warnings);
+      continue;
+    }
+
+    if (tag === 'SPL') {
+      const cols = headers.SPL;
+      if (!cols) {
+        warnings.push(`row ${i + 1}: SPL row before SPL header; skipping`);
+        continue;
+      }
+      if (!pendingTransaction) {
+        warnings.push(`row ${i + 1}: SPL row outside a TRNS block; skipping`);
+        continue;
+      }
+      const split = parseSplRow(cells, cols, i + 1, warnings);
+      if (split) pendingTransaction.lines.push(split);
+      continue;
+    }
+
+    if (tag === 'ENDTRNS') {
+      finalisePending(i + 1);
+      continue;
+    }
+
     // Track unrecognized but valid-looking section tags so the user can see
-    // what got dropped (e.g., TRNS, SPL, ENDTRNS, INVITEM, CLASS, EMP).
+    // what got dropped (e.g., INVITEM, CLASS, EMP).
     if (/^[A-Z][A-Z0-9_]*$/.test(tag)) {
       seenSections.add(tag);
     }
   }
 
-  for (const tag of ['TRNS', 'SPL', 'ENDTRNS', 'INVITEM', 'EMP', 'CLASS', 'TIMEACT']) {
+  // Flush a trailing transaction if the file ended without ENDTRNS.
+  if (pendingTransaction) {
+    warnings.push('file ended with an unclosed TRNS block (no ENDTRNS)');
+    finalisePending(lines.length);
+  }
+
+  for (const tag of ['INVITEM', 'EMP', 'CLASS', 'TIMEACT']) {
     if (seenSections.has(tag)) {
       const friendly =
-        tag === 'TRNS' || tag === 'SPL' || tag === 'ENDTRNS'
-          ? 'transactions'
-          : tag === 'INVITEM'
-            ? 'inventory items'
-            : tag === 'EMP'
-              ? 'employees'
-              : tag === 'CLASS'
-                ? 'classes'
-                : tag === 'TIMEACT'
-                  ? 'time activities'
-                  : tag;
+        tag === 'INVITEM'
+          ? 'inventory items'
+          : tag === 'EMP'
+            ? 'employees'
+            : tag === 'CLASS'
+              ? 'classes'
+              : tag === 'TIMEACT'
+                ? 'time activities'
+                : tag;
       if (!unrecognizedSections.includes(friendly)) unrecognizedSections.push(friendly);
     }
   }
@@ -220,7 +428,96 @@ export function parseIif(text: string): IifPreview {
     a.suggestedCode = String(TYPE_CODE_PREFIX[a.type] + counters[a.type] * 10);
   }
 
-  return { accounts, customers, vendors, unrecognizedSections, warnings };
+  return {
+    accounts,
+    customers,
+    vendors,
+    transactions,
+    transactionCounts,
+    nonPostingSkipped,
+    unrecognizedSections,
+    warnings,
+  };
+}
+
+function parseTrnsRow(
+  cells: string[],
+  cols: Record<string, number>,
+  rowNo: number,
+  warnings: string[],
+): ParsedTransaction | null {
+  const cell = (col: string) => (cells[cols[col] ?? -1] ?? '').trim();
+  const qbType = cell('TRNSTYPE');
+  if (!qbType) {
+    warnings.push(`row ${rowNo}: TRNS row missing TRNSTYPE; skipping`);
+    return null;
+  }
+  const dateRaw = cell('DATE');
+  const date = normaliseDate(dateRaw);
+  if (!date) {
+    warnings.push(`row ${rowNo}: invalid TRNS date "${dateRaw}"; skipping block`);
+    return null;
+  }
+  const account = cell('ACCNT');
+  if (!account) {
+    warnings.push(`row ${rowNo}: TRNS row missing ACCNT; skipping block`);
+    return null;
+  }
+  const amountRaw = cell('AMOUNT');
+  const amount = normaliseAmount(amountRaw);
+  if (amount == null) {
+    warnings.push(`row ${rowNo}: invalid TRNS amount "${amountRaw}"; skipping block`);
+    return null;
+  }
+  const docNum = cell('DOCNUM') || undefined;
+  const memo = cell('MEMO') || undefined;
+  const name = cell('NAME') || undefined;
+  const classRef = cell('CLASS') || undefined;
+  const mapped = lookupTrnsType(qbType);
+
+  return {
+    rowNumber: rowNo,
+    qbType: qbType.toUpperCase(),
+    sourceType: mapped.sourceType,
+    posts: mapped.posts,
+    date,
+    docNum,
+    memo,
+    reference: docNum,
+    lines: [
+      {
+        account,
+        amount,
+        name,
+        memo,
+        classRef,
+      },
+    ],
+  };
+}
+
+function parseSplRow(
+  cells: string[],
+  cols: Record<string, number>,
+  rowNo: number,
+  warnings: string[],
+): ParsedSplit | null {
+  const cell = (col: string) => (cells[cols[col] ?? -1] ?? '').trim();
+  const account = cell('ACCNT');
+  if (!account) {
+    warnings.push(`row ${rowNo}: SPL row missing ACCNT; skipping`);
+    return null;
+  }
+  const amountRaw = cell('AMOUNT');
+  const amount = normaliseAmount(amountRaw);
+  if (amount == null) {
+    warnings.push(`row ${rowNo}: invalid SPL amount "${amountRaw}"; skipping`);
+    return null;
+  }
+  const memo = cell('MEMO') || undefined;
+  const name = cell('NAME') || undefined;
+  const classRef = cell('CLASS') || undefined;
+  return { account, amount, name, memo, classRef };
 }
 
 function parseAccountRow(
@@ -565,4 +862,202 @@ export async function commitIifImport(
   }
 
   return result;
+}
+
+// ------------------------- Transaction commit ------------------------------
+
+const CommitSplit = z.object({
+  account: z.string().min(1),
+  amount: z.string().regex(/^-?\d+\.\d{4}$/),
+  name: z.string().optional(),
+  memo: z.string().optional(),
+  classRef: z.string().optional(),
+});
+
+const CommitTransaction = z.object({
+  rowNumber: z.number().int().nonnegative().default(0),
+  qbType: z.string().min(1),
+  sourceType: z.enum([
+    'invoice',
+    'bill',
+    'payment',
+    'bank_transaction',
+    'reconciliation',
+    'payroll',
+    'import',
+    'manual',
+  ]),
+  posts: z.boolean(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  docNum: z.string().max(120).optional(),
+  memo: z.string().max(500).optional(),
+  reference: z.string().max(120).optional(),
+  lines: z.array(CommitSplit).min(2),
+});
+
+export const CommitIifTransactionsSchema = z.object({
+  transactions: z.array(CommitTransaction).default([]),
+});
+
+export type CommitIifTransactionsInput = z.infer<typeof CommitIifTransactionsSchema>;
+
+export interface TransactionCommitResult {
+  posted: number;
+  skipped: number;
+  errors: { rowNumber: number; qbType: string; reason: string }[];
+}
+
+/**
+ * Commit parsed IIF transactions into journal_entries via the existing
+ * postEntry service. Each TRNS+SPL block becomes one journal_entry; the IIF
+ * sign rule (amount > 0 -> debit, amount < 0 -> credit) is applied per line.
+ *
+ * Skipped reasons reported back so the user can fix and re-run:
+ *   - account "X" not found in chart of accounts
+ *   - block doesn't balance
+ *   - closed-period block (operator must clear closed_through_date)
+ *   - posting service rejected (cross-company, inactive account, etc.)
+ */
+export async function commitIifTransactions(
+  tx: Database,
+  ctx: CommitContext,
+  input: CommitIifTransactionsInput,
+): Promise<TransactionCommitResult> {
+  const result: TransactionCommitResult = { posted: 0, skipped: 0, errors: [] };
+  if (input.transactions.length === 0) return result;
+
+  // Build a lower-cased name -> id map for fast resolution. We rely on RLS
+  // having scoped the tx to ctx.companyId already.
+  const accountRows = await tx
+    .select({ id: accountsTable.id, name: accountsTable.name, isActive: accountsTable.isActive })
+    .from(accountsTable);
+  const byName = new Map(accountRows.map((a) => [a.name.toLowerCase(), a]));
+
+  for (const t of input.transactions) {
+    if (!t.posts) {
+      result.skipped++;
+      continue;
+    }
+
+    // Resolve every line's account before posting.
+    const resolved: { accountId: string; signedAmount: string; memo?: string | undefined }[] = [];
+    let unresolved: string | null = null;
+    let inactiveAccount: string | null = null;
+    for (const line of t.lines) {
+      const acc = byName.get(line.account.toLowerCase());
+      if (!acc) {
+        unresolved = line.account;
+        break;
+      }
+      if (!acc.isActive) {
+        inactiveAccount = line.account;
+        break;
+      }
+      resolved.push({ accountId: acc.id, signedAmount: line.amount, memo: line.memo });
+    }
+    if (unresolved !== null) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: `account "${unresolved}" not found in chart of accounts`,
+      });
+      continue;
+    }
+    if (inactiveAccount !== null) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: `account "${inactiveAccount}" is inactive`,
+      });
+      continue;
+    }
+
+    // Convert IIF signed amounts -> journal_lines (positive = DR, negative = CR,
+    // zero = skip). Also pre-check balance so we surface a friendly error
+    // rather than letting the deferred DB trigger fire generically.
+    const lines: {
+      accountId: string;
+      debit?: string;
+      credit?: string;
+      currency: string;
+      fxRate: string;
+      memo?: string | undefined;
+    }[] = [];
+    let debitMicros = 0n;
+    let creditMicros = 0n;
+    for (const r of resolved) {
+      const isZero = /^-?0+\.0{4}$/.test(r.signedAmount);
+      if (isZero) continue;
+      if (r.signedAmount.startsWith('-')) {
+        const positive = r.signedAmount.slice(1);
+        lines.push({
+          accountId: r.accountId,
+          credit: positive,
+          currency: 'USD',
+          fxRate: '1',
+          memo: r.memo,
+        });
+        creditMicros += amountToMicros(positive);
+      } else {
+        lines.push({
+          accountId: r.accountId,
+          debit: r.signedAmount,
+          currency: 'USD',
+          fxRate: '1',
+          memo: r.memo,
+        });
+        debitMicros += amountToMicros(r.signedAmount);
+      }
+    }
+
+    if (lines.length < 2) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: 'fewer than 2 non-zero lines',
+      });
+      continue;
+    }
+    if (debitMicros !== creditMicros) {
+      result.skipped++;
+      const diff = (debitMicros - creditMicros).toString();
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: `block doesn't balance: debits-credits = ${diff} (4dp micros)`,
+      });
+      continue;
+    }
+
+    try {
+      await postEntry(tx, { companyId: ctx.companyId, userId: ctx.userId }, {
+        entryDate: t.date,
+        sourceType: t.sourceType,
+        memo: t.memo,
+        reference: t.reference,
+        lines,
+      });
+      result.posted++;
+    } catch (err) {
+      result.skipped++;
+      const reason =
+        err instanceof PostingError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      result.errors.push({ rowNumber: t.rowNumber, qbType: t.qbType, reason });
+    }
+  }
+
+  return result;
+}
+
+function amountToMicros(s: string): bigint {
+  // s is already validated to /^\d+\.\d{4}$/ shape (positive).
+  const [whole = '0', frac = '0000'] = s.split('.');
+  return BigInt(whole) * 10000n + BigInt(frac);
 }

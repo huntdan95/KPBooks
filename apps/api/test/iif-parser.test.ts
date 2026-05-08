@@ -93,19 +93,21 @@ describe('parseIif', () => {
     expect(v2.companyName).toBeUndefined();
   });
 
-  it('reports unrecognized section types so users know what was skipped', () => {
+  it('reports unrecognized section types (INVITEM, EMP, CLASS) so users know what was skipped', () => {
+    // Transactions are now handled (slice #11) so they don't appear here. Other
+    // sections we still don't import surface in unrecognizedSections.
     const text = [
       `!ACCNT${t}NAME${t}ACCNTTYPE`,
       `ACCNT${t}Checking${t}BANK`,
-      `!TRNS${t}TRNSID${t}TRNSTYPE${t}DATE${t}ACCNT${t}AMOUNT`,
-      `TRNS${t}1${t}INVOICE${t}2026-01-01${t}Accounts Receivable${t}100.00`,
       `!INVITEM${t}NAME${t}INVITEMTYPE`,
       `INVITEM${t}Widget${t}SERV`,
+      `!CLASS${t}NAME`,
+      `CLASS${t}Department A`,
     ].join('\n');
     const out = parseIif(text);
     expect(out.accounts).toHaveLength(1);
-    expect(out.unrecognizedSections).toContain('transactions');
     expect(out.unrecognizedSections).toContain('inventory items');
+    expect(out.unrecognizedSections).toContain('classes');
   });
 
   it('skips data rows that appear before their header', () => {
