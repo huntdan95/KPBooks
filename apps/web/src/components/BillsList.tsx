@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+
+interface ReceiptPrefill {
+  vendorDisplayName: string | null;
+  total: string | null;
+  date: string | null;
+  lineItems: Array<{ description: string; amount: string }>;
+  notes: string | null;
+}
 
 interface BillListRow {
   id: string;
@@ -103,6 +111,70 @@ export function BillsList() {
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'new'>('list');
+  const [receiptPrefill, setReceiptPrefill] = useState<ReceiptPrefill | null>(null);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const [ocrPending, setOcrPending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const aiStatusQuery = useQuery({
+    queryKey: ['chat-ai-status'],
+    queryFn: () => api<{ available: boolean }>('/chat/status'),
+    staleTime: 60_000,
+  });
+  const aiAvailable = aiStatusQuery.data?.available ?? false;
+
+  async function handleReceiptFile(file: File) {
+    setOcrError(null);
+    if (file.size > 7_000_000) {
+      setOcrError(`Image is ${(file.size / 1e6).toFixed(1)} MB; resize below ~5 MB.`);
+      return;
+    }
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      setOcrError(`Unsupported file type ${file.type}; use jpg / png / gif / webp.`);
+      return;
+    }
+    setOcrPending(true);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result ?? ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const base64 = dataUrl.split(',')[1] ?? '';
+      const result = await api<{
+        vendor: string | null;
+        total: string | null;
+        date: string | null;
+        lineItems: Array<{ description: string; amount: string }>;
+        notAReceipt: boolean;
+        notes: string | null;
+      }>('/ai/extract-receipt', {
+        method: 'POST',
+        body: { imageBase64: base64, mediaType: file.type },
+      });
+      if (result.notAReceipt) {
+        setOcrError(
+          `Claude doesn't think that's a receipt${result.notes ? ` (${result.notes})` : ''}.`,
+        );
+        return;
+      }
+      setReceiptPrefill({
+        vendorDisplayName: result.vendor,
+        total: result.total,
+        date: result.date,
+        lineItems: result.lineItems,
+        notes: result.notes,
+      });
+      setMode('new');
+    } catch (err) {
+      setOcrError(formatError(err));
+    } finally {
+      setOcrPending(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   const billsQuery = useQuery({
     queryKey: ['bills', companyId],
@@ -128,32 +200,68 @@ export function BillsList() {
   if (mode === 'new') {
     return (
       <NewBill
-        onCancel={() => setMode('list')}
+        onCancel={() => {
+          setMode('list');
+          setReceiptPrefill(null);
+        }}
         onSaved={() => {
           setMode('list');
+          setReceiptPrefill(null);
           void queryClient.invalidateQueries({ queryKey: ['bills', companyId] });
           void queryClient.invalidateQueries({ queryKey: ['trial-balance', companyId] });
         }}
         billCount={list.length}
+        prefill={receiptPrefill}
       />
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Bills</h2>
           <p className="text-sm text-slate-500">{list.length} on file</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setMode('new')}
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
-        >
-          + New bill
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void handleReceiptFile(f);
+            }}
+          />
+          {aiAvailable && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={ocrPending}
+              className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+              title="Drop a receipt photo and Claude prefills the bill form"
+            >
+              {ocrPending ? 'Reading receipt…' : '📷 From receipt'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setReceiptPrefill(null);
+              setMode('new');
+            }}
+            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            + New bill
+          </button>
+        </div>
       </div>
+      {ocrError && (
+        <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {ocrError}
+        </div>
+      )}
 
       {billsQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {billsQuery.isError && (
@@ -237,10 +345,12 @@ function NewBill({
   onCancel,
   onSaved,
   billCount,
+  prefill,
 }: {
   onCancel: () => void;
   onSaved: () => void;
   billCount: number;
+  prefill: ReceiptPrefill | null;
 }) {
   const { companyId } = useCurrentCompany();
 
@@ -269,6 +379,45 @@ function NewBill({
     [accountsQuery.data],
   );
 
+  // If the receipt OCR provided line items, use them. Else if it provided a
+  // total (no line items), seed a single line with that amount + the vendor
+  // name as description. Account selection still has to happen by hand.
+  const initialLines: LineDraft[] = useMemo(() => {
+    if (prefill?.lineItems && prefill.lineItems.length > 0) {
+      return prefill.lineItems.map((it) => ({
+        accountId: '',
+        description: it.description,
+        quantity: '1',
+        unitPrice: it.amount,
+      }));
+    }
+    if (prefill?.total) {
+      return [
+        {
+          accountId: '',
+          description: prefill.vendorDisplayName ?? 'Receipt',
+          quantity: '1',
+          unitPrice: prefill.total,
+        },
+      ];
+    }
+    return [blankLine()];
+  }, [prefill]);
+
+  // Try to match the OCR'd vendor name against an existing vendor (case-
+  // insensitive substring). If we find one, preselect it; otherwise leave
+  // blank so the user can pick or create a vendor.
+  const matchedVendorId = useMemo(() => {
+    if (!prefill?.vendorDisplayName) return '';
+    const target = prefill.vendorDisplayName.toLowerCase();
+    const exact = vendors.find((v) => v.displayName.toLowerCase() === target);
+    if (exact) return exact.id;
+    const partial = vendors.find(
+      (v) => v.displayName.toLowerCase().includes(target) || target.includes(v.displayName.toLowerCase()),
+    );
+    return partial?.id ?? '';
+  }, [prefill, vendors]);
+
   const [draft, setDraft] = useState<{
     vendorId: string;
     billNumber: string;
@@ -277,13 +426,22 @@ function NewBill({
     memo: string;
     lines: LineDraft[];
   }>(() => ({
-    vendorId: '',
+    vendorId: matchedVendorId,
     billNumber: `BILL-${1001 + billCount}`,
-    billDate: today(),
+    billDate: prefill?.date ?? today(),
     dueDate: '',
-    memo: '',
-    lines: [blankLine()],
+    memo: prefill?.notes ? `From receipt: ${prefill.notes}` : '',
+    lines: initialLines,
   }));
+
+  // Vendors load async; if the matched id resolves after initial render and
+  // the user hasn't picked one yet, snap to it.
+  useEffect(() => {
+    if (matchedVendorId && !draft.vendorId) {
+      setDraft((d) => ({ ...d, vendorId: matchedVendorId }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchedVendorId]);
 
   const selectedVendor = useMemo(
     () => vendors.find((v) => v.id === draft.vendorId),
@@ -384,6 +542,21 @@ function NewBill({
           Cancel
         </button>
       </div>
+
+      {prefill && (
+        <div className="rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
+          <p className="font-medium">📷 Prefilled from receipt by Claude.</p>
+          <p className="mt-0.5 text-xs">
+            Review the vendor + line accounts before saving (Claude doesn't pick GL accounts).
+            {prefill.notes && (
+              <>
+                {' '}
+                Note: <span className="italic">{prefill.notes}</span>
+              </>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Vendor" required>
