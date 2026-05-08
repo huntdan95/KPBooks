@@ -31,6 +31,7 @@ export const companies = pgTable(
     baseCurrency: text('base_currency').notNull().default('USD'),
     closedThroughDate: date('closed_through_date', { mode: 'string' }),
     address: jsonb('address').$type<Record<string, unknown>>(),
+    phone: text('phone'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

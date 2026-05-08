@@ -21,6 +21,7 @@
     "fastify": "^5.0.0",
     "fastify-plugin": "^5.0.1",
     "firebase-admin": "^12.6.0",
+    "pdf-lib": "^1.17.1",
     "pino": "^9.4.0",
     "postgres": "^3.4.4",
     "zod": "^3.23.8"

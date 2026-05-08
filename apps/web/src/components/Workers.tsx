@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { Generate1099Modal } from './Generate1099Modal';
 
 type WorkerType = 'contractor' | 'employee' | 'not_a_worker';
 type PayBasis = 'hourly' | 'weekly' | 'biweekly' | 'monthly' | 'annually' | 'project';
@@ -748,6 +749,7 @@ function WorkerDetailView({
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [show1099Modal, setShow1099Modal] = useState(false);
 
   const detailQ = useQuery({
     queryKey: ['worker', vendorId, companyId],
@@ -882,23 +884,35 @@ function WorkerDetailView({
           </div>
 
           {data.workerType === 'contractor' && (
-            <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
-              💡 1099 connection: this contractor is included in the year-end{' '}
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  // Best-effort navigation: tell AppShell to switch view via custom event.
-                  window.dispatchEvent(
-                    new CustomEvent('kpb:navigate', { detail: '1099-prep' }),
-                  );
-                }}
-                className="font-medium underline hover:text-violet-700"
+            <div className="flex items-center justify-between gap-3 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
+              <div>
+                💡 1099 connection: this contractor is included in the year-end{' '}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    window.dispatchEvent(
+                      new CustomEvent('kpb:navigate', { detail: '1099-prep' }),
+                    );
+                  }}
+                  className="font-medium underline hover:text-violet-700"
+                >
+                  1099 prep summary
+                </a>
+                . Generate the printable form here.
+              </div>
+              <button
+                type="button"
+                onClick={() => setShow1099Modal(true)}
+                className="shrink-0 rounded-md border border-violet-300 bg-white px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
               >
-                1099 prep summary
-              </a>
-              . Make sure the W-9 is on file and the SSN/EIN is correct before filing.
+                Generate 1099-NEC
+              </button>
             </div>
+          )}
+
+          {show1099Modal && (
+            <Generate1099Modal vendorId={vendorId} onClose={() => setShow1099Modal(false)} />
           )}
 
           {/* Documents */}

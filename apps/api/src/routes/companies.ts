@@ -10,11 +10,25 @@ const CreateCompanyBody = z.object({
   ein: z.string().max(20).optional(),
 });
 
+const Address = z
+  .object({
+    street1: z.string().max(200).optional(),
+    street2: z.string().max(200).optional(),
+    city: z.string().max(100).optional(),
+    state: z.string().max(60).optional(),
+    postalCode: z.string().max(20).optional(),
+    country: z.string().max(60).optional(),
+  })
+  .strict()
+  .partial();
+
 const UpdateCompanyBody = z
   .object({
     name: z.string().min(1).max(120).optional(),
     legalName: z.string().max(160).nullable().optional(),
     ein: z.string().max(20).nullable().optional(),
+    address: Address.nullable().optional(),
+    phone: z.string().max(40).nullable().optional(),
     /** YYYY-MM-DD or null to clear. */
     closedThroughDate: z
       .string()
@@ -50,6 +64,8 @@ export const companiesRoutes: FastifyPluginAsync = async (app) => {
           fiscalYearStartMonth: companies.fiscalYearStartMonth,
           baseCurrency: companies.baseCurrency,
           closedThroughDate: companies.closedThroughDate,
+          address: companies.address,
+          phone: companies.phone,
           createdAt: companies.createdAt,
           updatedAt: companies.updatedAt,
         })
@@ -77,6 +93,8 @@ export const companiesRoutes: FastifyPluginAsync = async (app) => {
       if (body.name !== undefined) update.name = body.name;
       if (body.legalName !== undefined) update.legalName = body.legalName;
       if (body.ein !== undefined) update.ein = body.ein;
+      if (body.address !== undefined) update.address = body.address;
+      if (body.phone !== undefined) update.phone = body.phone;
       if (body.closedThroughDate !== undefined) update.closedThroughDate = body.closedThroughDate;
 
       if (Object.keys(update).length === 0) {

@@ -17,6 +17,7 @@ import { importsRoutes } from './routes/imports.js';
 import { invoicesRoutes } from './routes/invoices.js';
 import { ledgerRoutes } from './routes/ledger.js';
 import { meRoutes } from './routes/me.js';
+import { nineteenNinetyNineRoutes } from './routes/nineteen-ninety-nine.js';
 import { paymentsRoutes } from './routes/payments.js';
 import { recurringRoutes } from './routes/recurring.js';
 import { taxRatesRoutes } from './routes/tax-rates.js';
@@ -70,6 +71,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(bankingRoutes, { prefix: '/v1' });
   await app.register(taxRatesRoutes, { prefix: '/v1' });
   await app.register(workersRoutes, { prefix: '/v1' });
+  await app.register(nineteenNinetyNineRoutes, { prefix: '/v1' });
   await app.register(chatRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 

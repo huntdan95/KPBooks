@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { Generate1099Modal } from './Generate1099Modal';
 
 interface NinetyNineRow {
   vendorId: string;
@@ -48,6 +49,7 @@ export function NinetyNinePrep() {
   // Default to the prior calendar year (the year you'd be filing for now).
   const [year, setYear] = useState<number>(currentYear() - 1);
   const [hideBelowThreshold, setHideBelowThreshold] = useState<boolean>(true);
+  const [generateForVendorId, setGenerateForVendorId] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: ['1099-summary', companyId, year],
@@ -139,16 +141,14 @@ export function NinetyNinePrep() {
                     <th className="px-4 py-2 text-left font-medium">Tax ID</th>
                     <th className="px-4 py-2 text-left font-medium">Mailing address</th>
                     <th className="px-4 py-2 text-right font-medium">Total paid {year}</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {visible.map((r) => (
                     <tr
                       key={r.vendorId}
-                      onClick={() => window.dispatchEvent(new CustomEvent('kpb:navigate', { detail: 'workers' }))}
-                      className={
-                        'cursor-pointer hover:bg-slate-50 ' + (r.meetsThreshold ? '' : 'opacity-60')
-                      }
+                      className={r.meetsThreshold ? '' : 'opacity-60'}
                     >
                       <td className="px-4 py-2 text-slate-900">
                         <div className="font-medium">{r.displayName}</div>
@@ -173,6 +173,17 @@ export function NinetyNinePrep() {
                       <td className="px-4 py-2 text-right font-mono text-slate-900">
                         {formatUsd(r.total)}
                       </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setGenerateForVendorId(r.vendorId)}
+                          disabled={!r.meetsThreshold}
+                          className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                          title={r.meetsThreshold ? 'Generate 1099-NEC PDF' : 'Below $600 threshold'}
+                        >
+                          Generate
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -181,10 +192,19 @@ export function NinetyNinePrep() {
           )}
 
           <p className="text-xs text-slate-500">
-            Tip: print this page (Ctrl+P) for your reference. Form-image generation (1099-NEC PDFs
-            for direct e-file or print) is on the roadmap.
+            Click <strong>Generate</strong> on any vendor to download Copies B (recipient) + C
+            (payer) as PDFs. Copy A must be e-filed via the IRS FIRE system or printed onto the
+            official red-ink scannable form.
           </p>
         </>
+      )}
+
+      {generateForVendorId && (
+        <Generate1099Modal
+          vendorId={generateForVendorId}
+          initialYear={year}
+          onClose={() => setGenerateForVendorId(null)}
+        />
       )}
     </div>
   );
