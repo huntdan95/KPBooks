@@ -5,6 +5,7 @@ import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
+import { BillsList } from './BillsList';
 import { CustomersList } from './CustomersList';
 import { InvoicesList } from './InvoicesList';
 import { JournalEntryForm } from './JournalEntryForm';
@@ -17,13 +18,21 @@ interface Membership {
   role: 'owner' | 'admin' | 'bookkeeper' | 'viewer';
 }
 
-type View = 'accounts' | 'customers' | 'vendors' | 'invoices' | 'new-entry' | 'trial-balance';
+type View =
+  | 'accounts'
+  | 'customers'
+  | 'vendors'
+  | 'invoices'
+  | 'bills'
+  | 'new-entry'
+  | 'trial-balance';
 
 const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'accounts', label: 'Chart of Accounts' },
   { id: 'customers', label: 'Customers' },
   { id: 'vendors', label: 'Vendors' },
   { id: 'invoices', label: 'Invoices' },
+  { id: 'bills', label: 'Bills' },
   { id: 'new-entry', label: 'New Entry' },
   { id: 'trial-balance', label: 'Trial Balance' },
 ];
@@ -101,6 +110,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
         {view === 'customers' && <CustomersList />}
         {view === 'vendors' && <VendorsList />}
         {view === 'invoices' && <InvoicesList />}
+        {view === 'bills' && <BillsList />}
         {view === 'new-entry' && <JournalEntryForm />}
         {view === 'trial-balance' && <TrialBalance />}
         <ReadyzSelfTest />

@@ -5,3 +5,4 @@ export * from './customers';
 export * from './ledger';
 export * from './invoices';
 export * from './vendors';
+export * from './bills';

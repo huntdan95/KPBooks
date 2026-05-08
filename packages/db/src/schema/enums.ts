@@ -57,3 +57,10 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
   'paid',
   'void',
 ]);
+
+export const billStatusEnum = pgEnum('bill_status', [
+  'open',
+  'partial',
+  'paid',
+  'void',
+]);
