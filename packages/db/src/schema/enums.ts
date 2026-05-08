@@ -117,3 +117,16 @@ export const payRateBasisEnum = pgEnum('pay_rate_basis', [
   'annually',
   'project',
 ]);
+
+export const recurringTemplateKindEnum = pgEnum('recurring_template_kind', [
+  'invoice',
+  'bill',
+]);
+
+export const recurringFrequencyEnum = pgEnum('recurring_frequency', [
+  'weekly',
+  'biweekly',
+  'monthly',
+  'quarterly',
+  'annually',
+]);

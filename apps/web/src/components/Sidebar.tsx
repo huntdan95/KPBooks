@@ -22,7 +22,8 @@ export type View =
   | 'import'
   | 'reports'
   | 'tax-rates'
-  | '1099-prep';
+  | '1099-prep'
+  | 'recurring';
 
 interface NavItem {
   id: View;
@@ -72,6 +73,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { id: 'accounts', label: 'Chart of accounts' },
       { id: 'new-entry', label: 'New journal entry' },
+      { id: 'recurring', label: 'Recurring' },
       { id: 'import', label: 'Import (.iif)' },
     ],
   },

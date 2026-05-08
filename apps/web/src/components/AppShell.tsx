@@ -13,6 +13,7 @@ import { Dashboard } from './Dashboard';
 import { EstimatesList } from './EstimatesList';
 import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
+import { Recurring } from './Recurring';
 import { JournalEntryForm } from './JournalEntryForm';
 import { Mileage } from './Mileage';
 import { NewCompanyForm } from './NewCompanyForm';
@@ -48,6 +49,7 @@ const PAGE_TITLE: Record<View, string> = {
   reports: 'Reports',
   'tax-rates': 'Tax Rates',
   '1099-prep': '1099 Prep',
+  recurring: 'Recurring',
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -154,6 +156,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'mileage' && <Mileage />}
             {view === 'workers' && <Workers />}
             {view === 'new-entry' && <JournalEntryForm />}
+            {view === 'recurring' && <Recurring />}
             {view === 'reports' && <Reports />}
             {view === 'tax-rates' && <TaxRates />}
             {view === '1099-prep' && <NinetyNinePrep />}
