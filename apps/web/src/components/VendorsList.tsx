@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { VendorDetail } from './CounterpartyDetail';
 
 interface Vendor {
   id: string;
@@ -78,6 +79,11 @@ export function VendorsList() {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  if (detailId) {
+    return <VendorDetail vendorId={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   const query = useQuery({
     queryKey: ['vendors', companyId],
@@ -304,7 +310,13 @@ export function VendorsList() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {vendors.map((v) => (
-                <tr key={v.id} className={v.isActive ? '' : 'opacity-60'}>
+                <tr
+                  key={v.id}
+                  onClick={() => setDetailId(v.id)}
+                  className={
+                    'cursor-pointer hover:bg-slate-50 ' + (v.isActive ? '' : 'opacity-60')
+                  }
+                >
                   <td className="px-4 py-2 font-mono text-slate-500">{v.accountNumber ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-900">
                     <div className="font-medium">
@@ -325,7 +337,10 @@ export function VendorsList() {
                   <td className="px-4 py-2 text-right">
                     <button
                       type="button"
-                      onClick={() => startEdit(v)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(v);
+                      }}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                     >
                       Edit

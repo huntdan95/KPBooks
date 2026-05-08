@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { CustomerDetail } from './CounterpartyDetail';
 
 interface Customer {
   id: string;
@@ -76,6 +77,11 @@ export function CustomersList() {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  if (detailId) {
+    return <CustomerDetail customerId={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   const query = useQuery({
     queryKey: ['customers', companyId],
@@ -281,7 +287,13 @@ export function CustomersList() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {customers.map((c) => (
-                <tr key={c.id} className={c.isActive ? '' : 'opacity-60'}>
+                <tr
+                  key={c.id}
+                  onClick={() => setDetailId(c.id)}
+                  className={
+                    'cursor-pointer hover:bg-slate-50 ' + (c.isActive ? '' : 'opacity-60')
+                  }
+                >
                   <td className="px-4 py-2 font-mono text-slate-500">{c.accountNumber ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-900">
                     <div className="font-medium">
@@ -301,7 +313,10 @@ export function CustomersList() {
                   <td className="px-4 py-2 text-right">
                     <button
                       type="button"
-                      onClick={() => startEdit(c)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(c);
+                      }}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                     >
                       Edit

@@ -353,6 +353,97 @@ function summarise(asOf: string, rows: Array<Record<string, unknown>>): AgingRep
   };
 }
 
+// ─── 1099-NEC year-end summary ────────────────────────────────────────────
+
+export interface NinetyNineRow {
+  vendorId: string;
+  displayName: string;
+  taxId: string | null;
+  mailingAddress: Record<string, unknown> | null;
+  /** Total non-voided posted payments (vendor_sent) in the calendar year. */
+  total: string;
+  /** True when total >= $600 (current IRS 1099-NEC threshold). */
+  meetsThreshold: boolean;
+  /** True when the vendor is missing the TIN/EIN required for the form. */
+  missingTaxId: boolean;
+}
+
+export interface NinetyNineReport {
+  year: number;
+  rows: NinetyNineRow[];
+  totals: { total: string; aboveThreshold: number; missingTaxIdAboveThreshold: number };
+}
+
+/**
+ * 1099-NEC year-end summary. Lists every vendor flagged is_1099_vendor with
+ * the sum of posted vendor_sent payments dated within the given calendar
+ * year. The CPA uses this to fill 1099-NEC forms in January for the
+ * previous tax year. IRS threshold is $600 -- vendors below it are still
+ * shown so the user can sanity-check the list, but flagged via
+ * meetsThreshold.
+ */
+export async function nineteenNinetyNineSummary(
+  db: Database,
+  year: number,
+): Promise<NinetyNineReport> {
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const rows = await db.execute(sql`
+    SELECT
+      v.id            AS vendor_id,
+      v.display_name  AS display_name,
+      v.tax_id        AS tax_id,
+      v.mailing_address AS mailing_address,
+      COALESCE(
+        SUM(CASE WHEN p.status = 'posted' THEN p.amount ELSE 0 END),
+        0
+      )               AS total
+    FROM vendors v
+    LEFT JOIN payments p
+           ON p.vendor_id = v.id
+          AND p.payment_type = 'vendor_sent'
+          AND p.payment_date BETWEEN ${start}::date AND ${end}::date
+    WHERE v.is_1099_vendor = true
+    GROUP BY v.id, v.display_name, v.tax_id, v.mailing_address
+    ORDER BY total DESC, v.display_name
+  `);
+
+  const SCALE = 10000n;
+  let grandTotal = 0n;
+  let aboveThreshold = 0;
+  let missingAbove = 0;
+  const SIX_HUNDRED = 6000000n; // $600.0000 in 4dp micros
+
+  const out: NinetyNineRow[] = (rows as unknown as Array<Record<string, unknown>>).map((r) => {
+    const total = String(r.total ?? '0');
+    const minor = decimalToMinor(total, SCALE);
+    grandTotal += minor;
+    const meets = minor >= SIX_HUNDRED;
+    const missing = !r.tax_id || String(r.tax_id).trim().length === 0;
+    if (meets) aboveThreshold++;
+    if (meets && missing) missingAbove++;
+    return {
+      vendorId: String(r.vendor_id),
+      displayName: String(r.display_name),
+      taxId: r.tax_id ? String(r.tax_id) : null,
+      mailingAddress: (r.mailing_address as Record<string, unknown> | null) ?? null,
+      total,
+      meetsThreshold: meets,
+      missingTaxId: missing,
+    };
+  });
+
+  return {
+    year,
+    rows: out,
+    totals: {
+      total: minorToDecimal(grandTotal, SCALE),
+      aboveThreshold,
+      missingTaxIdAboveThreshold: missingAbove,
+    },
+  };
+}
+
 // Local minor-unit helpers — bigint arithmetic avoids float traps without pulling Decimal into report wiring.
 function decimalToMinor(s: string, scale: bigint): bigint {
   const [sign, rest] = s.startsWith('-') ? [-1n, s.slice(1)] : [1n, s];

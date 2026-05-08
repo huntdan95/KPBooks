@@ -7,6 +7,7 @@ import {
   apAging,
   arAging,
   balanceSheet,
+  nineteenNinetyNineSummary,
   profitAndLoss,
   trialBalance,
 } from '../modules/ledger/reports.service.js';
@@ -154,5 +155,18 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/ap-aging', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => apAging(tx, asOf));
+  });
+
+  app.get('/ledger/reports/1099-summary', async (req) => {
+    const { year } = z
+      .object({
+        year: z.coerce
+          .number()
+          .int()
+          .min(2000)
+          .max(2100),
+      })
+      .parse(req.query);
+    return req.withTenantTx(async (tx) => nineteenNinetyNineSummary(tx, year));
   });
 };

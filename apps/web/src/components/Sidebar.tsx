@@ -20,7 +20,8 @@ export type View =
   | 'new-entry'
   | 'import'
   | 'reports'
-  | 'tax-rates';
+  | 'tax-rates'
+  | '1099-prep';
 
 interface NavItem {
   id: View;
@@ -78,7 +79,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: 'Taxes',
-    items: [{ id: 'tax-rates', label: 'Tax rates' }],
+    items: [
+      { id: 'tax-rates', label: 'Tax rates' },
+      { id: '1099-prep', label: '1099 prep' },
+    ],
   },
 ];
 

@@ -15,6 +15,7 @@ import { InvoicesList } from './InvoicesList';
 import { JournalEntryForm } from './JournalEntryForm';
 import { Mileage } from './Mileage';
 import { NewCompanyForm } from './NewCompanyForm';
+import { NinetyNinePrep } from './NinetyNinePrep';
 import { PaymentsList } from './PaymentsList';
 import { Reports } from './Reports';
 import { Sidebar, type View } from './Sidebar';
@@ -44,6 +45,7 @@ const PAGE_TITLE: Record<View, string> = {
   import: 'Import from QuickBooks',
   reports: 'Reports',
   'tax-rates': 'Tax Rates',
+  '1099-prep': '1099 Prep',
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -136,6 +138,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'new-entry' && <JournalEntryForm />}
             {view === 'reports' && <Reports />}
             {view === 'tax-rates' && <TaxRates />}
+            {view === '1099-prep' && <NinetyNinePrep />}
             {view === 'import' && <Imports />}
             <ReadyzSelfTest />
           </div>
