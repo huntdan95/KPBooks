@@ -14,3 +14,4 @@ export * from './bank-rules';
 export * from './estimates';
 export * from './worker-documents';
 export * from './recurring-templates';
+export * from './w9-upload-tokens';

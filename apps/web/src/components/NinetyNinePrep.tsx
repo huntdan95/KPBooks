@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { Generate1099Modal } from './Generate1099Modal';
+import { W9BulkRequestPanel } from './W9BulkRequestPanel';
 
 interface NinetyNineRow {
   vendorId: string;
@@ -98,6 +99,8 @@ export function NinetyNinePrep() {
           Hide vendors below $600
         </label>
       </div>
+
+      <W9BulkRequestPanel year={year} companyName={null} />
 
       {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {query.isError && (

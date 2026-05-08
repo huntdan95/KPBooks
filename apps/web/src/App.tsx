@@ -4,6 +4,7 @@ import { useAuth } from './lib/auth';
 import { AppShell } from './components/AppShell';
 import { CreateCompany } from './components/CreateCompany';
 import { SignIn } from './components/SignIn';
+import { W9UploadPage } from './components/W9UploadPage';
 
 interface MeResponse {
   user: {
@@ -19,6 +20,15 @@ interface MeResponse {
 }
 
 export function App() {
+  // The /w9-upload/<token> route is intentionally PUBLIC -- contractors
+  // open it without an account to upload their W-9. Match it before any
+  // auth gating so we don't bounce them through Sign In.
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const w9Match = /^\/w9-upload\/([A-Za-z0-9_\-]+)\/?$/.exec(path);
+  if (w9Match) {
+    return <W9UploadPage token={w9Match[1]!} />;
+  }
+
   const auth = useAuth();
 
   if (auth.loading) {

@@ -22,6 +22,7 @@ export {
   taxRates,
   users,
   vendors,
+  w9UploadTokens,
   workerDocuments,
 } from './schema/index.js';
 export type {
@@ -58,6 +59,7 @@ export type {
   NewRecurringTemplate,
   NewUser,
   NewVendor,
+  NewW9UploadToken,
   NewWorkerDocument,
   NewReconciliation,
   NewTaxRate,
@@ -68,5 +70,6 @@ export type {
   TaxRate,
   User,
   Vendor,
+  W9UploadToken,
   WorkerDocument,
 } from './schema/index.js';

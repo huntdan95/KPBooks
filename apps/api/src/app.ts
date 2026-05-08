@@ -22,6 +22,8 @@ import { paymentsRoutes } from './routes/payments.js';
 import { recurringRoutes } from './routes/recurring.js';
 import { taxRatesRoutes } from './routes/tax-rates.js';
 import { vendorsRoutes } from './routes/vendors.js';
+import { w9PublicRoutes } from './routes/w9-public.js';
+import { w9TokensRoutes } from './routes/w9-tokens.js';
 import { workersRoutes } from './routes/workers.js';
 
 export async function buildApp(config: Config): Promise<FastifyInstance> {
@@ -71,6 +73,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(bankingRoutes, { prefix: '/v1' });
   await app.register(taxRatesRoutes, { prefix: '/v1' });
   await app.register(workersRoutes, { prefix: '/v1' });
+  await app.register(w9TokensRoutes, { prefix: '/v1' });
+  await app.register(w9PublicRoutes, { prefix: '/v1' });
   await app.register(nineteenNinetyNineRoutes, { prefix: '/v1' });
   await app.register(chatRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });

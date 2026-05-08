@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { Generate1099Modal } from './Generate1099Modal';
+import { RequestW9Modal } from './RequestW9Modal';
 
 type WorkerType = 'contractor' | 'employee' | 'not_a_worker';
 type PayBasis = 'hourly' | 'weekly' | 'biweekly' | 'monthly' | 'annually' | 'project';
@@ -750,6 +751,7 @@ function WorkerDetailView({
   const [editing, setEditing] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [show1099Modal, setShow1099Modal] = useState(false);
+  const [showW9Request, setShowW9Request] = useState(false);
 
   const detailQ = useQuery({
     queryKey: ['worker', vendorId, companyId],
@@ -924,14 +926,35 @@ function WorkerDetailView({
                   {data.documents.length} on file
                 </span>
               </h3>
-              <button
-                type="button"
-                onClick={() => setShowUpload((v) => !v)}
-                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100"
-              >
-                {showUpload ? 'Cancel' : '+ Upload'}
-              </button>
+              <div className="flex items-center gap-2">
+                {data.workerType === 'contractor' && (
+                  <button
+                    type="button"
+                    onClick={() => setShowW9Request(true)}
+                    className="rounded-md border border-violet-300 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800 hover:bg-violet-100"
+                    title="Generate a single-use upload link for the contractor (no login)"
+                  >
+                    Request W-9 from contractor
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowUpload((v) => !v)}
+                  className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100"
+                >
+                  {showUpload ? 'Cancel' : '+ Upload'}
+                </button>
+              </div>
             </div>
+
+            {showW9Request && (
+              <RequestW9Modal
+                vendorId={vendorId}
+                vendorName={data.displayName}
+                companyName={null}
+                onClose={() => setShowW9Request(false)}
+              />
+            )}
             {showUpload && (
               <div className="border-b border-slate-200 px-4 py-3">
                 <UploadDocumentForm
