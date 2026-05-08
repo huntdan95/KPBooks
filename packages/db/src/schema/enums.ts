@@ -79,3 +79,12 @@ export const paymentMethodEnum = pgEnum('payment_method', [
 ]);
 
 export const paymentStatusEnum = pgEnum('payment_status', ['posted', 'void']);
+
+export const bankTransactionStatusEnum = pgEnum('bank_transaction_status', [
+  'unmatched', // imported, no AI suggestion yet
+  'suggested', // AI categorized; awaiting user review
+  'posted', // user confirmed; journal_entry written
+  'ignored', // user marked irrelevant
+]);
+
+export const aiConfidenceEnum = pgEnum('ai_confidence', ['high', 'medium', 'low']);

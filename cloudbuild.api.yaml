@@ -40,7 +40,7 @@ steps:
       - '--allow-unauthenticated'
       - '--service-account=kpbooks-api@$PROJECT_ID.iam.gserviceaccount.com'
       - '--set-env-vars=NODE_ENV=production,FIREBASE_PROJECT_ID=$PROJECT_ID,CORS_ORIGINS=https://$PROJECT_ID.web.app'
-      - '--set-secrets=DATABASE_URL=kpbooks-database-url:latest'
+      - '--set-secrets=DATABASE_URL=kpbooks-database-url:latest,ANTHROPIC_API_KEY=kpbooks-anthropic-api-key:latest'
       - '--min-instances=0'
       - '--max-instances=4'
       - '--cpu=1'

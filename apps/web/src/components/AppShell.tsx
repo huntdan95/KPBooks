@@ -5,6 +5,7 @@ import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
+import { BankingList } from './BankingList';
 import { BillsList } from './BillsList';
 import { CustomersList } from './CustomersList';
 import { Imports } from './Imports';
@@ -27,6 +28,7 @@ type View =
   | 'invoices'
   | 'bills'
   | 'payments'
+  | 'banking'
   | 'new-entry'
   | 'reports'
   | 'import';
@@ -38,6 +40,7 @@ const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'invoices', label: 'Invoices' },
   { id: 'bills', label: 'Bills' },
   { id: 'payments', label: 'Payments' },
+  { id: 'banking', label: 'Banking' },
   { id: 'new-entry', label: 'New Entry' },
   { id: 'reports', label: 'Reports' },
   { id: 'import', label: 'Import' },
@@ -118,6 +121,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
         {view === 'invoices' && <InvoicesList />}
         {view === 'bills' && <BillsList />}
         {view === 'payments' && <PaymentsList />}
+        {view === 'banking' && <BankingList />}
         {view === 'new-entry' && <JournalEntryForm />}
         {view === 'reports' && <Reports />}
         {view === 'import' && <Imports />}

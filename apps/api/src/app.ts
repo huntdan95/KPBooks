@@ -7,6 +7,7 @@ import { dbPlugin } from './plugins/db.js';
 import { firebaseAuthPlugin } from './plugins/firebase-auth.js';
 import { rlsContextPlugin } from './plugins/rls.js';
 import { companiesRoutes } from './routes/companies.js';
+import { bankingRoutes } from './routes/banking.js';
 import { billsRoutes } from './routes/bills.js';
 import { customersRoutes } from './routes/customers.js';
 import { healthRoutes } from './routes/health.js';
@@ -58,6 +59,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(billsRoutes, { prefix: '/v1' });
   await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(importsRoutes, { prefix: '/v1' });
+  await app.register(bankingRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {
