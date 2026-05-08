@@ -38,9 +38,12 @@ export function NewCompanyForm({
       if (ein.trim()) body.ein = ein.trim();
       return api<CreateCompanyResponse>('/companies', { method: 'POST', body });
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
+      // Refetch /me FIRST so the new membership is in cache before we switch
+      // active company. Otherwise AppShell sees a companyId that isn't in its
+      // memberships list and snaps back to the previous one.
+      await queryClient.refetchQueries({ queryKey: ['me'] });
       setCompanyId(data.id);
-      void queryClient.invalidateQueries({ queryKey: ['me'] });
       onCreated?.(data.id);
     },
   });

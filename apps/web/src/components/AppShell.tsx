@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
@@ -54,16 +54,19 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   const [view, setView] = useState<View>('dashboard');
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
 
-  // If the stored companyId isn't in the user's memberships (e.g. revoked),
-  // fall back to the first available company.
-  const activeId =
-    companyId && memberships.some((m) => m.companyId === companyId)
-      ? companyId
-      : memberships[0]?.companyId ?? null;
+  // If the stored companyId isn't in the user's memberships (e.g. revoked,
+  // or stored id stale before /me refetched), fall back to the first available
+  // company. Done in an effect, NOT during render -- otherwise a freshly-created
+  // company id gets overwritten before the /me query has caught up with the
+  // new membership, which causes the picker to snap back to the original client.
+  const isMember = companyId !== null && memberships.some((m) => m.companyId === companyId);
+  const activeId = isMember ? companyId : memberships[0]?.companyId ?? null;
 
-  if (activeId !== companyId) {
-    setCompanyId(activeId);
-  }
+  useEffect(() => {
+    if (!isMember && activeId !== companyId) {
+      setCompanyId(activeId);
+    }
+  }, [isMember, activeId, companyId, setCompanyId]);
 
   const active = memberships.find((m) => m.companyId === activeId);
 
