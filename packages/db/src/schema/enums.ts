@@ -50,3 +50,10 @@ export const journalSourceTypeEnum = pgEnum('journal_source_type', [
   'import',
   'reversal',
 ]);
+
+export const invoiceStatusEnum = pgEnum('invoice_status', [
+  'open',
+  'partial',
+  'paid',
+  'void',
+]);
