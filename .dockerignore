@@ -1,0 +1,39 @@
+# Don't ship build context bloat to Cloud Build.
+node_modules
+**/node_modules
+.git
+.github
+.vscode
+.idea
+
+# Build outputs (built fresh inside the image)
+dist
+**/dist
+build
+**/build
+*.tsbuildinfo
+
+# Test artifacts
+coverage
+.postgres-data
+
+# Local env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+service-account*.json
+firebase-adminsdk*.json
+
+# Terraform state (huge and irrelevant to runtime)
+infra/terraform/.terraform
+infra/terraform/*.tfstate*
+
+# Firebase / cache junk
+.firebase
+.cache
+.parcel-cache
+
+# OS
+.DS_Store
+Thumbs.db
