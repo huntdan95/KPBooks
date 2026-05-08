@@ -8,6 +8,7 @@
 export type View =
   | 'dashboard'
   | 'chat'
+  | 'estimates'
   | 'invoices'
   | 'customers'
   | 'bills'
@@ -44,6 +45,7 @@ const SECTIONS: NavSection[] = [
   {
     label: 'Sales',
     items: [
+      { id: 'estimates', label: 'Estimates' },
       { id: 'invoices', label: 'Invoices' },
       { id: 'customers', label: 'Customers' },
       { id: 'payments', label: 'Payments' },

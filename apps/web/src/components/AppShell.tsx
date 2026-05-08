@@ -10,6 +10,7 @@ import { BillsList } from './BillsList';
 import { Chat } from './Chat';
 import { CustomersList } from './CustomersList';
 import { Dashboard } from './Dashboard';
+import { EstimatesList } from './EstimatesList';
 import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
 import { JournalEntryForm } from './JournalEntryForm';
@@ -32,6 +33,7 @@ interface Membership {
 const PAGE_TITLE: Record<View, string> = {
   dashboard: 'Dashboard',
   chat: 'Ask Claude',
+  estimates: 'Estimates',
   invoices: 'Invoices',
   customers: 'Customers',
   bills: 'Bills',
@@ -131,6 +133,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'chat' && <Chat />}
             {view === 'accounts' && <AccountsList />}
             {view === 'customers' && <CustomersList />}
+            {view === 'estimates' && <EstimatesList />}
             {view === 'vendors' && <VendorsList />}
             {view === 'invoices' && <InvoicesList />}
             {view === 'bills' && <BillsList />}

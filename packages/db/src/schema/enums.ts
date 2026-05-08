@@ -58,6 +58,15 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
   'void',
 ]);
 
+export const estimateStatusEnum = pgEnum('estimate_status', [
+  'draft',
+  'sent',
+  'accepted',
+  'declined',
+  'expired',
+  'converted',
+]);
+
 export const billStatusEnum = pgEnum('bill_status', [
   'open',
   'partial',

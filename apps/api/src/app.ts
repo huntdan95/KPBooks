@@ -11,6 +11,7 @@ import { bankingRoutes } from './routes/banking.js';
 import { billsRoutes } from './routes/bills.js';
 import { chatRoutes } from './routes/chat.js';
 import { customersRoutes } from './routes/customers.js';
+import { estimatesRoutes } from './routes/estimates.js';
 import { healthRoutes } from './routes/health.js';
 import { importsRoutes } from './routes/imports.js';
 import { invoicesRoutes } from './routes/invoices.js';
@@ -58,6 +59,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(customersRoutes, { prefix: '/v1' });
   await app.register(vendorsRoutes, { prefix: '/v1' });
   await app.register(invoicesRoutes, { prefix: '/v1' });
+  await app.register(estimatesRoutes, { prefix: '/v1' });
   await app.register(billsRoutes, { prefix: '/v1' });
   await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(importsRoutes, { prefix: '/v1' });
