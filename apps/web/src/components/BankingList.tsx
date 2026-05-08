@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { BankRules } from './BankRules';
 import { Reconcile } from './Reconcile';
 
 type BankTxnStatus = 'unmatched' | 'suggested' | 'posted' | 'ignored';
@@ -36,6 +37,8 @@ interface ImportResult {
   importBatchId: string;
   imported: number;
   duplicates: number;
+  /** How many freshly-imported rows matched a saved bank rule and got pre-categorized. */
+  ruleMatched: number;
   warnings: string[];
 }
 
@@ -72,7 +75,7 @@ export function BankingList() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [view, setView] = useState<'transactions' | 'reconcile'>('transactions');
+  const [view, setView] = useState<'transactions' | 'reconcile' | 'rules'>('transactions');
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<BankTxnStatus | ''>('unmatched');
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
@@ -229,6 +232,7 @@ export function BankingList() {
             [
               { id: 'transactions', label: 'Transactions' },
               { id: 'reconcile', label: 'Reconcile' },
+              { id: 'rules', label: 'Rules' },
             ] as const
           ).map((tab) => {
             const active = view === tab.id;
@@ -252,6 +256,7 @@ export function BankingList() {
       </div>
 
       {view === 'reconcile' && <Reconcile />}
+      {view === 'rules' && <BankRules />}
       {view === 'transactions' && (
         <>
 
@@ -296,7 +301,11 @@ export function BankingList() {
         {importResult && (
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             Imported {importResult.imported} new
-            {importResult.duplicates > 0 ? `, skipped ${importResult.duplicates} duplicate(s)` : ''}.
+            {importResult.duplicates > 0 ? `, skipped ${importResult.duplicates} duplicate(s)` : ''}
+            {importResult.ruleMatched > 0
+              ? `, ${importResult.ruleMatched} pre-categorized by rules`
+              : ''}
+            .
             {importResult.warnings.length > 0 && (
               <details className="mt-1 text-xs">
                 <summary className="cursor-pointer">{importResult.warnings.length} parser warnings</summary>

@@ -10,3 +10,4 @@ export * from './bills';
 export * from './payments';
 export * from './reconciliations';
 export * from './banking';
+export * from './bank-rules';

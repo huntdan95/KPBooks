@@ -11,6 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { callAnthropic, isAvailable as anthropicAvailable, stripCodeFence } from '../ai/anthropic.js';
 import { PostingError, postEntry } from '../ledger/posting.service.js';
+import { applyRulesToImportBatch } from './bank-rules.service.js';
 import { parseBankCsv, type ParsedBankRow } from './csv-parser.js';
 
 export const ImportCsvSchema = z.object({
@@ -24,6 +25,8 @@ export interface ImportCsvResult {
   importBatchId: string;
   imported: number;
   duplicates: number;
+  /** How many freshly-imported rows matched a saved bank rule. */
+  ruleMatched: number;
   warnings: string[];
 }
 
@@ -142,10 +145,18 @@ export async function importBankCsv(
     );
   }
 
+  // Apply saved rules in-line so the user sees pre-matched lines on first
+  // load -- no need to click "AI categorize" for anything a rule covers.
+  const { matched } =
+    toInsert.length > 0
+      ? await applyRulesToImportBatch(tx, ctx.companyId, importBatchId)
+      : { matched: 0 };
+
   return {
     importBatchId,
     imported: toInsert.length,
     duplicates,
+    ruleMatched: matched,
     warnings: parsed.warnings,
   };
 }

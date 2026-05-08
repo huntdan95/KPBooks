@@ -2,6 +2,7 @@ export * from './client.js';
 export * as schema from './schema/index.js';
 export {
   accounts,
+  bankRules,
   bankTransactions,
   billLines,
   bills,
@@ -21,6 +22,7 @@ export {
 } from './schema/index.js';
 export type {
   Account,
+  BankRule,
   BankTransaction,
   Bill,
   BillLine,
@@ -32,6 +34,7 @@ export type {
   JournalLine,
   Membership,
   NewAccount,
+  NewBankRule,
   NewBankTransaction,
   NewBill,
   NewBillLine,
