@@ -7,6 +7,7 @@ import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
 import { BankingList } from './BankingList';
 import { BillsList } from './BillsList';
+import { Chat } from './Chat';
 import { CustomersList } from './CustomersList';
 import { Dashboard } from './Dashboard';
 import { Imports } from './Imports';
@@ -29,6 +30,7 @@ interface Membership {
 
 const PAGE_TITLE: Record<View, string> = {
   dashboard: 'Dashboard',
+  chat: 'Ask Claude',
   invoices: 'Invoices',
   customers: 'Customers',
   bills: 'Bills',
@@ -121,6 +123,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
         <main className="flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto max-w-6xl space-y-6">
             {view === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
+            {view === 'chat' && <Chat />}
             {view === 'accounts' && <AccountsList />}
             {view === 'customers' && <CustomersList />}
             {view === 'vendors' && <VendorsList />}

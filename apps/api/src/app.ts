@@ -9,6 +9,7 @@ import { rlsContextPlugin } from './plugins/rls.js';
 import { companiesRoutes } from './routes/companies.js';
 import { bankingRoutes } from './routes/banking.js';
 import { billsRoutes } from './routes/bills.js';
+import { chatRoutes } from './routes/chat.js';
 import { customersRoutes } from './routes/customers.js';
 import { healthRoutes } from './routes/health.js';
 import { importsRoutes } from './routes/imports.js';
@@ -62,6 +63,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(importsRoutes, { prefix: '/v1' });
   await app.register(bankingRoutes, { prefix: '/v1' });
   await app.register(taxRatesRoutes, { prefix: '/v1' });
+  await app.register(chatRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {

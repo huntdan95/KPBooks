@@ -7,6 +7,7 @@
 
 export type View =
   | 'dashboard'
+  | 'chat'
   | 'invoices'
   | 'customers'
   | 'bills'
@@ -32,7 +33,13 @@ interface NavSection {
 }
 
 const SECTIONS: NavSection[] = [
-  { label: null, items: [{ id: 'dashboard', label: 'Dashboard' }] },
+  {
+    label: null,
+    items: [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'chat', label: 'Ask Claude' },
+    ],
+  },
   {
     label: 'Sales',
     items: [
