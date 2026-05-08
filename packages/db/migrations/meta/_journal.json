@@ -8,6 +8,13 @@
       "when": 1778183192787,
       "tag": "0000_green_eternity",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778250858365,
+      "tag": "0002_customers_vendors",
+      "breakpoints": true
     }
   ]
 }

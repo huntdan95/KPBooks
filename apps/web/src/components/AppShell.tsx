@@ -5,8 +5,10 @@ import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
 import { AccountsList } from './AccountsList';
+import { CustomersList } from './CustomersList';
 import { JournalEntryForm } from './JournalEntryForm';
 import { TrialBalance } from './TrialBalance';
+import { VendorsList } from './VendorsList';
 
 interface Membership {
   companyId: string;
@@ -14,10 +16,12 @@ interface Membership {
   role: 'owner' | 'admin' | 'bookkeeper' | 'viewer';
 }
 
-type View = 'accounts' | 'new-entry' | 'trial-balance';
+type View = 'accounts' | 'customers' | 'vendors' | 'new-entry' | 'trial-balance';
 
 const TABS: ReadonlyArray<{ id: View; label: string }> = [
   { id: 'accounts', label: 'Chart of Accounts' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'vendors', label: 'Vendors' },
   { id: 'new-entry', label: 'New Entry' },
   { id: 'trial-balance', label: 'Trial Balance' },
 ];
@@ -92,6 +96,8 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
           </div>
         )}
         {view === 'accounts' && <AccountsList />}
+        {view === 'customers' && <CustomersList />}
+        {view === 'vendors' && <VendorsList />}
         {view === 'new-entry' && <JournalEntryForm />}
         {view === 'trial-balance' && <TrialBalance />}
         <ReadyzSelfTest />

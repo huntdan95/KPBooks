@@ -1,0 +1,62 @@
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  date,
+  index,
+  jsonb,
+  numeric,
+  pgTable,
+  smallint,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { companies } from './companies';
+
+/**
+ * vendors
+ * One row per vendor (supplier) of a company. Used as the counterparty on
+ * bills and outgoing payments. The `is_1099_vendor` flag drives 1099 prep
+ * at year-end; `tax_id` holds the TIN/EIN we'll need on the form.
+ */
+export const vendors = pgTable(
+  'vendors',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    companyName: text('company_name'),
+    /** Client-assigned vendor number, e.g. "V-203". Optional but unique within a company when set. */
+    accountNumber: text('account_number'),
+    email: text('email'),
+    phone: text('phone'),
+    /** { street1, street2, city, state, postalCode, country } */
+    mailingAddress: jsonb('mailing_address').$type<Record<string, unknown>>(),
+    /** Default payment terms in days. Null = "Due on receipt". */
+    defaultTermsDays: smallint('default_terms_days'),
+    /** Mark vendors that should receive a 1099-NEC at year-end. */
+    is1099Vendor: boolean('is_1099_vendor').notNull().default(false),
+    /** TIN or EIN — required if is_1099_vendor is true. */
+    taxId: text('tax_id'),
+    notes: text('notes'),
+    isActive: boolean('is_active').notNull().default(true),
+    /** A/P opening balance carried over from a prior system (QB import). */
+    openingBalance: numeric('opening_balance', { precision: 19, scale: 4 }).notNull().default('0'),
+    openingBalanceDate: date('opening_balance_date', { mode: 'string' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    companyAccountNumberIdx: uniqueIndex('vendors_company_account_number_idx')
+      .on(t.companyId, t.accountNumber)
+      .where(sql`${t.accountNumber} IS NOT NULL`),
+    companyDisplayNameIdx: index('vendors_company_display_name_idx').on(t.companyId, t.displayName),
+    companyActiveIdx: index('vendors_company_active_idx').on(t.companyId, t.isActive),
+  }),
+);
+
+export type Vendor = typeof vendors.$inferSelect;
+export type NewVendor = typeof vendors.$inferInsert;
