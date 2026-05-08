@@ -15,9 +15,10 @@ interface Vendor {
   taxId: string | null;
   isActive: boolean;
   openingBalance: string;
+  notes?: string | null;
 }
 
-interface CreateBody {
+interface FormDraft {
   displayName: string;
   companyName?: string | undefined;
   accountNumber?: string | undefined;
@@ -27,15 +28,56 @@ interface CreateBody {
   is1099Vendor: boolean;
   taxId?: string | undefined;
   notes?: string | undefined;
+  isActive: boolean;
 }
 
-const blank: CreateBody = { displayName: '', is1099Vendor: false };
+type FormMode = null | { type: 'create' } | { type: 'edit'; id: string };
+
+const emptyDraft: FormDraft = { displayName: '', is1099Vendor: false, isActive: true };
+
+function rowToDraft(v: Vendor): FormDraft {
+  return {
+    displayName: v.displayName,
+    companyName: v.companyName ?? undefined,
+    accountNumber: v.accountNumber ?? undefined,
+    email: v.email ?? undefined,
+    phone: v.phone ?? undefined,
+    defaultTermsDays: v.defaultTermsDays ?? undefined,
+    is1099Vendor: v.is1099Vendor,
+    taxId: v.taxId ?? undefined,
+    notes: v.notes ?? undefined,
+    isActive: v.isActive,
+  };
+}
+
+function buildPayload(draft: FormDraft, mode: 'create' | 'edit'): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    displayName: draft.displayName.trim(),
+    is1099Vendor: draft.is1099Vendor,
+  };
+  out.companyName = draft.companyName?.trim() || null;
+  out.accountNumber = draft.accountNumber?.trim() || null;
+  out.email = draft.email?.trim() || null;
+  out.phone = draft.phone?.trim() || null;
+  out.taxId = draft.taxId?.trim() || null;
+  out.notes = draft.notes?.trim() || null;
+  out.defaultTermsDays =
+    draft.defaultTermsDays === undefined ? null : draft.defaultTermsDays;
+  if (mode === 'edit') out.isActive = draft.isActive;
+
+  if (mode === 'create') {
+    for (const k of Object.keys(out)) {
+      if (out[k] === null) delete out[k];
+    }
+  }
+  return out;
+}
 
 export function VendorsList() {
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [draft, setDraft] = useState<CreateBody>(blank);
+  const [mode, setMode] = useState<FormMode>(null);
+  const [draft, setDraft] = useState<FormDraft>(emptyDraft);
 
   const query = useQuery({
     queryKey: ['vendors', companyId],
@@ -43,35 +85,42 @@ export function VendorsList() {
     queryFn: () => api<{ vendors: Vendor[] }>('/vendors', { companyId }),
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (body: CreateBody) => {
-      const cleaned: Record<string, unknown> = {
-        displayName: body.displayName.trim(),
-        is1099Vendor: body.is1099Vendor,
-      };
-      if (body.companyName?.trim()) cleaned.companyName = body.companyName.trim();
-      if (body.accountNumber?.trim()) cleaned.accountNumber = body.accountNumber.trim();
-      if (body.email?.trim()) cleaned.email = body.email.trim();
-      if (body.phone?.trim()) cleaned.phone = body.phone.trim();
-      if (body.notes?.trim()) cleaned.notes = body.notes.trim();
-      if (body.taxId?.trim()) cleaned.taxId = body.taxId.trim();
-      if (body.defaultTermsDays !== undefined) cleaned.defaultTermsDays = body.defaultTermsDays;
-      return api<Vendor>('/vendors', { method: 'POST', companyId, body: cleaned });
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (mode === null) throw new Error('no mode');
+      const payload = buildPayload(draft, mode.type);
+      if (mode.type === 'create') {
+        return api<Vendor>('/vendors', { method: 'POST', companyId, body: payload });
+      }
+      return api<Vendor>(`/vendors/${mode.id}`, { method: 'PATCH', companyId, body: payload });
     },
     onSuccess: () => {
-      setDraft(blank);
-      setShowForm(false);
+      setMode(null);
+      setDraft(emptyDraft);
       void queryClient.invalidateQueries({ queryKey: ['vendors', companyId] });
     },
   });
+
+  function startCreate() {
+    setMode({ type: 'create' });
+    setDraft(emptyDraft);
+  }
+  function startEdit(v: Vendor) {
+    setMode({ type: 'edit', id: v.id });
+    setDraft(rowToDraft(v));
+  }
+  function cancel() {
+    setMode(null);
+    setDraft(emptyDraft);
+  }
 
   const taxIdMissing = draft.is1099Vendor && !(draft.taxId ?? '').trim();
   const canSubmit = !!draft.displayName.trim() && !taxIdMissing;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
-    createMutation.mutate(draft);
+    if (!canSubmit || mutation.isPending) return;
+    mutation.mutate();
   }
 
   const vendors = query.data?.vendors ?? [];
@@ -85,21 +134,18 @@ export function VendorsList() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            setShowForm((v) => !v);
-            if (showForm) setDraft(blank);
-          }}
+          onClick={mode ? cancel : startCreate}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          {showForm ? 'Cancel' : '+ New vendor'}
+          {mode ? 'Cancel' : '+ New vendor'}
         </button>
       </div>
 
-      {showForm && (
-        <form
-          onSubmit={onSubmit}
-          className="space-y-3 rounded-md border border-slate-200 bg-white p-4"
-        >
+      {mode && (
+        <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-medium text-slate-700">
+            {mode.type === 'create' ? 'New vendor' : `Edit vendor`}
+          </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Display name" required>
               <input
@@ -109,7 +155,7 @@ export function VendorsList() {
                 maxLength={200}
                 required
                 autoFocus
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Company name">
@@ -118,7 +164,7 @@ export function VendorsList() {
                 value={draft.companyName ?? ''}
                 onChange={(e) => setDraft({ ...draft, companyName: e.target.value })}
                 maxLength={200}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Account number">
@@ -128,7 +174,7 @@ export function VendorsList() {
                 onChange={(e) => setDraft({ ...draft, accountNumber: e.target.value })}
                 maxLength={40}
                 placeholder="V-203"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Email">
@@ -137,7 +183,7 @@ export function VendorsList() {
                 value={draft.email ?? ''}
                 onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                 maxLength={200}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Phone">
@@ -146,7 +192,7 @@ export function VendorsList() {
                 value={draft.phone ?? ''}
                 onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
                 maxLength={40}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Default terms (days)">
@@ -162,7 +208,7 @@ export function VendorsList() {
                   })
                 }
                 placeholder="30"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
           </div>
@@ -186,27 +232,46 @@ export function VendorsList() {
                 maxLength={40}
                 placeholder="12-3456789 or 123-45-6789"
                 required
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
+          )}
+
+          {mode.type === 'edit' && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={draft.isActive}
+                onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Active
+            </label>
           )}
 
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={!canSubmit || createMutation.isPending}
+              disabled={!canSubmit || mutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {createMutation.isPending ? 'Saving…' : 'Save vendor'}
+              {mutation.isPending ? 'Saving…' : mode.type === 'create' ? 'Save vendor' : 'Save changes'}
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Cancel
             </button>
             {taxIdMissing && (
               <span className="text-xs text-slate-500">Tax ID required for 1099 vendors.</span>
             )}
           </div>
 
-          {createMutation.isError && (
+          {mutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(createMutation.error)}
+              {formatError(mutation.error)}
             </div>
           )}
         </form>
@@ -218,8 +283,7 @@ export function VendorsList() {
           {query.error instanceof Error ? query.error.message : 'Failed to load vendors.'}
         </p>
       )}
-
-      {vendors.length === 0 && !query.isLoading && (
+      {!query.isLoading && vendors.length === 0 && (
         <p className="text-sm text-slate-500">No vendors yet. Add one above.</p>
       )}
 
@@ -235,6 +299,7 @@ export function VendorsList() {
                 <th className="px-4 py-2 text-right font-medium">Terms</th>
                 <th className="px-4 py-2 text-center font-medium">1099</th>
                 <th className="px-4 py-2 text-right font-medium">Opening balance</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -242,7 +307,10 @@ export function VendorsList() {
                 <tr key={v.id} className={v.isActive ? '' : 'opacity-60'}>
                   <td className="px-4 py-2 font-mono text-slate-500">{v.accountNumber ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-900">
-                    <div className="font-medium">{v.displayName}</div>
+                    <div className="font-medium">
+                      {v.displayName}
+                      {!v.isActive && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                    </div>
                     {v.companyName && <div className="text-xs text-slate-500">{v.companyName}</div>}
                   </td>
                   <td className="px-4 py-2 text-slate-700">{v.email ?? '—'}</td>
@@ -250,11 +318,18 @@ export function VendorsList() {
                   <td className="px-4 py-2 text-right text-slate-700">
                     {v.defaultTermsDays === null ? '—' : `Net ${v.defaultTermsDays}`}
                   </td>
-                  <td className="px-4 py-2 text-center text-slate-700">
-                    {v.is1099Vendor ? '✓' : '—'}
-                  </td>
+                  <td className="px-4 py-2 text-center text-slate-700">{v.is1099Vendor ? '✓' : '—'}</td>
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
                     {Number(v.openingBalance) === 0 ? '—' : v.openingBalance}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(v)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                    >
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -265,6 +340,9 @@ export function VendorsList() {
     </div>
   );
 }
+
+const inputClass =
+  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 
 function Field({
   label,

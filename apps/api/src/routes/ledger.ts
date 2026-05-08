@@ -22,6 +22,20 @@ const CreateAccount = z.object({
   description: z.string().max(500).optional(),
 });
 
+// PATCH only allows safe-to-change fields. type/subtype/parentId/companyId are
+// structural and changing them would invalidate posted journal lines, so we
+// reject those at the API layer rather than at the DB. Use a new account if
+// you need a different category.
+const UpdateAccount = z
+  .object({
+    code: z.string().min(1).max(40).optional(),
+    name: z.string().min(1).max(120).optional(),
+    currency: z.string().min(3).max(8).optional(),
+    description: z.string().max(500).nullable().optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
+
 export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', async (req) => {
     await app.requireAuth(req);
@@ -60,6 +74,33 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
         })
         .returning();
       return reply.status(201).send(created);
+    });
+  });
+
+  app.patch('/ledger/accounts/:id', async (req, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const body = UpdateAccount.parse(req.body);
+    return req.withTenantTx(async (tx) => {
+      const update: Record<string, unknown> = {};
+      if (body.code !== undefined) update.code = body.code;
+      if (body.name !== undefined) update.name = body.name;
+      if (body.currency !== undefined) update.currency = body.currency;
+      if (body.description !== undefined) update.description = body.description;
+      if (body.isActive !== undefined) update.isActive = body.isActive;
+
+      if (Object.keys(update).length === 0) {
+        const [row] = await tx.select().from(accounts).where(eq(accounts.id, id));
+        if (!row) return reply.status(404).send({ error: 'not_found' });
+        return row;
+      }
+
+      const [updated] = await tx
+        .update(accounts)
+        .set(update)
+        .where(eq(accounts.id, id))
+        .returning();
+      if (!updated) return reply.status(404).send({ error: 'not_found' });
+      return updated;
     });
   });
 

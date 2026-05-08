@@ -14,9 +14,10 @@ interface Customer {
   taxExempt: boolean;
   isActive: boolean;
   openingBalance: string;
+  notes?: string | null;
 }
 
-interface CreateBody {
+interface FormDraft {
   displayName: string;
   companyName?: string | undefined;
   accountNumber?: string | undefined;
@@ -25,15 +26,56 @@ interface CreateBody {
   defaultTermsDays?: number | undefined;
   taxExempt: boolean;
   notes?: string | undefined;
+  isActive: boolean;
 }
 
-const blank: CreateBody = { displayName: '', taxExempt: false };
+type FormMode = null | { type: 'create' } | { type: 'edit'; id: string };
+
+const emptyDraft: FormDraft = { displayName: '', taxExempt: false, isActive: true };
+
+function rowToDraft(c: Customer): FormDraft {
+  return {
+    displayName: c.displayName,
+    companyName: c.companyName ?? undefined,
+    accountNumber: c.accountNumber ?? undefined,
+    email: c.email ?? undefined,
+    phone: c.phone ?? undefined,
+    defaultTermsDays: c.defaultTermsDays ?? undefined,
+    taxExempt: c.taxExempt,
+    notes: c.notes ?? undefined,
+    isActive: c.isActive,
+  };
+}
+
+function buildPayload(draft: FormDraft, mode: 'create' | 'edit'): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    displayName: draft.displayName.trim(),
+    taxExempt: draft.taxExempt,
+  };
+  out.companyName = draft.companyName?.trim() || null;
+  out.accountNumber = draft.accountNumber?.trim() || null;
+  out.email = draft.email?.trim() || null;
+  out.phone = draft.phone?.trim() || null;
+  out.notes = draft.notes?.trim() || null;
+  out.defaultTermsDays =
+    draft.defaultTermsDays === undefined ? null : draft.defaultTermsDays;
+  if (mode === 'edit') out.isActive = draft.isActive;
+
+  // For create, the API doesn't accept null for some fields — drop them so
+  // server-side defaults apply. For PATCH, null = "clear this field".
+  if (mode === 'create') {
+    for (const k of Object.keys(out)) {
+      if (out[k] === null) delete out[k];
+    }
+  }
+  return out;
+}
 
 export function CustomersList() {
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [draft, setDraft] = useState<CreateBody>(blank);
+  const [mode, setMode] = useState<FormMode>(null);
+  const [draft, setDraft] = useState<FormDraft>(emptyDraft);
 
   const query = useQuery({
     queryKey: ['customers', companyId],
@@ -41,29 +83,39 @@ export function CustomersList() {
     queryFn: () => api<{ customers: Customer[] }>('/customers', { companyId }),
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (body: CreateBody) => {
-      // Drop empty optional strings so the server treats them as absent.
-      const cleaned: Record<string, unknown> = { displayName: body.displayName.trim(), taxExempt: body.taxExempt };
-      if (body.companyName?.trim()) cleaned.companyName = body.companyName.trim();
-      if (body.accountNumber?.trim()) cleaned.accountNumber = body.accountNumber.trim();
-      if (body.email?.trim()) cleaned.email = body.email.trim();
-      if (body.phone?.trim()) cleaned.phone = body.phone.trim();
-      if (body.notes?.trim()) cleaned.notes = body.notes.trim();
-      if (body.defaultTermsDays !== undefined) cleaned.defaultTermsDays = body.defaultTermsDays;
-      return api<Customer>('/customers', { method: 'POST', companyId, body: cleaned });
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (mode === null) throw new Error('no mode');
+      const payload = buildPayload(draft, mode.type);
+      if (mode.type === 'create') {
+        return api<Customer>('/customers', { method: 'POST', companyId, body: payload });
+      }
+      return api<Customer>(`/customers/${mode.id}`, { method: 'PATCH', companyId, body: payload });
     },
     onSuccess: () => {
-      setDraft(blank);
-      setShowForm(false);
+      setMode(null);
+      setDraft(emptyDraft);
       void queryClient.invalidateQueries({ queryKey: ['customers', companyId] });
     },
   });
 
+  function startCreate() {
+    setMode({ type: 'create' });
+    setDraft(emptyDraft);
+  }
+  function startEdit(c: Customer) {
+    setMode({ type: 'edit', id: c.id });
+    setDraft(rowToDraft(c));
+  }
+  function cancel() {
+    setMode(null);
+    setDraft(emptyDraft);
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.displayName.trim()) return;
-    createMutation.mutate(draft);
+    if (!draft.displayName.trim() || mutation.isPending) return;
+    mutation.mutate();
   }
 
   const customers = query.data?.customers ?? [];
@@ -77,23 +129,20 @@ export function CustomersList() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            setShowForm((v) => !v);
-            if (showForm) setDraft(blank);
-          }}
+          onClick={mode ? cancel : startCreate}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          {showForm ? 'Cancel' : '+ New customer'}
+          {mode ? 'Cancel' : '+ New customer'}
         </button>
       </div>
 
-      {showForm && (
-        <form
-          onSubmit={onSubmit}
-          className="space-y-3 rounded-md border border-slate-200 bg-white p-4"
-        >
+      {mode && (
+        <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-medium text-slate-700">
+            {mode.type === 'create' ? 'New customer' : `Edit customer`}
+          </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Display name *" required>
+            <Field label="Display name" required>
               <input
                 type="text"
                 value={draft.displayName}
@@ -101,7 +150,7 @@ export function CustomersList() {
                 maxLength={200}
                 required
                 autoFocus
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Company name">
@@ -110,7 +159,7 @@ export function CustomersList() {
                 value={draft.companyName ?? ''}
                 onChange={(e) => setDraft({ ...draft, companyName: e.target.value })}
                 maxLength={200}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Account number">
@@ -120,7 +169,7 @@ export function CustomersList() {
                 onChange={(e) => setDraft({ ...draft, accountNumber: e.target.value })}
                 maxLength={40}
                 placeholder="C-1042"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Email">
@@ -129,7 +178,7 @@ export function CustomersList() {
                 value={draft.email ?? ''}
                 onChange={(e) => setDraft({ ...draft, email: e.target.value })}
                 maxLength={200}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Phone">
@@ -138,7 +187,7 @@ export function CustomersList() {
                 value={draft.phone ?? ''}
                 onChange={(e) => setDraft({ ...draft, phone: e.target.value })}
                 maxLength={40}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
             <Field label="Default terms (days)">
@@ -154,7 +203,7 @@ export function CustomersList() {
                   })
                 }
                 placeholder="30"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                className={inputClass}
               />
             </Field>
           </div>
@@ -169,19 +218,38 @@ export function CustomersList() {
             Tax-exempt (sales tax not charged)
           </label>
 
+          {mode.type === 'edit' && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={draft.isActive}
+                onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Active
+            </label>
+          )}
+
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={!draft.displayName.trim() || createMutation.isPending}
+              disabled={!draft.displayName.trim() || mutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {createMutation.isPending ? 'Saving…' : 'Save customer'}
+              {mutation.isPending ? 'Saving…' : mode.type === 'create' ? 'Save customer' : 'Save changes'}
+            </button>
+            <button
+              type="button"
+              onClick={cancel}
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
+            >
+              Cancel
             </button>
           </div>
 
-          {createMutation.isError && (
+          {mutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(createMutation.error)}
+              {formatError(mutation.error)}
             </div>
           )}
         </form>
@@ -193,8 +261,7 @@ export function CustomersList() {
           {query.error instanceof Error ? query.error.message : 'Failed to load customers.'}
         </p>
       )}
-
-      {customers.length === 0 && !query.isLoading && (
+      {!query.isLoading && customers.length === 0 && (
         <p className="text-sm text-slate-500">No customers yet. Add one above.</p>
       )}
 
@@ -209,6 +276,7 @@ export function CustomersList() {
                 <th className="px-4 py-2 text-left font-medium">Phone</th>
                 <th className="px-4 py-2 text-right font-medium">Terms</th>
                 <th className="px-4 py-2 text-right font-medium">Opening balance</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -216,7 +284,10 @@ export function CustomersList() {
                 <tr key={c.id} className={c.isActive ? '' : 'opacity-60'}>
                   <td className="px-4 py-2 font-mono text-slate-500">{c.accountNumber ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-900">
-                    <div className="font-medium">{c.displayName}</div>
+                    <div className="font-medium">
+                      {c.displayName}
+                      {!c.isActive && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                    </div>
                     {c.companyName && <div className="text-xs text-slate-500">{c.companyName}</div>}
                   </td>
                   <td className="px-4 py-2 text-slate-700">{c.email ?? '—'}</td>
@@ -227,6 +298,15 @@ export function CustomersList() {
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
                     {Number(c.openingBalance) === 0 ? '—' : c.openingBalance}
                   </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(c)}
+                      className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                    >
+                      Edit
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -236,6 +316,9 @@ export function CustomersList() {
     </div>
   );
 }
+
+const inputClass =
+  'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 
 function Field({
   label,
