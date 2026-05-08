@@ -111,6 +111,17 @@ export interface ParsedTransaction {
   lines: ParsedSplit[];
 }
 
+export interface ReferencedAccount {
+  name: string;
+  /** Suggested mapping inferred from name keywords. User can override in UI. */
+  suggestedType: AccountType;
+  suggestedSubtype: AccountSubtype;
+  /** A 4-digit code suggestion in the right range for the suggested type. */
+  suggestedCode: string;
+  /** How many transactions reference this name (helps the user prioritise review). */
+  occurrences: number;
+}
+
 export interface IifPreview {
   accounts: ParsedAccount[];
   customers: ParsedCustomer[];
@@ -120,6 +131,13 @@ export interface IifPreview {
   transactionCounts: Record<string, number>;
   /** Non-posting transaction types we deliberately skipped. */
   nonPostingSkipped: number;
+  /**
+   * Account names referenced in TRNS/SPL rows but NOT defined in this file's
+   * !ACCNT section AND not already in the company's chart of accounts.
+   * Caller can include these (with possibly-edited type/subtype) in the
+   * commit accounts array to have them auto-created before transactions post.
+   */
+  missingAccounts: ReferencedAccount[];
   /** Lines we couldn't classify -- shown so the user knows what was ignored. */
   unrecognizedSections: string[];
   /** Parser warnings (unmapped account types, malformed rows, etc.). */
@@ -435,9 +453,134 @@ export function parseIif(text: string): IifPreview {
     transactions,
     transactionCounts,
     nonPostingSkipped,
+    missingAccounts: [], // populated by the API layer (needs DB access)
     unrecognizedSections,
     warnings,
   };
+}
+
+/**
+ * Heuristic: guess (type, subtype) from an account name. Used when an IIF
+ * transaction references an account that isn't in the company's chart of
+ * accounts AND wasn't included in the file's own !ACCNT section.
+ *
+ * Order matters -- more specific patterns first. The user can override the
+ * suggestion in the preview UI before committing.
+ */
+export function inferAccountType(name: string): {
+  type: AccountType;
+  subtype: AccountSubtype;
+} {
+  const n = name.toLowerCase();
+
+  // Bank-like.
+  if (/\b(checking|savings|money market|petty cash|cash on hand|operating account)\b/.test(n)) {
+    return { type: 'asset', subtype: 'bank' };
+  }
+  // Credit card / line-of-credit.
+  if (/\b(credit card|ccard|visa|amex|mastercard|discover)\b/.test(n)) {
+    return { type: 'liability', subtype: 'credit_card' };
+  }
+  // A/R + A/P (specific phrases first to avoid false positives).
+  if (/\b(accounts? receivable|a\/r)\b/.test(n) && !/payable/.test(n)) {
+    return { type: 'asset', subtype: 'accounts_receivable' };
+  }
+  if (/\b(accounts? payable|a\/p)\b/.test(n) && !/receivable/.test(n)) {
+    return { type: 'liability', subtype: 'accounts_payable' };
+  }
+  // Sales tax / payroll liabilities (other_current_liability bucket).
+  if (/\b(sales tax|payroll|withholding|liability|payable)\b/.test(n)) {
+    if (/long.?term|note|loan|mortgage/.test(n)) {
+      return { type: 'liability', subtype: 'long_term_liability' };
+    }
+    return { type: 'liability', subtype: 'other_current_liability' };
+  }
+  if (/\b(loan|mortgage|note payable)\b/.test(n)) {
+    return { type: 'liability', subtype: 'long_term_liability' };
+  }
+  // Fixed assets. Handle common plurals.
+  if (/\b(equipment|vehicles?|trucks?|machinery|buildings?|furniture|fixtures?|land|computers?)\b/.test(n)) {
+    return { type: 'asset', subtype: 'fixed_asset' };
+  }
+  // Inventory / WIP / prepaid -> other current asset.
+  if (/\b(inventory|stock|wip|work in progress|prepaid|deposits?|undeposited)\b/.test(n)) {
+    return { type: 'asset', subtype: 'other_current_asset' };
+  }
+  // Equity.
+  if (/\b(retained earnings)\b/.test(n)) {
+    return { type: 'equity', subtype: 'retained_earnings' };
+  }
+  if (/\b(equity|capital|owner.{0,5}draw|owner.{0,5}contribut|partners?)\b/.test(n)) {
+    return { type: 'equity', subtype: 'equity' };
+  }
+  // Income / revenue. Check "other income" before "income".
+  if (/\b(other income|interest income|gain on)\b/.test(n)) {
+    return { type: 'revenue', subtype: 'other_income' };
+  }
+  if (/\b(income|revenue|sales|service|fees? collected|consulting)\b/.test(n)) {
+    return { type: 'revenue', subtype: 'income' };
+  }
+  // COGS.
+  if (/\b(cost of goods|cogs|materials|labor|freight in|direct cost)\b/.test(n)) {
+    return { type: 'expense', subtype: 'cost_of_goods_sold' };
+  }
+  // Other expense (interest paid, depreciation, taxes, etc.).
+  if (/\b(interest expense|depreciation|amortization|tax expense|loss on|other expense)\b/.test(n)) {
+    return { type: 'expense', subtype: 'other_expense' };
+  }
+  // Default -> ordinary expense (most "X Expense", "Office", "Rent", "Utilities" etc.).
+  return { type: 'expense', subtype: 'expense' };
+}
+
+const TYPE_CODE_PREFIX_FOR_INFER: Record<AccountType, number> = TYPE_CODE_PREFIX;
+
+/**
+ * Build the missingAccounts list for a preview. Caller passes the set of
+ * existing-DB account names + IIF !ACCNT names; we subtract those from the
+ * names referenced by transactions, infer types, and assign suggested codes.
+ */
+export function buildMissingAccounts(
+  preview: IifPreview,
+  existingNames: ReadonlySet<string>,
+): ReferencedAccount[] {
+  const referenced = new Map<string, number>(); // name -> count
+  for (const t of preview.transactions) {
+    for (const line of t.lines) {
+      const key = line.account;
+      referenced.set(key, (referenced.get(key) ?? 0) + 1);
+    }
+  }
+
+  // Lower-cased lookup set: we treat name comparison as case-insensitive but
+  // preserve the original casing from the first occurrence.
+  const knownLower = new Set<string>();
+  for (const n of existingNames) knownLower.add(n.toLowerCase());
+  for (const a of preview.accounts) knownLower.add(a.name.toLowerCase());
+
+  // Counters per type so suggested codes don't collide within the import.
+  const counters: Record<AccountType, number> = {
+    asset: 0,
+    liability: 0,
+    equity: 0,
+    revenue: 0,
+    expense: 0,
+  };
+  const out: ReferencedAccount[] = [];
+  const sortedNames = Array.from(referenced.keys()).sort();
+  for (const name of sortedNames) {
+    if (knownLower.has(name.toLowerCase())) continue;
+    const inferred = inferAccountType(name);
+    counters[inferred.type]++;
+    const code = String(TYPE_CODE_PREFIX_FOR_INFER[inferred.type] + counters[inferred.type] * 10 + 5);
+    out.push({
+      name,
+      suggestedType: inferred.type,
+      suggestedSubtype: inferred.subtype,
+      suggestedCode: code,
+      occurrences: referenced.get(name) ?? 0,
+    });
+  }
+  return out;
 }
 
 function parseTrnsRow(

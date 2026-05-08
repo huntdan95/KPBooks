@@ -74,6 +74,13 @@ interface ParsedTransaction {
   reference?: string;
   lines: ParsedSplit[];
 }
+interface ReferencedAccount {
+  name: string;
+  suggestedType: AccountType;
+  suggestedSubtype: AccountSubtype;
+  suggestedCode: string;
+  occurrences: number;
+}
 interface IifPreview {
   accounts: ParsedAccount[];
   customers: ParsedCustomer[];
@@ -81,6 +88,7 @@ interface IifPreview {
   transactions: ParsedTransaction[];
   transactionCounts: Record<string, number>;
   nonPostingSkipped: number;
+  missingAccounts: ReferencedAccount[];
   unrecognizedSections: string[];
   warnings: string[];
 }
@@ -117,6 +125,10 @@ export function Imports() {
   const [customerInclude, setCustomerInclude] = useState<boolean[]>([]);
   const [vendorInclude, setVendorInclude] = useState<boolean[]>([]);
   const [includeTransactions, setIncludeTransactions] = useState<boolean>(true);
+  // Missing-accounts state: include flag + editable type/subtype/code per row.
+  const [missingDraft, setMissingDraft] = useState<
+    Array<ReferencedAccount & { include: boolean }>
+  >([]);
 
   const previewMutation = useMutation({
     mutationFn: async (text: string) =>
@@ -126,6 +138,9 @@ export function Imports() {
       setAccountInclude(data.accounts.map(() => true));
       setCustomerInclude(data.customers.map(() => true));
       setVendorInclude(data.vendors.map(() => true));
+      setMissingDraft(
+        (data.missingAccounts ?? []).map((m) => ({ ...m, include: true })),
+      );
       setStage('preview');
     },
     onError: (err) => {
@@ -136,7 +151,7 @@ export function Imports() {
   const commitMutation = useMutation({
     mutationFn: async () => {
       if (!preview) throw new Error('no preview');
-      const accounts = preview.accounts
+      const fromIif = preview.accounts
         .filter((_, i) => accountInclude[i])
         .map((a) => ({
           name: a.name,
@@ -145,6 +160,15 @@ export function Imports() {
           code: a.suggestedCode,
           ...(a.description ? { description: a.description } : {}),
         }));
+      const fromMissing = missingDraft
+        .filter((m) => m.include)
+        .map((m) => ({
+          name: m.name,
+          type: m.suggestedType,
+          subtype: m.suggestedSubtype,
+          code: m.suggestedCode,
+        }));
+      const accounts = [...fromIif, ...fromMissing];
       const customers = preview.customers
         .filter((_, i) => customerInclude[i])
         .map((c) => stripUndef(c));
@@ -198,8 +222,32 @@ export function Imports() {
     setAccountInclude([]);
     setCustomerInclude([]);
     setVendorInclude([]);
+    setMissingDraft([]);
     setIncludeTransactions(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  const SUBTYPES_BY_TYPE: Record<AccountType, AccountSubtype[]> = {
+    asset: ['bank', 'accounts_receivable', 'other_current_asset', 'fixed_asset', 'other_asset'],
+    liability: ['accounts_payable', 'credit_card', 'other_current_liability', 'long_term_liability'],
+    equity: ['equity', 'retained_earnings'],
+    revenue: ['income', 'other_income'],
+    expense: ['expense', 'cost_of_goods_sold', 'other_expense'],
+  };
+
+  function updateMissing(idx: number, patch: Partial<ReferencedAccount & { include: boolean }>) {
+    setMissingDraft((prev) =>
+      prev.map((m, i) => {
+        if (i !== idx) return m;
+        const next = { ...m, ...patch };
+        // If type changed, snap subtype to the first valid one for that type.
+        if (patch.suggestedType && patch.suggestedType !== m.suggestedType) {
+          const opts = SUBTYPES_BY_TYPE[patch.suggestedType];
+          if (opts && opts.length > 0) next.suggestedSubtype = opts[0]!;
+        }
+        return next;
+      }),
+    );
   }
 
   async function handleFile(file: File) {
@@ -265,6 +313,9 @@ export function Imports() {
               {preview.vendors.length} vendors · {preview.transactions.length} postable transactions
               {preview.nonPostingSkipped > 0 && (
                 <> · {preview.nonPostingSkipped} non-posting (estimates / orders)</>
+              )}
+              {missingDraft.length > 0 && (
+                <> · {missingDraft.length} missing accounts to auto-create</>
               )}
             </p>
             {preview.unrecognizedSections.length > 0 && (
@@ -417,6 +468,107 @@ export function Imports() {
                 </tbody>
               </table>
             </PreviewSection>
+          )}
+
+          {missingDraft.length > 0 && (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-slate-700">
+                  Missing accounts referenced by transactions{' '}
+                  <span className="text-slate-500">({missingDraft.length})</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMissingDraft((prev) => {
+                      const allOn = prev.every((m) => m.include);
+                      return prev.map((m) => ({ ...m, include: !allOn }));
+                    })
+                  }
+                  className="text-xs text-slate-600 underline hover:text-slate-900"
+                >
+                  {missingDraft.every((m) => m.include) ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">
+                These account names appear in the file's transactions but aren't in your chart of
+                accounts and aren't being created from this file's account section. We've guessed a
+                type/subtype from each name — review and edit, then confirm. Auto-created accounts
+                are committed before transactions post, so the JEs land cleanly.
+              </p>
+              <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th className="w-10 px-3 py-2"></th>
+                      <th className="px-3 py-2 text-left font-medium">Code</th>
+                      <th className="px-3 py-2 text-left font-medium">Name</th>
+                      <th className="px-3 py-2 text-left font-medium">Type</th>
+                      <th className="px-3 py-2 text-left font-medium">Subtype</th>
+                      <th className="px-3 py-2 text-right font-medium">Used in</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {missingDraft.map((m, i) => (
+                      <tr key={m.name} className={m.include ? '' : 'opacity-40'}>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={m.include}
+                            onChange={(e) => updateMissing(i, { include: e.target.checked })}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={m.suggestedCode}
+                            onChange={(e) => updateMissing(i, { suggestedCode: e.target.value })}
+                            maxLength={40}
+                            className="w-24 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs focus:border-slate-900 focus:outline-none"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-slate-900">{m.name}</td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={m.suggestedType}
+                            onChange={(e) =>
+                              updateMissing(i, { suggestedType: e.target.value as AccountType })
+                            }
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-slate-900 focus:outline-none"
+                          >
+                            <option value="asset">asset</option>
+                            <option value="liability">liability</option>
+                            <option value="equity">equity</option>
+                            <option value="revenue">revenue</option>
+                            <option value="expense">expense</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <select
+                            value={m.suggestedSubtype}
+                            onChange={(e) =>
+                              updateMissing(i, {
+                                suggestedSubtype: e.target.value as AccountSubtype,
+                              })
+                            }
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-slate-900 focus:outline-none"
+                          >
+                            {SUBTYPES_BY_TYPE[m.suggestedType].map((s) => (
+                              <option key={s} value={s}>
+                                {s.replace(/_/g, ' ')}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-600">
+                          {m.occurrences} txn{m.occurrences === 1 ? '' : 's'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           )}
 
           {preview.transactions.length > 0 && (
