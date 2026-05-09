@@ -9,9 +9,11 @@ import {
   balanceSheet,
   complianceExpiring,
   nineteenNinetyNineSummary,
+  payrollRegister,
   profitAndLoss,
   statementOfCashFlows,
   trialBalance,
+  workersCompSummary,
 } from '../modules/ledger/reports.service.js';
 
 const DateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
@@ -162,6 +164,22 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/ap-aging', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => apAging(tx, asOf));
+  });
+
+  app.get('/ledger/reports/payroll-register', async (req) => {
+    const { from, to, workerType } = z
+      .object({
+        from: DateOnly,
+        to: DateOnly,
+        workerType: z.enum(['contractor', 'employee', 'subcontractor']).optional(),
+      })
+      .parse(req.query);
+    return req.withTenantTx(async (tx) => payrollRegister(tx, from, to, workerType));
+  });
+
+  app.get('/ledger/reports/workers-comp-summary', async (req) => {
+    const { from, to } = z.object({ from: DateOnly, to: DateOnly }).parse(req.query);
+    return req.withTenantTx(async (tx) => workersCompSummary(tx, from, to));
   });
 
   app.get('/ledger/reports/compliance-expiring', async (req) => {

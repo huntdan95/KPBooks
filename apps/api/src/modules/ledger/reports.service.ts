@@ -620,6 +620,181 @@ export async function statementOfCashFlows(
   };
 }
 
+// ─── Payroll register + Workers' comp (Phase B of payroll-tracking) ──────
+
+export interface PayrollRegisterRow {
+  vendorId: string;
+  displayName: string;
+  workerType: 'contractor' | 'employee' | 'subcontractor' | 'not_a_worker';
+  taxId: string | null;
+  workersCompClass: string | null;
+  paySchedule: string | null;
+  paymentCount: number;
+  totalPaid: string;
+}
+
+export interface PayrollRegisterTotals {
+  totalPaid: string;
+  totalPayments: number;
+  byWorkerType: Array<{
+    workerType: 'contractor' | 'employee' | 'subcontractor' | 'not_a_worker';
+    count: number;
+    total: string;
+  }>;
+}
+
+export interface PayrollRegister {
+  from: string;
+  to: string;
+  rows: PayrollRegisterRow[];
+  totals: PayrollRegisterTotals;
+}
+
+/**
+ * Date-range listing of every active worker (contractor / subcontractor /
+ * employee) and what they were paid in non-voided vendor_sent payments
+ * during [from, to]. Workers with zero paid in the range are still
+ * included so the user sees who they DIDN'T pay this period -- useful
+ * for spotting missed paychecks.
+ *
+ * Optional workerType filter narrows the report to one classification at a
+ * time; default returns all three.
+ */
+export async function payrollRegister(
+  db: Database,
+  from: string,
+  to: string,
+  workerType?: 'contractor' | 'employee' | 'subcontractor',
+): Promise<PayrollRegister> {
+  const rows = await db.execute(sql`
+    SELECT
+      v.id            AS vendor_id,
+      v.display_name  AS display_name,
+      v.worker_type   AS worker_type,
+      v.tax_id        AS tax_id,
+      v.workers_comp_class AS workers_comp_class,
+      v.pay_schedule  AS pay_schedule,
+      COUNT(p.id) FILTER (WHERE p.id IS NOT NULL) AS payment_count,
+      COALESCE(SUM(p.amount) FILTER (WHERE p.id IS NOT NULL), 0) AS total_paid
+    FROM vendors v
+    LEFT JOIN payments p
+           ON p.vendor_id = v.id
+          AND p.payment_type = 'vendor_sent'
+          AND p.status = 'posted'
+          AND p.payment_date BETWEEN ${from}::date AND ${to}::date
+    WHERE v.worker_type <> 'not_a_worker'
+      AND v.is_active = true
+      ${workerType ? sql`AND v.worker_type = ${workerType}` : sql``}
+    GROUP BY v.id, v.display_name, v.worker_type, v.tax_id,
+             v.workers_comp_class, v.pay_schedule
+    ORDER BY total_paid DESC, v.display_name ASC
+  `);
+
+  const SCALE = 10000n;
+  let totalPaidMinor = 0n;
+  let totalPayments = 0;
+  const byTypeMap = new Map<
+    string,
+    { workerType: PayrollRegisterRow['workerType']; count: number; total: bigint }
+  >();
+  const out: PayrollRegisterRow[] = [];
+
+  for (const r of rows as unknown as Array<Record<string, unknown>>) {
+    const wt = r.worker_type as PayrollRegisterRow['workerType'];
+    const totalStr = String(r.total_paid ?? '0');
+    const minor = decimalToMinor(totalStr, SCALE);
+    const count = Number(r.payment_count ?? 0);
+    totalPaidMinor += minor;
+    totalPayments += count;
+    const bucket = byTypeMap.get(wt) ?? { workerType: wt, count: 0, total: 0n };
+    bucket.count += count;
+    bucket.total += minor;
+    byTypeMap.set(wt, bucket);
+    out.push({
+      vendorId: String(r.vendor_id),
+      displayName: String(r.display_name),
+      workerType: wt,
+      taxId: r.tax_id ? String(r.tax_id) : null,
+      workersCompClass: r.workers_comp_class ? String(r.workers_comp_class) : null,
+      paySchedule: r.pay_schedule ? String(r.pay_schedule) : null,
+      paymentCount: count,
+      totalPaid: totalStr,
+    });
+  }
+
+  return {
+    from,
+    to,
+    rows: out,
+    totals: {
+      totalPaid: minorToDecimal(totalPaidMinor, SCALE),
+      totalPayments,
+      byWorkerType: Array.from(byTypeMap.values()).map((b) => ({
+        workerType: b.workerType,
+        count: b.count,
+        total: minorToDecimal(b.total, SCALE),
+      })),
+    },
+  };
+}
+
+export interface WorkersCompSummaryRow {
+  workersCompClass: string | null;
+  workerCount: number;
+  totalPaid: string;
+}
+
+export interface WorkersCompSummary {
+  from: string;
+  to: string;
+  rows: WorkersCompSummaryRow[];
+  totalPaid: string;
+}
+
+/**
+ * Per-class aggregate of payments to active workers in [from, to].
+ * Workers with no class set bucket into a single 'unclassified' row so the
+ * bookkeeper can spot them and assign codes. Audit / WC-insurance
+ * recertification season is the typical caller.
+ */
+export async function workersCompSummary(
+  db: Database,
+  from: string,
+  to: string,
+): Promise<WorkersCompSummary> {
+  const rows = await db.execute(sql`
+    SELECT
+      v.workers_comp_class AS workers_comp_class,
+      COUNT(DISTINCT v.id) AS worker_count,
+      COALESCE(SUM(p.amount), 0) AS total_paid
+    FROM vendors v
+    INNER JOIN payments p
+            ON p.vendor_id = v.id
+           AND p.payment_type = 'vendor_sent'
+           AND p.status = 'posted'
+           AND p.payment_date BETWEEN ${from}::date AND ${to}::date
+    WHERE v.worker_type <> 'not_a_worker'
+      AND v.is_active = true
+    GROUP BY v.workers_comp_class
+    ORDER BY total_paid DESC NULLS LAST
+  `);
+
+  const SCALE = 10000n;
+  let grand = 0n;
+  const out: WorkersCompSummaryRow[] = (
+    rows as unknown as Array<Record<string, unknown>>
+  ).map((r) => {
+    const totalStr = String(r.total_paid ?? '0');
+    grand += decimalToMinor(totalStr, SCALE);
+    return {
+      workersCompClass: r.workers_comp_class ? String(r.workers_comp_class) : null,
+      workerCount: Number(r.worker_count ?? 0),
+      totalPaid: totalStr,
+    };
+  });
+  return { from, to, rows: out, totalPaid: minorToDecimal(grand, SCALE) };
+}
+
 // ─── Compliance-expiring (Phase A of payroll-tracking slice) ─────────────
 
 export interface ComplianceExpirationRow {

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
+import { PayrollRegister } from './PayrollRegister';
 import { PeriodClose } from './PeriodClose';
 import { ProfitAndLoss } from './ProfitAndLoss';
 import { StatementOfCashFlows } from './StatementOfCashFlows';
 import { TaxRates } from './TaxRates';
 import { TrialBalance } from './TrialBalance';
+import { WorkersCompSummary } from './WorkersCompSummary';
 
 type ReportView =
   | 'trial-balance'
@@ -14,6 +16,8 @@ type ReportView =
   | 'cash-flows'
   | 'ar-aging'
   | 'ap-aging'
+  | 'payroll-register'
+  | 'workers-comp'
   | 'period-close'
   | 'tax-rates';
 
@@ -24,6 +28,8 @@ const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'cash-flows', label: 'Cash Flows' },
   { id: 'ar-aging', label: 'A/R Aging' },
   { id: 'ap-aging', label: 'A/P Aging' },
+  { id: 'payroll-register', label: 'Payroll Register' },
+  { id: 'workers-comp', label: "Workers' Comp" },
   { id: 'period-close', label: 'Close Period' },
   { id: 'tax-rates', label: 'Tax Rates' },
 ];
@@ -62,6 +68,8 @@ export function Reports() {
       {view === 'cash-flows' && <StatementOfCashFlows />}
       {view === 'ar-aging' && <Aging mode="ar" />}
       {view === 'ap-aging' && <Aging mode="ap" />}
+      {view === 'payroll-register' && <PayrollRegister />}
+      {view === 'workers-comp' && <WorkersCompSummary />}
       {view === 'period-close' && <PeriodClose />}
       {view === 'tax-rates' && <TaxRates />}
     </div>
