@@ -1059,6 +1059,7 @@ function WorkerDetailView({
                     <th className="px-4 py-2 text-left font-medium">Method</th>
                     <th className="px-4 py-2 text-left font-medium">Memo</th>
                     <th className="px-4 py-2 text-right font-medium">Amount</th>
+                    <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1072,6 +1073,9 @@ function WorkerDetailView({
                       <td className="px-4 py-2 text-slate-700">{p.memo ?? ''}</td>
                       <td className="px-4 py-2 text-right font-mono text-slate-900">
                         {formatUsd(p.amount)}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <PayStubLink paymentId={p.id} payDate={p.paymentDate} workerName={data.displayName} />
                       </td>
                     </tr>
                   ))}
@@ -1213,6 +1217,70 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * Per-payment pay-stub download link in the Recent Payments table.
+ * Same auth pattern as the worker-document download: build the URL and
+ * fetch with a Bearer token + tenant header, then download the blob.
+ */
+function PayStubLink({
+  paymentId,
+  payDate,
+  workerName,
+}: {
+  paymentId: string;
+  payDate: string;
+  workerName: string;
+}) {
+  const { companyId } = useCurrentCompany();
+  const [busy, setBusy] = useState(false);
+
+  async function downloadStub() {
+    setBusy(true);
+    try {
+      const token = await getIdToken();
+      const res = await fetch(`${getApiBase()}/payments/${paymentId}/pay-stub.pdf`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(companyId ? { 'x-kpbooks-company': companyId } : {}),
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          (body && typeof body === 'object' && 'message' in body
+            ? String((body as { message?: string }).message)
+            : '') || `HTTP ${res.status}`,
+        );
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${workerName.replace(/[^A-Za-z0-9]+/g, '_')}_PayStub_${payDate}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Download failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={downloadStub}
+      disabled={busy}
+      className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
+      title="Download a printable pay stub for this payment"
+    >
+      {busy ? '…' : 'Stub'}
+    </button>
+  );
 }
 
 function DocumentRowView({
