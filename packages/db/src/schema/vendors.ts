@@ -14,7 +14,12 @@ import {
 } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { companies } from './companies';
-import { payRateBasisEnum, workerTypeEnum } from './enums';
+import {
+  payRateBasisEnum,
+  payScheduleEnum,
+  payrollFilingStatusEnum,
+  workerTypeEnum,
+} from './enums';
 
 /**
  * vendors
@@ -68,6 +73,35 @@ export const vendors = pgTable(
       onDelete: 'set null',
     }),
     workersCompClass: text('workers_comp_class'),
+    // ---- W-2 employee tracking (display only -- KPBooks doesn't compute taxes)
+    /** W-4 filing status. Required for proper W-2 prep at year end. */
+    w2FilingStatus: payrollFilingStatusEnum('w2_filing_status'),
+    /** Legacy W-4 (pre-2020). Modern W-4 uses dependents/deductions instead but
+     *  many bookkeepers still record allowances here. */
+    w2Allowances: smallint('w2_allowances'),
+    /** Modern W-4 (2020+) Box 4c -- additional federal withholding per check. */
+    w2AdditionalWithholding: numeric('w2_additional_withholding', { precision: 19, scale: 4 }),
+    /** State for state-tax-withholding purposes (e.g. "TX", "CA"). */
+    w2State: text('w2_state'),
+    /** How often the worker is paid. Distinct from payRateBasis (which describes
+     *  what the rate means). A worker can be paid $25/hr (pay_rate_basis=hourly)
+     *  on a biweekly check schedule (pay_schedule=biweekly). */
+    paySchedule: payScheduleEnum('pay_schedule'),
+    // ---- Subcontractor compliance (construction industry)
+    licenseNumber: text('license_number'),
+    licenseState: text('license_state'),
+    licenseExpiration: date('license_expiration', { mode: 'string' }),
+    insuranceGeneralLiabilityCarrier: text('insurance_general_liability_carrier'),
+    insuranceGeneralLiabilityPolicyNumber: text('insurance_general_liability_policy_number'),
+    insuranceGeneralLiabilityExpiration: date('insurance_general_liability_expiration', {
+      mode: 'string',
+    }),
+    insuranceWorkersCompCarrier: text('insurance_workers_comp_carrier'),
+    insuranceWorkersCompPolicyNumber: text('insurance_workers_comp_policy_number'),
+    insuranceWorkersCompExpiration: date('insurance_workers_comp_expiration', { mode: 'string' }),
+    /** When true, the bookkeeper expects a lien-waiver signed by this sub
+     *  on every payment. Drives a "missing lien waiver" warning on payments. */
+    lienWaiverRequired: boolean('lien_waiver_required').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

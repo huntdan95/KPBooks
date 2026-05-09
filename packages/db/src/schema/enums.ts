@@ -107,6 +107,22 @@ export const workerTypeEnum = pgEnum('worker_type', [
   'contractor',
   'employee',
   'not_a_worker',
+  'subcontractor',
+]);
+
+export const payrollFilingStatusEnum = pgEnum('payroll_filing_status', [
+  'single',
+  'married_jointly',
+  'married_separately',
+  'head_of_household',
+  'qualifying_widow',
+]);
+
+export const payScheduleEnum = pgEnum('pay_schedule', [
+  'weekly',
+  'biweekly',
+  'semimonthly',
+  'monthly',
 ]);
 
 export const payRateBasisEnum = pgEnum('pay_rate_basis', [

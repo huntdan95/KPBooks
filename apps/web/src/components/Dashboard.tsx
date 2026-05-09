@@ -45,6 +45,17 @@ interface BillListRow {
   vendorName: string;
 }
 
+interface ComplianceExpiringResponse {
+  withinDays: number;
+  rows: Array<{
+    vendorId: string;
+    displayName: string;
+    documentType: 'license' | 'general_liability' | 'workers_comp';
+    expirationDate: string;
+    daysUntilExpiration: number;
+  }>;
+}
+
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => {
   const d = new Date();
@@ -108,6 +119,15 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
     queryFn: () => api<{ bills: BillListRow[] }>('/bills?status=open', { companyId }),
   });
 
+  const compliance = useQuery({
+    queryKey: ['dashboard-compliance', companyId],
+    enabled: Boolean(companyId),
+    queryFn: () =>
+      api<ComplianceExpiringResponse>('/ledger/reports/compliance-expiring?withinDays=30', {
+        companyId,
+      }),
+  });
+
   const recentInvoices = useMemo(() => (invoices.data?.invoices ?? []).slice(0, 5), [invoices.data]);
   const recentBills = useMemo(() => (bills.data?.bills ?? []).slice(0, 5), [bills.data]);
   const overdueInvoices = useMemo(
@@ -120,6 +140,11 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
     () =>
       (bills.data?.bills ?? []).filter((b) => b.dueDate < today && Number(b.balanceDue) > 0).length,
     [bills.data, today],
+  );
+  const expiringCount = compliance.data?.rows.length ?? 0;
+  const alreadyExpired = useMemo(
+    () => (compliance.data?.rows ?? []).filter((r) => r.daysUntilExpiration < 0).length,
+    [compliance.data],
   );
 
   const monthLabel = new Date(today + 'T00:00:00Z').toLocaleString('default', {
@@ -135,6 +160,34 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
           Snapshot for {monthLabel} (month-to-date) and outstanding A/R + A/P as of {today}.
         </p>
       </div>
+
+      {expiringCount > 0 && (
+        <button
+          type="button"
+          onClick={() => onNavigate?.('workers')}
+          className={
+            'block w-full rounded-md border px-4 py-3 text-left text-sm transition-colors ' +
+            (alreadyExpired > 0
+              ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100'
+              : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100')
+          }
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <strong>Compliance alerts:</strong>{' '}
+              {alreadyExpired > 0
+                ? `${alreadyExpired} expired, ${expiringCount - alreadyExpired} expiring within 30 days`
+                : `${expiringCount} subcontractor doc${expiringCount === 1 ? '' : 's'} expiring within 30 days`}
+              <span className="ml-1 text-xs opacity-80">
+                (license / GL / WC across your subs — click to review)
+              </span>
+            </div>
+            <span className="rounded-md bg-white/70 px-2 py-1 font-mono text-xs">
+              {expiringCount}
+            </span>
+          </div>
+        </button>
+      )}
 
       {/* ----------- KPI tiles ------------- */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

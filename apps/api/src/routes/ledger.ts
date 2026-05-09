@@ -7,6 +7,7 @@ import {
   apAging,
   arAging,
   balanceSheet,
+  complianceExpiring,
   nineteenNinetyNineSummary,
   profitAndLoss,
   statementOfCashFlows,
@@ -161,6 +162,16 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/ap-aging', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => apAging(tx, asOf));
+  });
+
+  app.get('/ledger/reports/compliance-expiring', async (req) => {
+    const { withinDays } = z
+      .object({ withinDays: z.coerce.number().int().min(0).max(365).default(30) })
+      .parse(req.query);
+    return req.withTenantTx(async (tx) => ({
+      withinDays,
+      rows: await complianceExpiring(tx, withinDays),
+    }));
   });
 
   app.get('/ledger/reports/1099-summary', async (req) => {

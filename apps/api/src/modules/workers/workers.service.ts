@@ -38,7 +38,7 @@ export const DOCUMENT_TYPES = [
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
-export const WORKER_TYPES = ['contractor', 'employee', 'not_a_worker'] as const;
+export const WORKER_TYPES = ['contractor', 'employee', 'not_a_worker', 'subcontractor'] as const;
 export type WorkerType = (typeof WORKER_TYPES)[number];
 
 export const PAY_RATE_BASES = [
@@ -48,6 +48,16 @@ export const PAY_RATE_BASES = [
   'monthly',
   'annually',
   'project',
+] as const;
+
+export const PAY_SCHEDULES = ['weekly', 'biweekly', 'semimonthly', 'monthly'] as const;
+
+export const PAYROLL_FILING_STATUSES = [
+  'single',
+  'married_jointly',
+  'married_separately',
+  'head_of_household',
+  'qualifying_widow',
 ] as const;
 
 const Address = z
@@ -71,7 +81,7 @@ export const CreateWorkerSchema = z
     displayName: z.string().min(1).max(200).optional(),
     companyName: z.string().max(200).optional(),
     title: z.string().max(120).optional(),
-    workerType: z.enum(['contractor', 'employee']),
+    workerType: z.enum(['contractor', 'employee', 'subcontractor']),
     is1099Vendor: z.boolean().optional(),
     taxId: z.string().max(40).optional(),
     email: z.string().email().max(200).optional(),
@@ -80,9 +90,26 @@ export const CreateWorkerSchema = z
     hireDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     payRate: z.union([z.string(), z.number()]).optional(),
     payRateBasis: z.enum(PAY_RATE_BASES).optional(),
+    paySchedule: z.enum(PAY_SCHEDULES).optional(),
     defaultExpenseAccountId: z.string().uuid().optional(),
     workersCompClass: z.string().max(60).optional(),
     notes: z.string().max(2000).optional(),
+    // W-2 specific
+    w2FilingStatus: z.enum(PAYROLL_FILING_STATUSES).optional(),
+    w2Allowances: z.number().int().min(0).max(99).optional(),
+    w2AdditionalWithholding: z.union([z.string(), z.number()]).optional(),
+    w2State: z.string().max(60).optional(),
+    // Subcontractor compliance
+    licenseNumber: z.string().max(60).optional(),
+    licenseState: z.string().max(60).optional(),
+    licenseExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    insuranceGeneralLiabilityCarrier: z.string().max(120).optional(),
+    insuranceGeneralLiabilityPolicyNumber: z.string().max(60).optional(),
+    insuranceGeneralLiabilityExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    insuranceWorkersCompCarrier: z.string().max(120).optional(),
+    insuranceWorkersCompPolicyNumber: z.string().max(60).optional(),
+    insuranceWorkersCompExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    lienWaiverRequired: z.boolean().optional(),
   })
   .strict();
 
@@ -103,10 +130,27 @@ export const UpdateWorkerSchema = z
     terminationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
     payRate: z.union([z.string(), z.number()]).nullable().optional(),
     payRateBasis: z.enum(PAY_RATE_BASES).nullable().optional(),
+    paySchedule: z.enum(PAY_SCHEDULES).nullable().optional(),
     defaultExpenseAccountId: z.string().uuid().nullable().optional(),
     workersCompClass: z.string().max(60).nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
     isActive: z.boolean().optional(),
+    // W-2 specific
+    w2FilingStatus: z.enum(PAYROLL_FILING_STATUSES).nullable().optional(),
+    w2Allowances: z.number().int().min(0).max(99).nullable().optional(),
+    w2AdditionalWithholding: z.union([z.string(), z.number()]).nullable().optional(),
+    w2State: z.string().max(60).nullable().optional(),
+    // Subcontractor compliance
+    licenseNumber: z.string().max(60).nullable().optional(),
+    licenseState: z.string().max(60).nullable().optional(),
+    licenseExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    insuranceGeneralLiabilityCarrier: z.string().max(120).nullable().optional(),
+    insuranceGeneralLiabilityPolicyNumber: z.string().max(60).nullable().optional(),
+    insuranceGeneralLiabilityExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    insuranceWorkersCompCarrier: z.string().max(120).nullable().optional(),
+    insuranceWorkersCompPolicyNumber: z.string().max(60).nullable().optional(),
+    insuranceWorkersCompExpiration: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    lienWaiverRequired: z.boolean().optional(),
   })
   .strict();
 
@@ -159,11 +203,15 @@ export async function createWorker(
 ): Promise<{ vendorId: string }> {
   const data = CreateWorkerSchema.parse(input);
 
-  // Default 1099 flag: contractors -> true, employees -> false.
-  const is1099 = data.is1099Vendor ?? data.workerType === 'contractor';
+  // Default 1099 flag: contractors + subcontractors -> true, employees -> false.
+  // Subcontractors are still 1099-NEC recipients from the IRS perspective; the
+  // distinction is operational (license, insurance, lien-waiver) not tax-status.
+  const is1099 =
+    data.is1099Vendor ??
+    (data.workerType === 'contractor' || data.workerType === 'subcontractor');
   if (is1099 && (!data.taxId || data.taxId.trim().length === 0)) {
     throw new WorkerError(
-      '1099 contractors require a tax ID (SSN/EIN)',
+      '1099 contractors and subcontractors require a tax ID (SSN/EIN)',
       'tax_id_required',
     );
   }
@@ -194,6 +242,33 @@ export async function createWorker(
     if (data.phone !== undefined) update.phone = data.phone;
     if (data.mailingAddress !== undefined) update.mailingAddress = data.mailingAddress;
     if (data.notes !== undefined) update.notes = data.notes;
+    // Payroll-tracking new fields (Phase A of slice #32)
+    if (data.paySchedule !== undefined) update.paySchedule = data.paySchedule;
+    if (data.w2FilingStatus !== undefined) update.w2FilingStatus = data.w2FilingStatus;
+    if (data.w2Allowances !== undefined) update.w2Allowances = data.w2Allowances;
+    if (data.w2AdditionalWithholding !== undefined) {
+      update.w2AdditionalWithholding =
+        typeof data.w2AdditionalWithholding === 'number'
+          ? data.w2AdditionalWithholding.toString()
+          : data.w2AdditionalWithholding;
+    }
+    if (data.w2State !== undefined) update.w2State = data.w2State;
+    if (data.licenseNumber !== undefined) update.licenseNumber = data.licenseNumber;
+    if (data.licenseState !== undefined) update.licenseState = data.licenseState;
+    if (data.licenseExpiration !== undefined) update.licenseExpiration = data.licenseExpiration;
+    if (data.insuranceGeneralLiabilityCarrier !== undefined)
+      update.insuranceGeneralLiabilityCarrier = data.insuranceGeneralLiabilityCarrier;
+    if (data.insuranceGeneralLiabilityPolicyNumber !== undefined)
+      update.insuranceGeneralLiabilityPolicyNumber = data.insuranceGeneralLiabilityPolicyNumber;
+    if (data.insuranceGeneralLiabilityExpiration !== undefined)
+      update.insuranceGeneralLiabilityExpiration = data.insuranceGeneralLiabilityExpiration;
+    if (data.insuranceWorkersCompCarrier !== undefined)
+      update.insuranceWorkersCompCarrier = data.insuranceWorkersCompCarrier;
+    if (data.insuranceWorkersCompPolicyNumber !== undefined)
+      update.insuranceWorkersCompPolicyNumber = data.insuranceWorkersCompPolicyNumber;
+    if (data.insuranceWorkersCompExpiration !== undefined)
+      update.insuranceWorkersCompExpiration = data.insuranceWorkersCompExpiration;
+    if (data.lienWaiverRequired !== undefined) update.lienWaiverRequired = data.lienWaiverRequired;
     update.updatedAt = new Date();
     await tx.update(vendors).set(update).where(eq(vendors.id, data.existingVendorId));
     return { vendorId: data.existingVendorId };
@@ -224,6 +299,43 @@ export async function createWorker(
       : {}),
     ...(data.workersCompClass ? { workersCompClass: data.workersCompClass } : {}),
     ...(data.notes ? { notes: data.notes } : {}),
+    // Payroll-tracking new fields (Phase A of slice #32)
+    ...(data.paySchedule ? { paySchedule: data.paySchedule } : {}),
+    ...(data.w2FilingStatus ? { w2FilingStatus: data.w2FilingStatus } : {}),
+    ...(data.w2Allowances !== undefined ? { w2Allowances: data.w2Allowances } : {}),
+    ...(data.w2AdditionalWithholding !== undefined
+      ? {
+          w2AdditionalWithholding:
+            typeof data.w2AdditionalWithholding === 'number'
+              ? data.w2AdditionalWithholding.toString()
+              : data.w2AdditionalWithholding,
+        }
+      : {}),
+    ...(data.w2State ? { w2State: data.w2State } : {}),
+    ...(data.licenseNumber ? { licenseNumber: data.licenseNumber } : {}),
+    ...(data.licenseState ? { licenseState: data.licenseState } : {}),
+    ...(data.licenseExpiration ? { licenseExpiration: data.licenseExpiration } : {}),
+    ...(data.insuranceGeneralLiabilityCarrier
+      ? { insuranceGeneralLiabilityCarrier: data.insuranceGeneralLiabilityCarrier }
+      : {}),
+    ...(data.insuranceGeneralLiabilityPolicyNumber
+      ? { insuranceGeneralLiabilityPolicyNumber: data.insuranceGeneralLiabilityPolicyNumber }
+      : {}),
+    ...(data.insuranceGeneralLiabilityExpiration
+      ? { insuranceGeneralLiabilityExpiration: data.insuranceGeneralLiabilityExpiration }
+      : {}),
+    ...(data.insuranceWorkersCompCarrier
+      ? { insuranceWorkersCompCarrier: data.insuranceWorkersCompCarrier }
+      : {}),
+    ...(data.insuranceWorkersCompPolicyNumber
+      ? { insuranceWorkersCompPolicyNumber: data.insuranceWorkersCompPolicyNumber }
+      : {}),
+    ...(data.insuranceWorkersCompExpiration
+      ? { insuranceWorkersCompExpiration: data.insuranceWorkersCompExpiration }
+      : {}),
+    ...(data.lienWaiverRequired !== undefined
+      ? { lienWaiverRequired: data.lienWaiverRequired }
+      : {}),
   };
 
   const [created] = await tx.insert(vendors).values(insertValues).returning({ id: vendors.id });
@@ -256,7 +368,8 @@ export async function updateWorker(
   const update: Record<string, unknown> = { updatedAt: new Date() };
   for (const [k, v] of Object.entries(data)) {
     if (v === undefined) continue;
-    if (k === 'payRate' && typeof v === 'number') {
+    // Drizzle numeric columns want a string. Coerce when callers send a number.
+    if ((k === 'payRate' || k === 'w2AdditionalWithholding') && typeof v === 'number') {
       update[k] = v.toString();
     } else {
       update[k] = v;
@@ -294,6 +407,11 @@ export async function listWorkers(
     yearPaid: string;
     hasW9: boolean;
     documentCount: number;
+    /** Subcontractor compliance dates (null for non-subs). */
+    licenseExpiration: string | null;
+    insuranceGeneralLiabilityExpiration: string | null;
+    insuranceWorkersCompExpiration: string | null;
+    lienWaiverRequired: boolean;
   }>
 > {
   const year = filter.year ?? new Date().getUTCFullYear();
@@ -316,6 +434,10 @@ export async function listWorkers(
       v.pay_rate,
       v.pay_rate_basis,
       v.is_active,
+      v.license_expiration,
+      v.insurance_general_liability_expiration,
+      v.insurance_workers_comp_expiration,
+      v.lien_waiver_required,
       COALESCE(SUM(CASE WHEN p.status = 'posted' THEN p.amount ELSE 0 END), 0) AS lifetime_paid,
       COALESCE(
         SUM(CASE
@@ -338,7 +460,9 @@ export async function listWorkers(
       ${filter.activeOnly ? sql`AND v.is_active = true` : sql``}
     GROUP BY v.id, v.display_name, v.company_name, v.title, v.worker_type,
              v.is_1099_vendor, v.tax_id, v.email, v.phone, v.hire_date,
-             v.termination_date, v.pay_rate, v.pay_rate_basis, v.is_active
+             v.termination_date, v.pay_rate, v.pay_rate_basis, v.is_active,
+             v.license_expiration, v.insurance_general_liability_expiration,
+             v.insurance_workers_comp_expiration, v.lien_waiver_required
     ORDER BY v.is_active DESC, v.display_name ASC
   `);
 
@@ -361,6 +485,14 @@ export async function listWorkers(
     yearPaid: String(r.year_paid ?? '0'),
     hasW9: Boolean(r.has_w9),
     documentCount: Number(r.document_count ?? 0),
+    licenseExpiration: r.license_expiration ? String(r.license_expiration) : null,
+    insuranceGeneralLiabilityExpiration: r.insurance_general_liability_expiration
+      ? String(r.insurance_general_liability_expiration)
+      : null,
+    insuranceWorkersCompExpiration: r.insurance_workers_comp_expiration
+      ? String(r.insurance_workers_comp_expiration)
+      : null,
+    lienWaiverRequired: Boolean(r.lien_waiver_required),
   }));
 }
 

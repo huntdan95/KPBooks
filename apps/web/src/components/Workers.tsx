@@ -5,8 +5,15 @@ import { useCurrentCompany } from '../lib/current-company';
 import { Generate1099Modal } from './Generate1099Modal';
 import { RequestW9Modal } from './RequestW9Modal';
 
-type WorkerType = 'contractor' | 'employee' | 'not_a_worker';
+type WorkerType = 'contractor' | 'employee' | 'not_a_worker' | 'subcontractor';
 type PayBasis = 'hourly' | 'weekly' | 'biweekly' | 'monthly' | 'annually' | 'project';
+type PaySchedule = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
+type FilingStatus =
+  | 'single'
+  | 'married_jointly'
+  | 'married_separately'
+  | 'head_of_household'
+  | 'qualifying_widow';
 type DocumentType =
   | 'w9'
   | 'w4'
@@ -36,6 +43,10 @@ interface WorkerRow {
   yearPaid: string;
   hasW9: boolean;
   documentCount: number;
+  licenseExpiration: string | null;
+  insuranceGeneralLiabilityExpiration: string | null;
+  insuranceWorkersCompExpiration: string | null;
+  lienWaiverRequired: boolean;
 }
 
 interface WorkerListResp {
@@ -115,6 +126,22 @@ interface WorkerDetail {
   workersCompClass: string | null;
   notes: string | null;
   isActive: boolean;
+  // Phase A payroll-tracking fields
+  paySchedule: PaySchedule | null;
+  w2FilingStatus: FilingStatus | null;
+  w2Allowances: number | null;
+  w2AdditionalWithholding: string | null;
+  w2State: string | null;
+  licenseNumber: string | null;
+  licenseState: string | null;
+  licenseExpiration: string | null;
+  insuranceGeneralLiabilityCarrier: string | null;
+  insuranceGeneralLiabilityPolicyNumber: string | null;
+  insuranceGeneralLiabilityExpiration: string | null;
+  insuranceWorkersCompCarrier: string | null;
+  insuranceWorkersCompPolicyNumber: string | null;
+  insuranceWorkersCompExpiration: string | null;
+  lienWaiverRequired: boolean;
   documents: DocumentRow[];
   recentPayments: PaymentRow[];
   openBills: OpenBillRow[];
@@ -182,7 +209,7 @@ function formatAddress(a: MailingAddress | null): string {
 
 export function Workers() {
   const { companyId } = useCurrentCompany();
-  const [tab, setTab] = useState<'all' | 'contractor' | 'employee'>('all');
+  const [tab, setTab] = useState<'all' | 'contractor' | 'subcontractor' | 'employee'>('all');
   const [activeOnly, setActiveOnly] = useState(true);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -212,6 +239,7 @@ export function Workers() {
   const counts = {
     all: workers.length,
     contractor: workers.filter((w) => w.workerType === 'contractor').length,
+    subcontractor: workers.filter((w) => w.workerType === 'subcontractor').length,
     employee: workers.filter((w) => w.workerType === 'employee').length,
   };
 
@@ -250,6 +278,7 @@ export function Workers() {
             [
               { id: 'all', label: 'All workers', count: counts.all },
               { id: 'contractor', label: '1099 Contractors', count: counts.contractor },
+              { id: 'subcontractor', label: '1099 Subs', count: counts.subcontractor },
               { id: 'employee', label: 'Employees', count: counts.employee },
             ] as const
           ).map((t) => {
@@ -315,7 +344,10 @@ export function Workers() {
             <tbody className="divide-y divide-slate-200">
               {workers.map((w) => {
                 const yearPaidNum = Number(w.yearPaid);
-                const meets1099 = w.workerType === 'contractor' && w.is1099Vendor && yearPaidNum >= 600;
+                const meets1099 =
+                  (w.workerType === 'contractor' || w.workerType === 'subcontractor') &&
+                  w.is1099Vendor &&
+                  yearPaidNum >= 600;
                 return (
                   <tr
                     key={w.id}
@@ -332,6 +364,13 @@ export function Workers() {
                         )}
                       </div>
                       {w.title && <div className="text-xs text-slate-500">{w.title}</div>}
+                      {w.workerType === 'subcontractor' && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <CompliancePill label="License" expiration={w.licenseExpiration} />
+                          <CompliancePill label="GL" expiration={w.insuranceGeneralLiabilityExpiration} />
+                          <CompliancePill label="WC" expiration={w.insuranceWorkersCompExpiration} />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <WorkerTypeBadge type={w.workerType} is1099={w.is1099Vendor} />
@@ -339,7 +378,7 @@ export function Workers() {
                     <td className="px-4 py-2 font-mono text-xs">
                       {w.taxId ? (
                         <span className="text-slate-700">{maskTaxId(w.taxId)}</span>
-                      ) : w.workerType === 'contractor' ? (
+                      ) : w.workerType === 'contractor' || w.workerType === 'subcontractor' ? (
                         <span className="rounded-md bg-rose-50 px-2 py-0.5 text-rose-700 ring-1 ring-rose-200">
                           missing
                         </span>
@@ -352,7 +391,7 @@ export function Workers() {
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
                           ✓ on file
                         </span>
-                      ) : w.workerType === 'contractor' ? (
+                      ) : w.workerType === 'contractor' || w.workerType === 'subcontractor' ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
                           missing
                         </span>
@@ -413,6 +452,13 @@ function WorkerTypeBadge({ type, is1099 }: { type: WorkerType; is1099: boolean }
       </span>
     );
   }
+  if (type === 'subcontractor') {
+    return (
+      <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-600/20">
+        Subcontractor{is1099 ? ' · 1099' : ''}
+      </span>
+    );
+  }
   if (type === 'employee') {
     return (
       <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-sky-600/20">
@@ -427,10 +473,50 @@ function WorkerTypeBadge({ type, is1099 }: { type: WorkerType; is1099: boolean }
   );
 }
 
+/**
+ * Returns a color-coded compliance pill for an expiration date, or null if
+ * the date is far enough in the future to not warrant a warning. Used in the
+ * Workers list and detail card to surface license/insurance/WC status at a glance.
+ */
+function CompliancePill({
+  label,
+  expiration,
+}: {
+  label: string;
+  expiration: string | null;
+}) {
+  if (!expiration) {
+    return (
+      <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
+        {label} missing
+      </span>
+    );
+  }
+  const exp = new Date(expiration + 'T00:00:00Z');
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const daysUntil = Math.floor((exp.getTime() - today.getTime()) / 86400000);
+  if (daysUntil < 0) {
+    return (
+      <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
+        {label} expired
+      </span>
+    );
+  }
+  if (daysUntil <= 30) {
+    return (
+      <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-800 ring-1 ring-amber-600/20">
+        {label} {daysUntil}d
+      </span>
+    );
+  }
+  return null;
+}
+
 // ---------------------------- Add new worker form -------------------------
 
 interface AddDraft {
-  workerType: 'contractor' | 'employee';
+  workerType: 'contractor' | 'employee' | 'subcontractor';
   displayName: string;
   companyName: string;
   title: string;
@@ -440,6 +526,7 @@ interface AddDraft {
   hireDate: string;
   payRate: string;
   payRateBasis: PayBasis | '';
+  paySchedule: PaySchedule | '';
   defaultExpenseAccountId: string;
   workersCompClass: string;
   street1: string;
@@ -447,6 +534,22 @@ interface AddDraft {
   state: string;
   postalCode: string;
   notes: string;
+  // Subcontractor compliance
+  licenseNumber: string;
+  licenseState: string;
+  licenseExpiration: string;
+  insuranceGeneralLiabilityCarrier: string;
+  insuranceGeneralLiabilityPolicyNumber: string;
+  insuranceGeneralLiabilityExpiration: string;
+  insuranceWorkersCompCarrier: string;
+  insuranceWorkersCompPolicyNumber: string;
+  insuranceWorkersCompExpiration: string;
+  lienWaiverRequired: boolean;
+  // W-2 specific
+  w2FilingStatus: FilingStatus | '';
+  w2Allowances: string;
+  w2AdditionalWithholding: string;
+  w2State: string;
 }
 
 const emptyAddDraft = (): AddDraft => ({
@@ -460,6 +563,7 @@ const emptyAddDraft = (): AddDraft => ({
   hireDate: '',
   payRate: '',
   payRateBasis: '',
+  paySchedule: '',
   defaultExpenseAccountId: '',
   workersCompClass: '',
   street1: '',
@@ -467,6 +571,20 @@ const emptyAddDraft = (): AddDraft => ({
   state: '',
   postalCode: '',
   notes: '',
+  licenseNumber: '',
+  licenseState: '',
+  licenseExpiration: '',
+  insuranceGeneralLiabilityCarrier: '',
+  insuranceGeneralLiabilityPolicyNumber: '',
+  insuranceGeneralLiabilityExpiration: '',
+  insuranceWorkersCompCarrier: '',
+  insuranceWorkersCompPolicyNumber: '',
+  insuranceWorkersCompExpiration: '',
+  lienWaiverRequired: false,
+  w2FilingStatus: '',
+  w2Allowances: '',
+  w2AdditionalWithholding: '',
+  w2State: '',
 });
 
 function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void }) {
@@ -497,10 +615,38 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
       if (draft.hireDate) body.hireDate = draft.hireDate;
       if (draft.payRate.trim()) body.payRate = draft.payRate.trim();
       if (draft.payRateBasis) body.payRateBasis = draft.payRateBasis;
+      if (draft.paySchedule) body.paySchedule = draft.paySchedule;
       if (draft.defaultExpenseAccountId)
         body.defaultExpenseAccountId = draft.defaultExpenseAccountId;
       if (draft.workersCompClass.trim()) body.workersCompClass = draft.workersCompClass.trim();
       if (draft.notes.trim()) body.notes = draft.notes.trim();
+      // Phase A payroll-tracking fields
+      if (draft.workerType === 'employee') {
+        if (draft.w2FilingStatus) body.w2FilingStatus = draft.w2FilingStatus;
+        if (draft.w2Allowances.trim()) body.w2Allowances = Number(draft.w2Allowances);
+        if (draft.w2AdditionalWithholding.trim())
+          body.w2AdditionalWithholding = draft.w2AdditionalWithholding.trim();
+        if (draft.w2State.trim()) body.w2State = draft.w2State.trim();
+      }
+      if (draft.workerType === 'subcontractor') {
+        if (draft.licenseNumber.trim()) body.licenseNumber = draft.licenseNumber.trim();
+        if (draft.licenseState.trim()) body.licenseState = draft.licenseState.trim();
+        if (draft.licenseExpiration) body.licenseExpiration = draft.licenseExpiration;
+        if (draft.insuranceGeneralLiabilityCarrier.trim())
+          body.insuranceGeneralLiabilityCarrier = draft.insuranceGeneralLiabilityCarrier.trim();
+        if (draft.insuranceGeneralLiabilityPolicyNumber.trim())
+          body.insuranceGeneralLiabilityPolicyNumber =
+            draft.insuranceGeneralLiabilityPolicyNumber.trim();
+        if (draft.insuranceGeneralLiabilityExpiration)
+          body.insuranceGeneralLiabilityExpiration = draft.insuranceGeneralLiabilityExpiration;
+        if (draft.insuranceWorkersCompCarrier.trim())
+          body.insuranceWorkersCompCarrier = draft.insuranceWorkersCompCarrier.trim();
+        if (draft.insuranceWorkersCompPolicyNumber.trim())
+          body.insuranceWorkersCompPolicyNumber = draft.insuranceWorkersCompPolicyNumber.trim();
+        if (draft.insuranceWorkersCompExpiration)
+          body.insuranceWorkersCompExpiration = draft.insuranceWorkersCompExpiration;
+        body.lienWaiverRequired = draft.lienWaiverRequired;
+      }
       const addr: Record<string, string> = {};
       if (draft.street1.trim()) addr.street1 = draft.street1.trim();
       if (draft.city.trim()) addr.city = draft.city.trim();
@@ -533,11 +679,15 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
           <select
             value={draft.workerType}
             onChange={(e) =>
-              setDraft({ ...draft, workerType: e.target.value as 'contractor' | 'employee' })
+              setDraft({
+                ...draft,
+                workerType: e.target.value as 'contractor' | 'employee' | 'subcontractor',
+              })
             }
             className={inputClass}
           >
-            <option value="contractor">1099 Contractor</option>
+            <option value="contractor">1099 Contractor (individual)</option>
+            <option value="subcontractor">1099 Subcontractor (company)</option>
             <option value="employee">Employee (W-2)</option>
           </select>
         </Field>
@@ -573,8 +723,12 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
           />
         </Field>
         <Field
-          label={draft.workerType === 'contractor' ? 'Tax ID (SSN/EIN) *' : 'Tax ID (SSN/EIN)'}
-          required={draft.workerType === 'contractor'}
+          label={
+            draft.workerType === 'contractor' || draft.workerType === 'subcontractor'
+              ? 'Tax ID (SSN/EIN) *'
+              : 'Tax ID (SSN/EIN)'
+          }
+          required={draft.workerType === 'contractor' || draft.workerType === 'subcontractor'}
         >
           <input
             type="text"
@@ -582,7 +736,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             onChange={(e) => setDraft({ ...draft, taxId: e.target.value })}
             placeholder="123-45-6789 or 12-3456789"
             maxLength={40}
-            required={draft.workerType === 'contractor'}
+            required={draft.workerType === 'contractor' || draft.workerType === 'subcontractor'}
             className={inputClass + ' font-mono'}
           />
         </Field>
@@ -704,6 +858,189 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
         </Field>
       </div>
 
+      {draft.workerType === 'employee' && (
+        <fieldset className="space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3">
+          <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-sky-800">
+            W-2 details (display only — KPBooks doesn't compute taxes)
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Filing status">
+              <select
+                value={draft.w2FilingStatus}
+                onChange={(e) =>
+                  setDraft({ ...draft, w2FilingStatus: e.target.value as FilingStatus | '' })
+                }
+                className={inputClass}
+              >
+                <option value="">—</option>
+                <option value="single">Single</option>
+                <option value="married_jointly">Married filing jointly</option>
+                <option value="married_separately">Married filing separately</option>
+                <option value="head_of_household">Head of household</option>
+                <option value="qualifying_widow">Qualifying widow(er)</option>
+              </select>
+            </Field>
+            <Field label="Allowances (legacy W-4)">
+              <input
+                type="number"
+                min={0}
+                max={99}
+                value={draft.w2Allowances}
+                onChange={(e) => setDraft({ ...draft, w2Allowances: e.target.value })}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="Extra withholding ($/check)">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={draft.w2AdditionalWithholding}
+                onChange={(e) =>
+                  setDraft({ ...draft, w2AdditionalWithholding: e.target.value })
+                }
+                placeholder="0.00"
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="State (for SIT)">
+              <input
+                type="text"
+                value={draft.w2State}
+                onChange={(e) => setDraft({ ...draft, w2State: e.target.value })}
+                maxLength={60}
+                placeholder="TX"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Pay schedule">
+              <select
+                value={draft.paySchedule}
+                onChange={(e) =>
+                  setDraft({ ...draft, paySchedule: e.target.value as PaySchedule | '' })
+                }
+                className={inputClass}
+              >
+                <option value="">—</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="semimonthly">Semi-monthly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </Field>
+          </div>
+        </fieldset>
+      )}
+
+      {draft.workerType === 'subcontractor' && (
+        <fieldset className="space-y-3 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+          <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-amber-800">
+            Subcontractor compliance
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="License number">
+              <input
+                type="text"
+                value={draft.licenseNumber}
+                onChange={(e) => setDraft({ ...draft, licenseNumber: e.target.value })}
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="License state">
+              <input
+                type="text"
+                value={draft.licenseState}
+                onChange={(e) => setDraft({ ...draft, licenseState: e.target.value })}
+                maxLength={60}
+                placeholder="TX"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="License expiration">
+              <input
+                type="date"
+                value={draft.licenseExpiration}
+                onChange={(e) => setDraft({ ...draft, licenseExpiration: e.target.value })}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="GL insurance carrier">
+              <input
+                type="text"
+                value={draft.insuranceGeneralLiabilityCarrier}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceGeneralLiabilityCarrier: e.target.value })
+                }
+                maxLength={120}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="GL policy number">
+              <input
+                type="text"
+                value={draft.insuranceGeneralLiabilityPolicyNumber}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceGeneralLiabilityPolicyNumber: e.target.value })
+                }
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="GL expiration">
+              <input
+                type="date"
+                value={draft.insuranceGeneralLiabilityExpiration}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceGeneralLiabilityExpiration: e.target.value })
+                }
+                className={inputClass}
+              />
+            </Field>
+            <Field label="WC insurance carrier">
+              <input
+                type="text"
+                value={draft.insuranceWorkersCompCarrier}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompCarrier: e.target.value })
+                }
+                maxLength={120}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="WC policy number">
+              <input
+                type="text"
+                value={draft.insuranceWorkersCompPolicyNumber}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompPolicyNumber: e.target.value })
+                }
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="WC expiration">
+              <input
+                type="date"
+                value={draft.insuranceWorkersCompExpiration}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompExpiration: e.target.value })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={draft.lienWaiverRequired}
+              onChange={(e) => setDraft({ ...draft, lienWaiverRequired: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Require lien waiver on every payment to this sub
+          </label>
+        </fieldset>
+      )}
+
       <Field label="Notes">
         <textarea
           value={draft.notes}
@@ -723,8 +1060,8 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
           {mutation.isPending ? 'Adding…' : 'Add worker'}
         </button>
         <p className="text-xs text-slate-500">
-          1099 contractors are auto-flagged for the year-end 1099 summary. SSN / EIN is required
-          for contractors so the form can be filed.
+          1099 contractors and subcontractors are auto-flagged for year-end 1099 prep. SSN / EIN
+          required for both so the form can be filed.
         </p>
       </div>
 
@@ -762,7 +1099,10 @@ function WorkerDetailView({
   const data = detailQ.data;
   const yearPaidNum = data ? Number(data.yearTotalPaid) : 0;
   const meets1099 =
-    data && data.workerType === 'contractor' && data.is1099Vendor && yearPaidNum >= 600;
+    data &&
+    (data.workerType === 'contractor' || data.workerType === 'subcontractor') &&
+    data.is1099Vendor &&
+    yearPaidNum >= 600;
   const has1099 = data?.documents.some((d) => d.documentType === 'w9');
 
   const invalidate = () => {
@@ -802,6 +1142,19 @@ function WorkerDetailView({
                     <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                       Inactive
                     </span>
+                  )}
+                  {data.workerType === 'subcontractor' && (
+                    <>
+                      <CompliancePill label="License" expiration={data.licenseExpiration} />
+                      <CompliancePill
+                        label="GL"
+                        expiration={data.insuranceGeneralLiabilityExpiration}
+                      />
+                      <CompliancePill
+                        label="WC"
+                        expiration={data.insuranceWorkersCompExpiration}
+                      />
+                    </>
                   )}
                 </div>
                 {data.title && <div className="text-sm text-slate-600">{data.title}</div>}
@@ -1423,6 +1776,21 @@ function EditWorkerForm({
     city: data.mailingAddress?.city ?? '',
     state: data.mailingAddress?.state ?? '',
     postalCode: data.mailingAddress?.postalCode ?? '',
+    paySchedule: data.paySchedule ?? ('' as PaySchedule | ''),
+    w2FilingStatus: data.w2FilingStatus ?? ('' as FilingStatus | ''),
+    w2Allowances: data.w2Allowances != null ? String(data.w2Allowances) : '',
+    w2AdditionalWithholding: data.w2AdditionalWithholding ?? '',
+    w2State: data.w2State ?? '',
+    licenseNumber: data.licenseNumber ?? '',
+    licenseState: data.licenseState ?? '',
+    licenseExpiration: data.licenseExpiration ?? '',
+    insuranceGeneralLiabilityCarrier: data.insuranceGeneralLiabilityCarrier ?? '',
+    insuranceGeneralLiabilityPolicyNumber: data.insuranceGeneralLiabilityPolicyNumber ?? '',
+    insuranceGeneralLiabilityExpiration: data.insuranceGeneralLiabilityExpiration ?? '',
+    insuranceWorkersCompCarrier: data.insuranceWorkersCompCarrier ?? '',
+    insuranceWorkersCompPolicyNumber: data.insuranceWorkersCompPolicyNumber ?? '',
+    insuranceWorkersCompExpiration: data.insuranceWorkersCompExpiration ?? '',
+    lienWaiverRequired: data.lienWaiverRequired,
   }));
 
   const accountsQ = useQuery({
@@ -1460,6 +1828,24 @@ function EditWorkerForm({
       if (draft.state.trim()) addr.state = draft.state.trim();
       if (draft.postalCode.trim()) addr.postalCode = draft.postalCode.trim();
       body.mailingAddress = Object.keys(addr).length > 0 ? addr : null;
+      // Phase A payroll-tracking fields (always send so unsetting a value works)
+      body.paySchedule = draft.paySchedule || null;
+      body.w2FilingStatus = draft.w2FilingStatus || null;
+      body.w2Allowances = draft.w2Allowances.trim() ? Number(draft.w2Allowances) : null;
+      body.w2AdditionalWithholding = draft.w2AdditionalWithholding.trim() || null;
+      body.w2State = norm(draft.w2State);
+      body.licenseNumber = norm(draft.licenseNumber);
+      body.licenseState = norm(draft.licenseState);
+      body.licenseExpiration = draft.licenseExpiration || null;
+      body.insuranceGeneralLiabilityCarrier = norm(draft.insuranceGeneralLiabilityCarrier);
+      body.insuranceGeneralLiabilityPolicyNumber = norm(
+        draft.insuranceGeneralLiabilityPolicyNumber,
+      );
+      body.insuranceGeneralLiabilityExpiration = draft.insuranceGeneralLiabilityExpiration || null;
+      body.insuranceWorkersCompCarrier = norm(draft.insuranceWorkersCompCarrier);
+      body.insuranceWorkersCompPolicyNumber = norm(draft.insuranceWorkersCompPolicyNumber);
+      body.insuranceWorkersCompExpiration = draft.insuranceWorkersCompExpiration || null;
+      body.lienWaiverRequired = draft.lienWaiverRequired;
 
       return api(`/workers/${data.id}`, { method: 'PATCH', companyId, body });
     },
@@ -1495,7 +1881,8 @@ function EditWorkerForm({
             onChange={(e) => setDraft({ ...draft, workerType: e.target.value as WorkerType })}
             className={inputClass}
           >
-            <option value="contractor">1099 Contractor</option>
+            <option value="contractor">1099 Contractor (individual)</option>
+            <option value="subcontractor">1099 Subcontractor (company)</option>
             <option value="employee">Employee (W-2)</option>
             <option value="not_a_worker">Not a worker (regular vendor)</option>
           </select>
@@ -1680,6 +2067,192 @@ function EditWorkerForm({
           Active
         </label>
       </div>
+
+      {draft.workerType === 'employee' && (
+        <fieldset className="space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3">
+          <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-sky-800">
+            W-2 details (display only)
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Filing status">
+              <select
+                value={draft.w2FilingStatus}
+                onChange={(e) =>
+                  setDraft({ ...draft, w2FilingStatus: e.target.value as FilingStatus | '' })
+                }
+                className={inputClass}
+              >
+                <option value="">—</option>
+                <option value="single">Single</option>
+                <option value="married_jointly">MFJ</option>
+                <option value="married_separately">MFS</option>
+                <option value="head_of_household">HoH</option>
+                <option value="qualifying_widow">QW</option>
+              </select>
+            </Field>
+            <Field label="Allowances">
+              <input
+                type="number"
+                min={0}
+                max={99}
+                value={draft.w2Allowances}
+                onChange={(e) => setDraft({ ...draft, w2Allowances: e.target.value })}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="Extra withholding ($/check)">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={draft.w2AdditionalWithholding}
+                onChange={(e) =>
+                  setDraft({ ...draft, w2AdditionalWithholding: e.target.value })
+                }
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="State">
+              <input
+                type="text"
+                value={draft.w2State}
+                onChange={(e) => setDraft({ ...draft, w2State: e.target.value })}
+                maxLength={60}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Pay schedule">
+              <select
+                value={draft.paySchedule}
+                onChange={(e) =>
+                  setDraft({ ...draft, paySchedule: e.target.value as PaySchedule | '' })
+                }
+                className={inputClass}
+              >
+                <option value="">—</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="semimonthly">Semi-monthly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </Field>
+          </div>
+        </fieldset>
+      )}
+
+      {draft.workerType === 'subcontractor' && (
+        <fieldset className="space-y-3 rounded-md border border-amber-200 bg-amber-50/40 p-3">
+          <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-amber-800">
+            Subcontractor compliance
+          </legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="License number">
+              <input
+                type="text"
+                value={draft.licenseNumber}
+                onChange={(e) => setDraft({ ...draft, licenseNumber: e.target.value })}
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="License state">
+              <input
+                type="text"
+                value={draft.licenseState}
+                onChange={(e) => setDraft({ ...draft, licenseState: e.target.value })}
+                maxLength={60}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="License expiration">
+              <input
+                type="date"
+                value={draft.licenseExpiration}
+                onChange={(e) => setDraft({ ...draft, licenseExpiration: e.target.value })}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="GL insurance carrier">
+              <input
+                type="text"
+                value={draft.insuranceGeneralLiabilityCarrier}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceGeneralLiabilityCarrier: e.target.value })
+                }
+                maxLength={120}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="GL policy number">
+              <input
+                type="text"
+                value={draft.insuranceGeneralLiabilityPolicyNumber}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    insuranceGeneralLiabilityPolicyNumber: e.target.value,
+                  })
+                }
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="GL expiration">
+              <input
+                type="date"
+                value={draft.insuranceGeneralLiabilityExpiration}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    insuranceGeneralLiabilityExpiration: e.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+            </Field>
+            <Field label="WC insurance carrier">
+              <input
+                type="text"
+                value={draft.insuranceWorkersCompCarrier}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompCarrier: e.target.value })
+                }
+                maxLength={120}
+                className={inputClass}
+              />
+            </Field>
+            <Field label="WC policy number">
+              <input
+                type="text"
+                value={draft.insuranceWorkersCompPolicyNumber}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompPolicyNumber: e.target.value })
+                }
+                maxLength={60}
+                className={inputClass + ' font-mono'}
+              />
+            </Field>
+            <Field label="WC expiration">
+              <input
+                type="date"
+                value={draft.insuranceWorkersCompExpiration}
+                onChange={(e) =>
+                  setDraft({ ...draft, insuranceWorkersCompExpiration: e.target.value })
+                }
+                className={inputClass}
+              />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={draft.lienWaiverRequired}
+              onChange={(e) => setDraft({ ...draft, lienWaiverRequired: e.target.checked })}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Require lien waiver on every payment to this sub
+          </label>
+        </fieldset>
+      )}
 
       <Field label="Notes">
         <textarea

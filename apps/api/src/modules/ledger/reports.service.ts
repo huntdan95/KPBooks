@@ -620,6 +620,84 @@ export async function statementOfCashFlows(
   };
 }
 
+// ─── Compliance-expiring (Phase A of payroll-tracking slice) ─────────────
+
+export interface ComplianceExpirationRow {
+  vendorId: string;
+  displayName: string;
+  workerType: string;
+  /** Which document is expiring; one row per (vendor, doc-type) combo. */
+  documentType: 'license' | 'general_liability' | 'workers_comp';
+  expirationDate: string;
+  daysUntilExpiration: number; // negative = already expired
+}
+
+/**
+ * Subcontractors whose license / GL insurance / WC insurance expires within
+ * `withinDays` of today (or has already expired). Returns one row per
+ * (vendor, document-type) combo so the UI can show each missing item
+ * separately. Sorted by daysUntilExpiration ascending so the most urgent
+ * sits at the top.
+ */
+export async function complianceExpiring(
+  db: Database,
+  withinDays: number,
+): Promise<ComplianceExpirationRow[]> {
+  const days = Math.max(0, Math.min(withinDays, 365));
+  const rows = await db.execute(sql`
+    WITH expirations AS (
+      SELECT
+        v.id           AS vendor_id,
+        v.display_name AS display_name,
+        v.worker_type  AS worker_type,
+        'license'      AS document_type,
+        v.license_expiration AS expiration_date
+      FROM vendors v
+      WHERE v.worker_type = 'subcontractor'
+        AND v.is_active = true
+        AND v.license_expiration IS NOT NULL
+        AND (v.license_expiration - CURRENT_DATE) <= ${days}::int
+      UNION ALL
+      SELECT
+        v.id, v.display_name, v.worker_type,
+        'general_liability',
+        v.insurance_general_liability_expiration
+      FROM vendors v
+      WHERE v.worker_type = 'subcontractor'
+        AND v.is_active = true
+        AND v.insurance_general_liability_expiration IS NOT NULL
+        AND (v.insurance_general_liability_expiration - CURRENT_DATE) <= ${days}::int
+      UNION ALL
+      SELECT
+        v.id, v.display_name, v.worker_type,
+        'workers_comp',
+        v.insurance_workers_comp_expiration
+      FROM vendors v
+      WHERE v.worker_type = 'subcontractor'
+        AND v.is_active = true
+        AND v.insurance_workers_comp_expiration IS NOT NULL
+        AND (v.insurance_workers_comp_expiration - CURRENT_DATE) <= ${days}::int
+    )
+    SELECT
+      vendor_id,
+      display_name,
+      worker_type,
+      document_type,
+      expiration_date,
+      (expiration_date - CURRENT_DATE) AS days_until_expiration
+    FROM expirations
+    ORDER BY days_until_expiration ASC, display_name ASC
+  `);
+  return (rows as unknown as Array<Record<string, unknown>>).map((r) => ({
+    vendorId: String(r.vendor_id),
+    displayName: String(r.display_name),
+    workerType: String(r.worker_type),
+    documentType: String(r.document_type) as ComplianceExpirationRow['documentType'],
+    expirationDate: String(r.expiration_date),
+    daysUntilExpiration: Number(r.days_until_expiration ?? 0),
+  }));
+}
+
 // Local minor-unit helpers — bigint arithmetic avoids float traps without pulling Decimal into report wiring.
 function decimalToMinor(s: string, scale: bigint): bigint {
   const [sign, rest] = s.startsWith('-') ? [-1n, s.slice(1)] : [1n, s];

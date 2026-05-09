@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   index,
@@ -61,6 +62,12 @@ export const payments = pgTable(
       { onDelete: 'restrict' },
     ),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
+    /** Subcontractor lien-waiver sign-off: was a signed waiver received for
+     *  this specific payment? Only meaningful when paymentType=vendor_sent
+     *  and the vendor is a 1099 subcontractor. Drives the
+     *  "missing waiver" warning in Workers / Payments. */
+    lienWaiverReceived: boolean('lien_waiver_received'),
+    lienWaiverReceivedDate: date('lien_waiver_received_date', { mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
