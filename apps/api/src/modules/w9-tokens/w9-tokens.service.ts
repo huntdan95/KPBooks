@@ -298,10 +298,14 @@ export async function lookupTokenForPublicView(
     }
 
     // Set the tenant GUC to the company we just learned about so the next
-    // queries succeed under RLS without needing a service role.
+    // queries succeed under RLS. Then SET LOCAL ROLE kpbooks_app so RLS
+    // actually fires (neondb_owner has BYPASSRLS; see migration 0029).
+    // The lookup_w9_token call ABOVE deliberately ran as neondb_owner so
+    // it could read the token row before any GUC was set.
     await tx.execute(
       sql`SELECT set_config('app.current_company', ${lookup.company_id}, true)`,
     );
+    await tx.execute(sql`SET LOCAL ROLE kpbooks_app`);
 
     const [vendor] = await tx
       .select({ name: vendors.displayName })
@@ -366,6 +370,9 @@ export async function uploadViaToken(
     await tx.execute(
       sql`SELECT set_config('app.current_company', ${lookup.company_id}, true)`,
     );
+    // Switch to NOBYPASSRLS role so the upcoming INSERT into worker_documents
+    // and UPDATE on w9_upload_tokens are subject to RLS like any other write.
+    await tx.execute(sql`SET LOCAL ROLE kpbooks_app`);
 
     const [doc] = await tx
       .insert(workerDocuments)

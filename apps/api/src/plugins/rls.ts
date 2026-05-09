@@ -29,8 +29,16 @@ const plugin: FastifyPluginAsync = async (app) => {
       const { companyId, userId, role } = req.auth;
 
       return app.db.transaction(async (tx) => {
-        // SET LOCAL is scoped to this transaction; subsequent queries on `tx`
-        // see the GUCs and RLS policies fire as designed.
+        // CRITICAL: switch out of the connection role (neondb_owner has the
+        // BYPASSRLS attribute, which silently disables every RLS policy and
+        // even FORCE ROW LEVEL SECURITY) into the sibling role kpbooks_app,
+        // which is NOBYPASSRLS. This is what keeps cross-tenant queries from
+        // leaking. SET LOCAL is transaction-scoped, so the connection
+        // reverts to neondb_owner after commit/rollback. See migration
+        // 0029_app_user_role.sql for the full root-cause writeup.
+        await tx.execute(drizzleSql`SET LOCAL ROLE kpbooks_app`);
+
+        // GUCs the RLS policies + audit triggers read.
         await tx.execute(drizzleSql`SELECT set_config('app.current_company', ${companyId}, true)`);
         await tx.execute(drizzleSql`SELECT set_config('app.current_user', ${userId}, true)`);
         await tx.execute(drizzleSql`SELECT set_config('app.current_role', ${role ?? ''}, true)`);
