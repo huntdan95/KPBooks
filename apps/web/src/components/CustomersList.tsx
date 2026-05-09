@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { CustomerDetail } from './CounterpartyDetail';
+import { StatementsPanel } from './StatementsPanel';
 
 interface Customer {
   id: string;
@@ -141,6 +142,8 @@ export function CustomersList() {
           {mode ? 'Cancel' : '+ New customer'}
         </button>
       </div>
+
+      <StatementsPanel />
 
       {mode && (
         <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
