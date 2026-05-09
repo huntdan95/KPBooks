@@ -21,6 +21,7 @@ import { meRoutes } from './routes/me.js';
 import { nineteenNinetyNineRoutes } from './routes/nineteen-ninety-nine.js';
 import { payStubsRoutes } from './routes/pay-stubs.js';
 import { paymentsRoutes } from './routes/payments.js';
+import { payrollRunsRoutes } from './routes/payroll-runs.js';
 import { recurringRoutes } from './routes/recurring.js';
 import { salesDocPdfRoutes } from './routes/sales-doc-pdf.js';
 import { statementsRoutes } from './routes/statements.js';
@@ -75,6 +76,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(billsRoutes, { prefix: '/v1' });
   await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(payStubsRoutes, { prefix: '/v1' });
+  await app.register(payrollRunsRoutes, { prefix: '/v1' });
   await app.register(recurringRoutes, { prefix: '/v1' });
   await app.register(salesDocPdfRoutes, { prefix: '/v1' });
   await app.register(statementsRoutes, { prefix: '/v1' });

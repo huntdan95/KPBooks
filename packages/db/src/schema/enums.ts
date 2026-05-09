@@ -125,6 +125,12 @@ export const payScheduleEnum = pgEnum('pay_schedule', [
   'monthly',
 ]);
 
+export const payrollRunStatusEnum = pgEnum('payroll_run_status', [
+  'draft',
+  'posted',
+  'voided',
+]);
+
 export const payRateBasisEnum = pgEnum('pay_rate_basis', [
   'hourly',
   'weekly',

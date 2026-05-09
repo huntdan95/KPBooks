@@ -25,7 +25,8 @@ export type View =
   | '1099-prep'
   | 'recurring'
   | 'time-entries'
-  | 'items';
+  | 'items'
+  | 'payroll-runs';
 
 interface NavItem {
   id: View;
@@ -68,6 +69,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { id: 'workers', label: 'Workers / 1099' },
       { id: 'time-entries', label: 'Time entries' },
+      { id: 'payroll-runs', label: 'Pay runs' },
     ],
   },
   {

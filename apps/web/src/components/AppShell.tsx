@@ -16,6 +16,7 @@ import { InvoicesList } from './InvoicesList';
 import { ItemsList } from './ItemsList';
 import { Recurring } from './Recurring';
 import { TimeEntries } from './TimeEntries';
+import { PayrollRuns } from './PayrollRuns';
 import { JournalEntryForm } from './JournalEntryForm';
 import { Mileage } from './Mileage';
 import { NewCompanyForm } from './NewCompanyForm';
@@ -54,6 +55,7 @@ const PAGE_TITLE: Record<View, string> = {
   recurring: 'Recurring',
   'time-entries': 'Time Entries',
   items: 'Items / Services',
+  'payroll-runs': 'Pay Runs',
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -192,6 +194,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'new-entry' && <JournalEntryForm />}
             {view === 'recurring' && <Recurring />}
             {view === 'time-entries' && <TimeEntries />}
+            {view === 'payroll-runs' && <PayrollRuns />}
             {view === 'reports' && <Reports />}
             {view === 'tax-rates' && <TaxRates />}
             {view === '1099-prep' && <NinetyNinePrep />}
