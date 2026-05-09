@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { InvoiceDetail } from './InvoiceDetail';
 
 interface InvoiceListRow {
   id: string;
@@ -137,12 +138,17 @@ export function InvoicesList() {
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'new'>('list');
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   const invoicesQuery = useQuery({
     queryKey: ['invoices', companyId],
     enabled: Boolean(companyId),
     queryFn: () => api<{ invoices: InvoiceListRow[] }>('/invoices', { companyId }),
   });
+
+  if (detailId) {
+    return <InvoiceDetail id={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   const voidMutation = useMutation({
     mutationFn: async (invoiceId: string) =>
@@ -217,7 +223,14 @@ export function InvoicesList() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {list.map((inv) => (
-                <tr key={inv.id} className={inv.status === 'void' ? 'opacity-60' : ''}>
+                <tr
+                  key={inv.id}
+                  onClick={() => setDetailId(inv.id)}
+                  className={
+                    'cursor-pointer hover:bg-slate-50 ' +
+                    (inv.status === 'void' ? 'opacity-60' : '')
+                  }
+                >
                   <td className="px-4 py-2 font-mono text-slate-900">{inv.invoiceNumber}</td>
                   <td className="px-4 py-2 text-slate-700">{inv.invoiceDate}</td>
                   <td className="px-4 py-2 text-slate-700">{inv.dueDate}</td>
@@ -237,8 +250,13 @@ export function InvoicesList() {
                     {inv.status !== 'void' && (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirm(`Void invoice ${inv.invoiceNumber}? A reversing journal entry will be posted.`)) {
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (
+                            confirm(
+                              `Void invoice ${inv.invoiceNumber}? A reversing journal entry will be posted.`,
+                            )
+                          ) {
                             voidMutation.mutate(inv.id);
                           }
                         }}

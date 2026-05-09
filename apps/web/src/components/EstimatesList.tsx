@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
 type Status = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
@@ -601,6 +601,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [convertOpen, setConvertOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const detailQ = useQuery({
     queryKey: ['estimate', id, companyId],
@@ -639,6 +640,39 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
         </button>
         {data && (
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                setDownloading(true);
+                try {
+                  const token = await getIdToken();
+                  const res = await fetch(`${getApiBase()}/estimates/${id}.pdf`, {
+                    headers: {
+                      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      ...(companyId ? { 'x-kpbooks-company': companyId } : {}),
+                    },
+                  });
+                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Estimate_${data.estimateNumber.replace(/[^A-Za-z0-9]+/g, '_')}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(url);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : 'PDF download failed.');
+                } finally {
+                  setDownloading(false);
+                }
+              }}
+              disabled={downloading}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+            >
+              {downloading ? 'Generating PDF…' : 'Download PDF'}
+            </button>
             {data.status === 'draft' && (
               <button
                 type="button"
