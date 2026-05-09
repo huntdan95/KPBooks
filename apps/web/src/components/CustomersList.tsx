@@ -80,10 +80,11 @@ export function CustomersList() {
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  if (detailId) {
-    return <CustomerDetail customerId={detailId} onBack={() => setDetailId(null)} />;
-  }
-
+  // NOTE: every hook below MUST run on every render; do NOT add an early
+  // `if (detailId) return ...` here -- that's a Rules-of-Hooks violation
+  // (the hook count drops to 3 on the next render and React blanks the
+  // page). The detail view branches off at the END after all hooks have
+  // been called.
   const query = useQuery({
     queryKey: ['customers', companyId],
     enabled: Boolean(companyId),
@@ -126,6 +127,13 @@ export function CustomersList() {
   }
 
   const customers = query.data?.customers ?? [];
+
+  // Branch AFTER all hooks have been called. Putting this branch above any
+  // hook would cause React to render fewer hooks on the detail-view render
+  // than on the list render -> "Rendered fewer hooks than expected." crash.
+  if (detailId) {
+    return <CustomerDetail customerId={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   return (
     <div className="space-y-4">

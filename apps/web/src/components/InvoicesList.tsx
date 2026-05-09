@@ -140,15 +140,14 @@ export function InvoicesList() {
   const [mode, setMode] = useState<'list' | 'new'>('list');
   const [detailId, setDetailId] = useState<string | null>(null);
 
+  // NOTE: every hook MUST run on every render; do NOT add an early
+  // `if (detailId) return ...` between hooks here. The branch lives below
+  // after every hook has been called.
   const invoicesQuery = useQuery({
     queryKey: ['invoices', companyId],
     enabled: Boolean(companyId),
     queryFn: () => api<{ invoices: InvoiceListRow[] }>('/invoices', { companyId }),
   });
-
-  if (detailId) {
-    return <InvoiceDetail id={detailId} onBack={() => setDetailId(null)} />;
-  }
 
   const voidMutation = useMutation({
     mutationFn: async (invoiceId: string) =>
@@ -164,6 +163,11 @@ export function InvoicesList() {
   });
 
   const list = invoicesQuery.data?.invoices ?? [];
+
+  // All hooks above; safe to early-return below.
+  if (detailId) {
+    return <InvoiceDetail id={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   if (mode === 'new') {
     return (

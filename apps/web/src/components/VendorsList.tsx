@@ -81,10 +81,9 @@ export function VendorsList() {
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
   const [detailId, setDetailId] = useState<string | null>(null);
 
-  if (detailId) {
-    return <VendorDetail vendorId={detailId} onBack={() => setDetailId(null)} />;
-  }
-
+  // NOTE: every hook MUST run on every render; do NOT add an early
+  // `if (detailId) return ...` between hooks here. The branch lives below
+  // after every hook has been called.
   const query = useQuery({
     queryKey: ['vendors', companyId],
     enabled: Boolean(companyId),
@@ -130,6 +129,11 @@ export function VendorsList() {
   }
 
   const vendors = query.data?.vendors ?? [];
+
+  // Branch AFTER all hooks have been called; see note at top of component.
+  if (detailId) {
+    return <VendorDetail vendorId={detailId} onBack={() => setDetailId(null)} />;
+  }
 
   return (
     <div className="space-y-4">
