@@ -1,5 +1,5 @@
 import { companies, memberships } from '@kpbooks/db';
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 
 /**
@@ -16,6 +16,10 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
   app.get('/me', async (req) => {
     const auth = await app.requireAuth(req);
 
+    // Deterministic order: oldest membership first. Matters because the web
+    // bootstraps the active company picker from memberships[0] when nothing
+    // is stored locally; without an order-by Postgres would return whatever
+    // scan order it likes, which can change run-to-run.
     const rows = await app.db
       .select({
         companyId: memberships.companyId,
@@ -24,7 +28,8 @@ export const meRoutes: FastifyPluginAsync = async (app) => {
       })
       .from(memberships)
       .innerJoin(companies, eq(companies.id, memberships.companyId))
-      .where(eq(memberships.userId, auth.userId));
+      .where(eq(memberships.userId, auth.userId))
+      .orderBy(asc(memberships.createdAt), asc(companies.name));
 
     return {
       user: {

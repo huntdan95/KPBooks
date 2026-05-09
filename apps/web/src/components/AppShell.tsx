@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
@@ -60,20 +60,49 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   const [view, setView] = useState<View>('dashboard');
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
 
-  // If the stored companyId isn't in the user's memberships (e.g. revoked,
-  // or stored id stale before /me refetched), fall back to the first available
-  // company. Done in an effect, NOT during render -- otherwise a freshly-created
-  // company id gets overwritten before the /me query has caught up with the
-  // new membership, which causes the picker to snap back to the original client.
   const isMember = companyId !== null && memberships.some((m) => m.companyId === companyId);
-  const activeId = isMember ? companyId : memberships[0]?.companyId ?? null;
 
+  // One-time bootstrap. If the user has memberships and nothing stored
+  // locally, pick the OLDEST membership (deterministic via /me's orderBy).
+  // Runs at most once per mount; never overrides an existing companyId.
+  //
+  // We deliberately do NOT auto-reconcile a stored companyId that isn't in
+  // memberships. That auto-reconcile pattern caused a real cross-tenant leak
+  // earlier: when a user clicked "+ New client" and created Hunt Construction,
+  // there was a render where memberships still held only [Test] before the
+  // /me refetch landed; the reconcile effect fired setCompanyId(testId)
+  // mid-flight and pinned every query to Test even after refetch completed.
+  // Now: if companyId is invalid for any reason, we show NoActiveCompany
+  // and force an explicit pick. Slow path is rare; correctness is absolute.
+  const bootstrappedRef = useRef(false);
   useEffect(() => {
-    if (!isMember && activeId !== companyId) {
-      setCompanyId(activeId);
+    if (bootstrappedRef.current) return;
+    bootstrappedRef.current = true;
+    if (companyId === null && memberships.length > 0) {
+      setCompanyId(memberships[0]!.companyId);
     }
-  }, [isMember, activeId, companyId, setCompanyId]);
+    // Intentionally empty deps -- this is mount-only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // If we have no valid company selected, force a pick before rendering the
+  // app. Covers: never bootstrapped (initial empty localStorage), id revoked,
+  // id stale across deploys, or a transient race where memberships hasn't
+  // caught up.
+  if (!isMember) {
+    return (
+      <NoActiveCompany
+        memberships={memberships}
+        onPick={setCompanyId}
+        onAddNew={() => setShowNewCompanyModal(true)}
+        showNewCompanyModal={showNewCompanyModal}
+        onCloseNewCompanyModal={() => setShowNewCompanyModal(false)}
+      />
+    );
+  }
+
+  // From here on, `companyId` is guaranteed to be a valid membership.
+  const activeId = companyId;
   const active = memberships.find((m) => m.companyId === activeId);
 
   // Dashboard tiles can ask the shell to navigate to a specific view +
@@ -168,6 +197,63 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
           </div>
         </main>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Fallback screen shown when no valid company is selected (no membership
+ * matches the stored id). Forces an explicit pick rather than silently
+ * snapping to a different tenant -- the snap-back was the cross-tenant
+ * leak we fixed; this screen makes the bad state visible instead.
+ */
+function NoActiveCompany({
+  memberships,
+  onPick,
+  onAddNew,
+  showNewCompanyModal,
+  onCloseNewCompanyModal,
+}: {
+  memberships: Membership[];
+  onPick: (id: string) => void;
+  onAddNew: () => void;
+  showNewCompanyModal: boolean;
+  onCloseNewCompanyModal: () => void;
+}) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+      <div className="w-full max-w-md space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div>
+          <div className="text-lg font-semibold tracking-tight text-slate-900">KPBooks</div>
+          <h2 className="mt-2 text-base font-medium text-slate-900">Pick a client to continue</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Each client has its own books, COA, and history. Switch any time from the dropdown
+            in the page header.
+          </p>
+        </div>
+        <ul className="space-y-1.5">
+          {memberships.map((m) => (
+            <li key={m.companyId}>
+              <button
+                type="button"
+                onClick={() => onPick(m.companyId)}
+                className="flex w-full items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-left text-sm hover:border-slate-400 hover:bg-slate-50"
+              >
+                <span className="font-medium text-slate-900">{m.companyName}</span>
+                <span className="text-xs text-slate-500">{m.role}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={onAddNew}
+          className="w-full rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          + Add a new client
+        </button>
+      </div>
+      {showNewCompanyModal && <NewCompanyModal onClose={onCloseNewCompanyModal} />}
     </div>
   );
 }
