@@ -130,3 +130,5 @@ export const recurringFrequencyEnum = pgEnum('recurring_frequency', [
   'quarterly',
   'annually',
 ]);
+
+export const itemTypeEnum = pgEnum('item_type', ['service', 'non_inventory']);

@@ -16,3 +16,4 @@ export * from './worker-documents';
 export * from './recurring-templates';
 export * from './w9-upload-tokens';
 export * from './time-entries';
+export * from './items';

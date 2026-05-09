@@ -46,6 +46,16 @@ interface TaxRate {
   isActive: boolean;
 }
 
+interface SalesItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  salesDescription: string | null;
+  salesPrice: string;
+  salesAccountId: string | null;
+  taxable: boolean;
+}
+
 interface CreateBody {
   customerId: string;
   invoiceNumber: string;
@@ -281,6 +291,12 @@ function NewInvoice({
     queryKey: ['tax-rates', companyId],
     enabled: Boolean(companyId),
     queryFn: () => api<{ taxRates: TaxRate[] }>('/tax-rates?active=true', { companyId }),
+  });
+  const itemsQuery = useQuery({
+    queryKey: ['items', companyId, 'sales'],
+    enabled: Boolean(companyId),
+    queryFn: () =>
+      api<{ items: SalesItem[] }>('/items?active=true&side=sales', { companyId }),
   });
 
   const customers = useMemo(
@@ -540,6 +556,7 @@ function NewInvoice({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
+                <th className="px-3 py-2 text-left font-medium">Item</th>
                 <th className="px-3 py-2 text-left font-medium">Description</th>
                 <th className="px-3 py-2 text-left font-medium">Account</th>
                 <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -552,6 +569,36 @@ function NewInvoice({
             <tbody className="divide-y divide-slate-200">
               {draft.lines.map((line, idx) => (
                 <tr key={idx}>
+                  <td className="px-3 py-2">
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) return;
+                        const it = (itemsQuery.data?.items ?? []).find((x) => x.id === id);
+                        if (!it) return;
+                        // Auto-fill the rest of the line from the item's defaults.
+                        // Tax flag only flips on if the user has picked a tax rate;
+                        // otherwise we leave it alone (the checkbox is disabled anyway).
+                        updateLine(idx, {
+                          description: it.salesDescription ?? it.name,
+                          accountId: it.salesAccountId ?? line.accountId,
+                          unitPrice: it.salesPrice,
+                          taxable: draft.taxRateId ? it.taxable : line.taxable,
+                        });
+                      }}
+                      title="Pick an item to auto-fill description, price, account, taxable"
+                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
+                    >
+                      <option value="">— pick item —</option>
+                      {(itemsQuery.data?.items ?? []).map((it) => (
+                        <option key={it.id} value={it.id}>
+                          {it.sku ? `[${it.sku}] ` : ''}
+                          {it.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-3 py-2">
                     <input
                       type="text"

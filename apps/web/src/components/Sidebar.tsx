@@ -24,7 +24,8 @@ export type View =
   | 'tax-rates'
   | '1099-prep'
   | 'recurring'
-  | 'time-entries';
+  | 'time-entries'
+  | 'items';
 
 interface NavItem {
   id: View;
@@ -50,6 +51,7 @@ const SECTIONS: NavSection[] = [
       { id: 'estimates', label: 'Estimates' },
       { id: 'invoices', label: 'Invoices' },
       { id: 'customers', label: 'Customers' },
+      { id: 'items', label: 'Items / services' },
       { id: 'payments', label: 'Payments' },
     ],
   },

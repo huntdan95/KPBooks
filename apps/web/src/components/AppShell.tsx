@@ -13,6 +13,7 @@ import { Dashboard } from './Dashboard';
 import { EstimatesList } from './EstimatesList';
 import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
+import { ItemsList } from './ItemsList';
 import { Recurring } from './Recurring';
 import { TimeEntries } from './TimeEntries';
 import { JournalEntryForm } from './JournalEntryForm';
@@ -52,6 +53,7 @@ const PAGE_TITLE: Record<View, string> = {
   '1099-prep': '1099 Prep',
   recurring: 'Recurring',
   'time-entries': 'Time Entries',
+  items: 'Items / Services',
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -181,6 +183,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'estimates' && <EstimatesList />}
             {view === 'vendors' && <VendorsList />}
             {view === 'invoices' && <InvoicesList />}
+            {view === 'items' && <ItemsList />}
             {view === 'bills' && <BillsList />}
             {view === 'payments' && <PaymentsList />}
             {view === 'banking' && <BankingList />}
