@@ -23,7 +23,8 @@ export type View =
   | 'reports'
   | 'tax-rates'
   | '1099-prep'
-  | 'recurring';
+  | 'recurring'
+  | 'time-entries';
 
 interface NavItem {
   id: View;
@@ -62,7 +63,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: 'Workers',
-    items: [{ id: 'workers', label: 'Workers / 1099' }],
+    items: [
+      { id: 'workers', label: 'Workers / 1099' },
+      { id: 'time-entries', label: 'Time entries' },
+    ],
   },
   {
     label: 'Banking',
