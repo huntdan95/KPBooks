@@ -26,7 +26,8 @@ export type View =
   | 'recurring'
   | 'time-entries'
   | 'items'
-  | 'payroll-runs';
+  | 'payroll-runs'
+  | 'fixed-assets';
 
 interface NavItem {
   id: View;
@@ -82,6 +83,7 @@ const SECTIONS: NavSection[] = [
       { id: 'accounts', label: 'Chart of accounts' },
       { id: 'new-entry', label: 'New journal entry' },
       { id: 'recurring', label: 'Recurring' },
+      { id: 'fixed-assets', label: 'Fixed assets' },
       { id: 'import', label: 'Import (.iif)' },
     ],
   },

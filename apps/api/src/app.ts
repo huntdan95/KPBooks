@@ -12,6 +12,7 @@ import { billsRoutes } from './routes/bills.js';
 import { chatRoutes } from './routes/chat.js';
 import { customersRoutes } from './routes/customers.js';
 import { estimatesRoutes } from './routes/estimates.js';
+import { fixedAssetsRoutes } from './routes/fixed-assets.js';
 import { healthRoutes } from './routes/health.js';
 import { importsRoutes } from './routes/imports.js';
 import { invoicesRoutes } from './routes/invoices.js';
@@ -77,6 +78,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(paymentsRoutes, { prefix: '/v1' });
   await app.register(payStubsRoutes, { prefix: '/v1' });
   await app.register(payrollRunsRoutes, { prefix: '/v1' });
+  await app.register(fixedAssetsRoutes, { prefix: '/v1' });
   await app.register(recurringRoutes, { prefix: '/v1' });
   await app.register(salesDocPdfRoutes, { prefix: '/v1' });
   await app.register(statementsRoutes, { prefix: '/v1' });

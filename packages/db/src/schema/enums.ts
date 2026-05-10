@@ -154,3 +154,12 @@ export const recurringFrequencyEnum = pgEnum('recurring_frequency', [
 ]);
 
 export const itemTypeEnum = pgEnum('item_type', ['service', 'non_inventory']);
+
+export const depreciationMethodEnum = pgEnum('depreciation_method', [
+  'straight_line',
+]);
+
+export const fixedAssetStatusEnum = pgEnum('fixed_asset_status', [
+  'active',
+  'disposed',
+]);

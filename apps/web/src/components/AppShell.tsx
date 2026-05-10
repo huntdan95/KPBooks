@@ -14,6 +14,7 @@ import { EstimatesList } from './EstimatesList';
 import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
 import { ItemsList } from './ItemsList';
+import { FixedAssets } from './FixedAssets';
 import { Recurring } from './Recurring';
 import { TimeEntries } from './TimeEntries';
 import { PayrollRuns } from './PayrollRuns';
@@ -56,6 +57,7 @@ const PAGE_TITLE: Record<View, string> = {
   'time-entries': 'Time Entries',
   items: 'Items / Services',
   'payroll-runs': 'Pay Runs',
+  'fixed-assets': 'Fixed Assets',
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -195,6 +197,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'recurring' && <Recurring />}
             {view === 'time-entries' && <TimeEntries />}
             {view === 'payroll-runs' && <PayrollRuns />}
+            {view === 'fixed-assets' && <FixedAssets />}
             {view === 'reports' && <Reports />}
             {view === 'tax-rates' && <TaxRates />}
             {view === '1099-prep' && <NinetyNinePrep />}
