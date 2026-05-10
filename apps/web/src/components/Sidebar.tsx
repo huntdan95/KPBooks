@@ -27,7 +27,8 @@ export type View =
   | 'time-entries'
   | 'items'
   | 'payroll-runs'
-  | 'fixed-assets';
+  | 'fixed-assets'
+  | 'activity';
 
 interface NavItem {
   id: View;
@@ -89,7 +90,10 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: 'Reports',
-    items: [{ id: 'reports', label: 'All reports' }],
+    items: [
+      { id: 'reports', label: 'All reports' },
+      { id: 'activity', label: 'Activity log' },
+    ],
   },
   {
     label: 'Taxes',

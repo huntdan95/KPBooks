@@ -6,6 +6,7 @@ import { type Config, corsOrigins } from './config.js';
 import { dbPlugin } from './plugins/db.js';
 import { firebaseAuthPlugin } from './plugins/firebase-auth.js';
 import { rlsContextPlugin } from './plugins/rls.js';
+import { activityRoutes } from './routes/activity.js';
 import { companiesRoutes } from './routes/companies.js';
 import { bankingRoutes } from './routes/banking.js';
 import { billsRoutes } from './routes/bills.js';
@@ -91,6 +92,7 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(w9PublicRoutes, { prefix: '/v1' });
   await app.register(nineteenNinetyNineRoutes, { prefix: '/v1' });
   await app.register(chatRoutes, { prefix: '/v1' });
+  await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
 
   app.setErrorHandler((err, req, reply) => {

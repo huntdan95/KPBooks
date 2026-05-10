@@ -19,3 +19,4 @@ export * from './time-entries';
 export * from './items';
 export * from './payroll-runs';
 export * from './fixed-assets';
+export * from './activity-log';

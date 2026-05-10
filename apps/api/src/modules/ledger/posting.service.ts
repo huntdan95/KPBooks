@@ -2,6 +2,7 @@ import { type Database, accounts, journalEntries, journalLines } from '@kpbooks/
 import { Money, type CurrencyCode, isBalanced } from '@kpbooks/money';
 import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
+import { recordActivity } from '../activity/activity.service.js';
 
 /**
  * posting.service — the **only** code path that writes to journal_entries / journal_lines.
@@ -183,12 +184,67 @@ export async function postEntry(
     })),
   );
 
+  // Audit log -- one row per JE post, in the same tx as the inserts above so
+  // there's no possibility of an audit row referencing an entry that rolled
+  // back. Total amount comes from one currency's debit sum (multi-currency
+  // entries are rare; the audit row records primary-currency total only).
+  const primaryCcy = Array.from(debitsByCcy.keys())[0] ?? 'USD';
+  const totalDebit = (debitsByCcy.get(primaryCcy) ?? []).reduce(
+    (acc, m) => acc.add(m),
+    Money.zero(primaryCcy),
+  );
+  await recordActivity(
+    tx,
+    { companyId: ctx.companyId, userId: ctx.userId },
+    {
+      action: 'posted_entry',
+      entityType: 'journal_entry',
+      entityId: entry.id,
+      summary: summarizeJournalEntry(data, totalDebit.toPgNumeric(), primaryCcy),
+      details: {
+        sourceType: data.sourceType,
+        sourceId: data.sourceId ?? null,
+        reference: data.reference ?? null,
+        memo: data.memo ?? null,
+        lineCount: data.lines.length,
+        totalDebit: totalDebit.toPgNumeric(),
+        currency: primaryCcy,
+      },
+    },
+  );
+
   return {
     id: entry.id,
     entryDate: data.entryDate,
     sourceType: data.sourceType,
     lineCount: data.lines.length,
   };
+}
+
+const SOURCE_TYPE_LABEL: Record<PostEntryInput['sourceType'], string> = {
+  manual: 'manual journal entry',
+  invoice: 'invoice',
+  bill: 'bill',
+  payment: 'payment',
+  bank_transaction: 'bank transaction',
+  reconciliation: 'reconciliation',
+  payroll: 'payroll',
+  import: 'imported entry',
+  reversal: 'reversal',
+};
+
+function summarizeJournalEntry(
+  data: PostEntryInput,
+  totalDebit: string,
+  ccy: CurrencyCode,
+): string {
+  const label = SOURCE_TYPE_LABEL[data.sourceType] ?? 'journal entry';
+  const ref = data.reference ? ` (${data.reference})` : '';
+  const amt =
+    Number(totalDebit) > 0
+      ? ` for ${Number(totalDebit).toLocaleString('en-US', { style: 'currency', currency: ccy })}`
+      : '';
+  return `Posted ${label}${ref}${amt}`;
 }
 
 /**
