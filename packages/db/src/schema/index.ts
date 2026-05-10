@@ -21,3 +21,4 @@ export * from './payroll-runs';
 export * from './fixed-assets';
 export * from './activity-log';
 export * from './mileage-trips';
+export * from './documents';

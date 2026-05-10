@@ -16,6 +16,7 @@ import { Imports } from './Imports';
 import { InvoicesList } from './InvoicesList';
 import { ItemsList } from './ItemsList';
 import { Activity } from './Activity';
+import { Documents } from './Documents';
 import { FixedAssets } from './FixedAssets';
 import { Recurring } from './Recurring';
 import { TimeEntries } from './TimeEntries';
@@ -61,6 +62,7 @@ const PAGE_META: Record<View, { title: string; subtitle?: string }> = {
   'payroll-runs': { title: 'Pay runs', subtitle: 'Batch entry for paychecks' },
   'fixed-assets': { title: 'Fixed assets', subtitle: 'Capitalized assets + depreciation' },
   activity: { title: 'Activity log', subtitle: 'Append-only audit trail' },
+  documents: { title: 'Documents', subtitle: 'Tax returns, 1099s, receipts, statements' },
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -199,6 +201,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             {view === 'fixed-assets' && <FixedAssets />}
             {view === 'reports' && <Reports />}
             {view === 'activity' && <Activity />}
+            {view === 'documents' && <Documents />}
             {view === 'tax-rates' && <TaxRates />}
             {view === '1099-prep' && <NinetyNinePrep />}
             {view === 'import' && <Imports />}
