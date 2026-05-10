@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { InvoiceDetail } from './InvoiceDetail';
+import { EmptyState } from './ui/EmptyState';
 
 interface InvoiceListRow {
   id: string;
@@ -207,7 +208,12 @@ export function InvoicesList() {
       )}
 
       {!invoicesQuery.isLoading && list.length === 0 && (
-        <p className="text-sm text-slate-500">No invoices yet.</p>
+        <EmptyState
+          icon="file-stack"
+          title="No invoices yet"
+          description="Create your first invoice to start billing customers. Posting an invoice automatically writes a balanced JE (DR A/R, CR Revenue)."
+          action={{ label: 'New invoice', onClick: () => setMode('new') }}
+        />
       )}
 
       {list.length > 0 && (

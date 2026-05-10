@@ -246,12 +246,12 @@ export function Generate1099Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4"
+      className="kpb-fade-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="my-8 w-full max-w-2xl space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-lg">
+      <div className="kpb-pop-in my-8 w-full max-w-2xl space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/10">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">

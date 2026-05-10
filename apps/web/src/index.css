@@ -67,3 +67,56 @@ body {
 button:disabled {
   cursor: not-allowed;
 }
+
+/* ───── Subtle motion ─────────────────────────────────────────────────────
+   Prefers-reduced-motion respected: every animation collapses to "no
+   animation" so vestibular-sensitive users get the final state immediately.
+   Durations stay short (<200ms) so even users without reduced-motion don't
+   feel a lag. */
+
+@keyframes kpb-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes kpb-pop-in {
+  from { opacity: 0; transform: scale(0.97) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.kpb-fade-in     { animation: kpb-fade-in 140ms ease-out; }
+.kpb-pop-in      { animation: kpb-pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .kpb-fade-in,
+  .kpb-pop-in,
+  .animate-pulse {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0ms !important;
+  }
+}
+
+/* ───── Sticky table headers ──────────────────────────────────────────────
+   Long reports (Trial Balance, A/R / A/P aging, Activity log) get
+   table headers that stick to the top of the scroll container. The
+   class is applied to <thead>; its parent must be a positioned scroll
+   container (the existing `overflow-hidden rounded-md` wrappers do the
+   job once we add a max-height). Border-collapse: separate is required
+   for sticky on Safari -- but Tailwind's default `border-collapse:
+   collapse` on <table> blocks it. We override with a class instead of
+   forcing every table to opt in. */
+
+table.kpb-sticky-thead {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+table.kpb-sticky-thead thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background-color: rgb(248 250 252); /* slate-50 -- matches existing thead bg */
+  /* Sticky headers need their own border-bottom because border-collapse:
+     separate drops the table's natural border between thead/tbody. */
+  box-shadow: inset 0 -1px 0 rgb(226 232 240); /* slate-200 */
+}

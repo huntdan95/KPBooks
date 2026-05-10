@@ -118,9 +118,9 @@ export function TrialBalance() {
       )}
 
       {rows.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+        <div className="max-h-[70vh] overflow-auto rounded-md border border-slate-200 bg-white">
+          <table className="kpb-sticky-thead w-full text-sm">
+            <thead className="text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">Code</th>
                 <th className="px-4 py-2 text-left font-medium">Account</th>

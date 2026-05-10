@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { EmptyState } from './ui/EmptyState';
 
 interface ReceiptPrefill {
   vendorDisplayName: string | null;
@@ -271,7 +272,12 @@ export function BillsList() {
       )}
 
       {!billsQuery.isLoading && list.length === 0 && (
-        <p className="text-sm text-slate-500">No bills yet.</p>
+        <EmptyState
+          icon="receipt"
+          title="No bills yet"
+          description="Record a vendor bill to track A/P. Posting writes a balanced JE (DR Expense, CR A/P) and the bill stays open until applied payments zero its balance."
+          action={{ label: 'New bill', onClick: () => setMode('new') }}
+        />
       )}
 
       {list.length > 0 && (

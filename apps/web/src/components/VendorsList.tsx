@@ -4,6 +4,7 @@ import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { VendorDetail } from './CounterpartyDetail';
 import { MergeDuplicatesModal } from './MergeDuplicatesModal';
+import { EmptyState } from './ui/EmptyState';
 
 interface Vendor {
   id: string;
@@ -309,7 +310,12 @@ export function VendorsList() {
         </p>
       )}
       {!query.isLoading && vendors.length === 0 && (
-        <p className="text-sm text-slate-500">No vendors yet. Add one above.</p>
+        <EmptyState
+          icon="building-2"
+          title="No vendors yet"
+          description="Add a vendor to record bills, contractor payments, and 1099-eligible payees. The IIF importer can also bulk-load existing vendors."
+          action={{ label: 'New vendor', onClick: startCreate }}
+        />
       )}
 
       {vendors.length > 0 && (

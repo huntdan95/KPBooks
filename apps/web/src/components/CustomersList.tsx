@@ -5,6 +5,7 @@ import { useCurrentCompany } from '../lib/current-company';
 import { CustomerDetail } from './CounterpartyDetail';
 import { MergeDuplicatesModal } from './MergeDuplicatesModal';
 import { StatementsPanel } from './StatementsPanel';
+import { EmptyState } from './ui/EmptyState';
 
 interface Customer {
   id: string;
@@ -294,7 +295,12 @@ export function CustomersList() {
         </p>
       )}
       {!query.isLoading && customers.length === 0 && (
-        <p className="text-sm text-slate-500">No customers yet. Add one above.</p>
+        <EmptyState
+          icon="users"
+          title="No customers yet"
+          description="Add a customer to start sending estimates and invoices. You can also bulk-import via the IIF importer in Accounting."
+          action={{ label: 'New customer', onClick: startCreate }}
+        />
       )}
 
       {customers.length > 0 && (
