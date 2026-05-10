@@ -191,8 +191,8 @@ export function Recurring() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
             Recurring transactions
           </h2>
@@ -202,12 +202,12 @@ export function Recurring() {
             same ledger writes. Click "Run all due" to fire everything that's caught up to today.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => runDueMutation.mutate()}
             disabled={dueCount === 0 || runDueMutation.isPending}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="whitespace-nowrap rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             title={
               dueCount === 0
                 ? 'Nothing is due today'
@@ -221,7 +221,7 @@ export function Recurring() {
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+            className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
             {showForm ? 'Cancel' : '+ New template'}
           </button>

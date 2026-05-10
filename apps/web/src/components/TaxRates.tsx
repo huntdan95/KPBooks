@@ -77,8 +77,8 @@ export function TaxRates() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h3 className="text-base font-semibold tracking-tight text-slate-900">Tax rates</h3>
           <p className="text-sm text-slate-500">
             Configure sales tax rates per jurisdiction. Each rate can be applied to invoice lines
@@ -89,7 +89,7 @@ export function TaxRates() {
         <button
           type="button"
           onClick={mode ? cancel : startCreate}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+          className="shrink-0 whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
           {mode ? 'Cancel' : '+ New tax rate'}
         </button>

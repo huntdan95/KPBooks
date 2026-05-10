@@ -178,7 +178,7 @@ export function BankRules() {
           type="button"
           onClick={mode ? cancel : startCreate}
           disabled={targetCandidates.length === 0}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
+          className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {mode ? 'Cancel' : '+ New rule'}
         </button>

@@ -121,7 +121,7 @@ export function FixedAssets() {
           <button
             type="button"
             onClick={() => setShowWizard((v) => !v)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+            className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
             {showWizard ? 'Cancel' : '+ New asset'}
           </button>
