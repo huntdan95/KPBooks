@@ -1,11 +1,10 @@
 -- KPBooks 0030 -- Phase A of payroll-tracking module.
 --
 -- Adds:
---   1. 'subcontractor' value to the existing worker_type enum (1099 sub
---      is the construction-industry distinction the user runs into daily;
---      same IRS treatment as 1099 contractor but different operationally
---      because sub usually has employees, license, insurance, lien-waiver
---      sign-offs).
+--   1. 'subcontractor' value to the existing worker_type enum -- moved to
+--      0029a_worker_type_subcontractor.sql so the ALTER TYPE commits before
+--      this file's CREATE INDEX statements reference it (Postgres errcode
+--      55P04). 0029a runs first via lex order.
 --   2. Two new enums for W-2 metadata: payroll_filing_status,
 --      pay_schedule. Distinct from the existing pay_rate_basis -- that
 --      one describes what your *rate* means ($25/hr vs $50,000/yr);
@@ -19,10 +18,7 @@
 -- All fields are display-only -- KPBooks does not compute taxes or
 -- generate W-2/941/940 forms (out of scope per the office workflow).
 
--- 1. Extend worker_type enum
-ALTER TYPE worker_type ADD VALUE IF NOT EXISTS 'subcontractor';
-
---> statement-breakpoint
+-- 1. (worker_type 'subcontractor' added in 0029a)
 
 -- 2. New enums
 DO $$ BEGIN
