@@ -4,6 +4,7 @@ import {
   date,
   index,
   jsonb,
+  numeric,
   pgTable,
   primaryKey,
   smallint,
@@ -32,6 +33,12 @@ export const companies = pgTable(
     closedThroughDate: date('closed_through_date', { mode: 'string' }),
     address: jsonb('address').$type<Record<string, unknown>>(),
     phone: text('phone'),
+    /** Default IRS standard mileage rate prefilled on the new-trip form. Trip
+     *  rows store the rate they were logged at (rate-locking) so historical
+     *  deductions don't shift when this changes. */
+    mileageRateDefault: numeric('mileage_rate_default', { precision: 19, scale: 6 })
+      .notNull()
+      .default('0.670000'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

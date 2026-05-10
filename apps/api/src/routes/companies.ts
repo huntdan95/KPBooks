@@ -35,6 +35,8 @@ const UpdateCompanyBody = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
       .nullable()
       .optional(),
+    /** IRS standard mileage rate prefilled on the new-trip form. */
+    mileageRateDefault: z.union([z.string(), z.number()]).optional(),
   })
   .strict();
 
@@ -66,6 +68,7 @@ export const companiesRoutes: FastifyPluginAsync = async (app) => {
           closedThroughDate: companies.closedThroughDate,
           address: companies.address,
           phone: companies.phone,
+          mileageRateDefault: companies.mileageRateDefault,
           createdAt: companies.createdAt,
           updatedAt: companies.updatedAt,
         })
@@ -96,6 +99,9 @@ export const companiesRoutes: FastifyPluginAsync = async (app) => {
       if (body.address !== undefined) update.address = body.address;
       if (body.phone !== undefined) update.phone = body.phone;
       if (body.closedThroughDate !== undefined) update.closedThroughDate = body.closedThroughDate;
+      if (body.mileageRateDefault !== undefined) {
+        update.mileageRateDefault = String(body.mileageRateDefault);
+      }
 
       if (Object.keys(update).length === 0) {
         const [row] = await tx
