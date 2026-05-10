@@ -153,14 +153,14 @@ export function PaymentsList() {
           <button
             type="button"
             onClick={() => setMode({ type: 'new', payType: 'customer_received' })}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+            className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
             + Receive payment
           </button>
           <button
             type="button"
             onClick={() => setMode({ type: 'new', payType: 'vendor_sent' })}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+            className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
             + Pay bill
           </button>
