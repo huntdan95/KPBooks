@@ -4,6 +4,7 @@ import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
 type CopyType = 'B' | 'C' | 'all';
+type FormType = 'nec' | 'misc';
 
 type FixHint =
   | 'company-settings'
@@ -26,25 +27,82 @@ interface Address {
   country?: string;
 }
 
-interface PreflightResp {
+interface PayerInfo {
+  name: string;
+  legalName: string | null;
+  ein: string | null;
+  address: Address | null;
+  phone: string | null;
+}
+
+interface RecipientInfo {
+  displayName: string;
+  taxId: string | null;
+  address: Address | null;
+  accountNumber: string | null;
+}
+
+interface NecPreflightResp {
   year: number;
   vendorId: string;
   issues: PreflightIssue[];
   nonemployeeCompensation: string;
-  payer: {
-    name: string;
-    legalName: string | null;
-    ein: string | null;
-    address: Address | null;
-    phone: string | null;
-  };
-  recipient: {
-    displayName: string;
-    taxId: string | null;
-    address: Address | null;
-    accountNumber: string | null;
-  };
+  payer: PayerInfo;
+  recipient: RecipientInfo;
   hasW9: boolean;
+}
+
+// MISC supports many income boxes; only the commonly-used ones are exposed in
+// the modal's primary form. Advanced boxes (state/FATCA/etc.) round-trip via
+// the route but stay hidden in v1.
+interface MiscBoxes {
+  rents: string;
+  royalties: string;
+  otherIncome: string;
+  federalIncomeTaxWithheld: string;
+  medicalPayments: string;
+  substitutePayments: string;
+  attorneyProceeds: string;
+}
+
+interface MiscPreflightResp {
+  year: number;
+  vendorId: string;
+  issues: PreflightIssue[];
+  yearTotal: string;
+  boxes: Partial<MiscBoxes>;
+  defaultedToRents: boolean;
+  payer: PayerInfo;
+  recipient: RecipientInfo;
+  hasW9: boolean;
+}
+
+const EMPTY_MISC_BOXES: MiscBoxes = {
+  rents: '',
+  royalties: '',
+  otherIncome: '',
+  federalIncomeTaxWithheld: '',
+  medicalPayments: '',
+  substitutePayments: '',
+  attorneyProceeds: '',
+};
+
+const MISC_BOX_LABELS: Record<keyof MiscBoxes, string> = {
+  rents: 'Box 1 — Rents',
+  royalties: 'Box 2 — Royalties',
+  otherIncome: 'Box 3 — Other income',
+  federalIncomeTaxWithheld: 'Box 4 — Federal income tax withheld',
+  medicalPayments: 'Box 6 — Medical / health care',
+  substitutePayments: 'Box 8 — Substitute payments',
+  attorneyProceeds: 'Box 10 — Attorney proceeds',
+};
+
+function buildMiscQuery(boxes: MiscBoxes): string {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(boxes)) {
+    if (v.trim() && Number(v) !== 0) params.set(k, v.trim());
+  }
+  return params.toString();
 }
 
 const FIX_LABEL: Record<FixHint, string> = {
@@ -85,40 +143,75 @@ export function Generate1099Modal({
   onClose: () => void;
 }) {
   const { companyId } = useCurrentCompany();
+  const [formType, setFormType] = useState<FormType>('nec');
   const [year, setYear] = useState<number>(initialYear ?? currentYear() - 1);
   const [copy, setCopy] = useState<CopyType>('all');
   const [downloading, setDownloading] = useState(false);
   const [editingCompany, setEditingCompany] = useState(false);
+  const [miscBoxes, setMiscBoxes] = useState<MiscBoxes>(EMPTY_MISC_BOXES);
 
-  const preflightQ = useQuery({
-    queryKey: ['1099-preflight', companyId, vendorId, year],
-    enabled: Boolean(companyId),
+  const necPreflightQ = useQuery({
+    queryKey: ['1099-nec-preflight', companyId, vendorId, year],
+    enabled: Boolean(companyId) && formType === 'nec',
     queryFn: () =>
-      api<PreflightResp>(`/workers/${vendorId}/1099-nec/preflight?year=${year}`, {
+      api<NecPreflightResp>(`/workers/${vendorId}/1099-nec/preflight?year=${year}`, {
         companyId,
       }),
   });
 
-  const data = preflightQ.data;
-  const blockerCount =
-    data?.issues.filter((i) => i.fix === 'company-settings' || i.fix === 'worker-edit').length ?? 0;
-  const warningCount = (data?.issues.length ?? 0) - blockerCount;
-  const canGenerate = !!data && blockerCount === 0;
+  const miscQuery = buildMiscQuery(miscBoxes);
+  const miscPreflightQ = useQuery({
+    queryKey: ['1099-misc-preflight', companyId, vendorId, year, miscQuery],
+    enabled: Boolean(companyId) && formType === 'misc',
+    queryFn: () =>
+      api<MiscPreflightResp>(
+        `/workers/${vendorId}/1099-misc/preflight?year=${year}${
+          miscQuery ? `&${miscQuery}` : ''
+        }`,
+        { companyId },
+      ),
+  });
+
+  // Common preflight-derived state, regardless of form type.
+  const necData = formType === 'nec' ? necPreflightQ.data : null;
+  const miscData = formType === 'misc' ? miscPreflightQ.data : null;
+  const isLoading =
+    formType === 'nec' ? necPreflightQ.isLoading : miscPreflightQ.isLoading;
+  const isError = formType === 'nec' ? necPreflightQ.isError : miscPreflightQ.isError;
+  const error = formType === 'nec' ? necPreflightQ.error : miscPreflightQ.error;
+  const issues = necData?.issues ?? miscData?.issues ?? [];
+  const hasData = !!(necData ?? miscData);
+  const recipientName = necData?.recipient.displayName ?? miscData?.recipient.displayName ?? '';
+  const hasW9 = necData?.hasW9 ?? miscData?.hasW9 ?? false;
+
+  const blockerCount = issues.filter(
+    (i) => i.fix === 'company-settings' || i.fix === 'worker-edit',
+  ).length;
+  const warningCount = issues.length - blockerCount;
+  const canGenerate = hasData && blockerCount === 0;
+
+  function refetchPreflight() {
+    if (formType === 'nec') void necPreflightQ.refetch();
+    else void miscPreflightQ.refetch();
+  }
 
   async function downloadPdf() {
-    if (!data) return;
+    if (!hasData) return;
     setDownloading(true);
     try {
       const token = await getIdToken();
-      const res = await fetch(
-        `${getApiBase()}/workers/${vendorId}/1099-nec.pdf?year=${year}&copy=${copy}`,
-        {
-          headers: {
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(companyId ? { 'x-kpbooks-company': companyId } : {}),
-          },
+      const url =
+        formType === 'nec'
+          ? `${getApiBase()}/workers/${vendorId}/1099-nec.pdf?year=${year}&copy=${copy}`
+          : `${getApiBase()}/workers/${vendorId}/1099-misc.pdf?year=${year}&copy=${copy}${
+              miscQuery ? `&${miscQuery}` : ''
+            }`;
+      const res = await fetch(url, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(companyId ? { 'x-kpbooks-company': companyId } : {}),
         },
-      );
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(
@@ -128,21 +221,28 @@ export function Generate1099Modal({
         );
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
-      const safeName = `${data.recipient.displayName.replace(/[^A-Za-z0-9]+/g, '_')}_1099-NEC_${year}_Copy${copy}.pdf`;
+      a.href = objectUrl;
+      const formLabel = formType === 'nec' ? '1099-NEC' : '1099-MISC';
+      const safeName = `${recipientName.replace(/[^A-Za-z0-9]+/g, '_')}_${formLabel}_${year}_Copy${copy}.pdf`;
       a.download = safeName;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objectUrl);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Download failed.');
     } finally {
       setDownloading(false);
     }
   }
+
+  // When the user toggles to MISC and hasn't entered any box values yet,
+  // the route auto-fills Box 1 (rents) with YTD. The preflight surfaces this
+  // via `defaultedToRents`. Keep `miscBoxes` empty so subsequent edits show
+  // user intent vs the auto-fill.
+  const miscDefaulted = miscData?.defaultedToRents ?? false;
 
   return (
     <div
@@ -155,12 +255,14 @@ export function Generate1099Modal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Generate Form 1099-NEC
+              Generate Form {formType === 'nec' ? '1099-NEC' : '1099-MISC'}
             </h2>
             <p className="text-xs text-slate-500">
-              Nonemployee Compensation. Generates Copies B (recipient) and C (payer) as a clean
-              facsimile. Copy A must still be e-filed via FIRE or printed onto the official IRS
-              red-ink scannable form.
+              {formType === 'nec'
+                ? 'Nonemployee Compensation — for 1099 contractors paid $600+ for services.'
+                : 'Miscellaneous Information — for rents, royalties, medical/health care, attorney proceeds, etc.'}{' '}
+              Generates Copies B (recipient) and C (payer) as a clean facsimile. Copy A must
+              still be e-filed via FIRE or printed onto the official IRS red-ink scannable form.
             </p>
           </div>
           <button
@@ -171,6 +273,28 @@ export function Generate1099Modal({
           >
             ✕
           </button>
+        </div>
+
+        {/* Form-type toggle */}
+        <div className="flex gap-2 rounded-md border border-slate-200 bg-slate-50 p-1 text-sm">
+          {(['nec', 'misc'] as const).map((t) => {
+            const active = formType === t;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setFormType(t)}
+                className={
+                  'flex-1 rounded px-3 py-1.5 transition-colors ' +
+                  (active
+                    ? 'bg-white font-medium text-slate-900 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800')
+                }
+              >
+                {t === 'nec' ? '1099-NEC' : '1099-MISC'}
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
@@ -200,37 +324,94 @@ export function Generate1099Modal({
           </Field>
         </div>
 
-        {preflightQ.isLoading && <p className="text-sm text-slate-500">Checking…</p>}
-        {preflightQ.isError && (
+        {/* MISC box inputs */}
+        {formType === 'misc' && (
+          <div className="rounded-md border border-slate-200 bg-slate-50/50 p-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-slate-700">Box amounts</h4>
+              {miscData && (
+                <span className="text-xs text-slate-500">
+                  YTD payments to vendor: {formatUsd(miscData.yearTotal)}
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Enter the amount that goes in each box. Leave a box blank to omit it.{' '}
+              {miscDefaulted && (
+                <em>Box 1 (Rents) auto-filled with YTD payments — clear it if not rents.</em>
+              )}
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(Object.keys(EMPTY_MISC_BOXES) as Array<keyof MiscBoxes>).map((key) => (
+                <Field key={key} label={MISC_BOX_LABELS[key]}>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={miscBoxes[key]}
+                    onChange={(e) => setMiscBoxes({ ...miscBoxes, [key]: e.target.value })}
+                    placeholder={
+                      key === 'rents' && miscDefaulted && miscData
+                        ? `auto: ${miscData.yearTotal}`
+                        : '0.00'
+                    }
+                    className={inputClass + ' font-mono text-right'}
+                  />
+                </Field>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setMiscBoxes(EMPTY_MISC_BOXES)}
+              className="mt-2 text-xs text-slate-500 underline hover:text-slate-700"
+            >
+              Clear all boxes
+            </button>
+          </div>
+        )}
+
+        {isLoading && <p className="text-sm text-slate-500">Checking…</p>}
+        {isError && (
           <p className="text-sm text-rose-600">
-            {preflightQ.error instanceof Error
-              ? preflightQ.error.message
-              : 'Failed to check pre-flight.'}
+            {error instanceof Error ? error.message : 'Failed to check pre-flight.'}
           </p>
         )}
 
-        {data && (
+        {hasData && (
           <>
             <div className="grid grid-cols-2 gap-3">
               <SummaryCard
-                label={`Paid in ${year}`}
-                value={formatUsd(data.nonemployeeCompensation)}
-                tone={Number(data.nonemployeeCompensation) >= 600 ? 'emerald' : 'amber'}
+                label={
+                  formType === 'nec' ? `Paid in ${year}` : `Total being filed (${year})`
+                }
+                value={formatUsd(
+                  formType === 'nec'
+                    ? necData?.nonemployeeCompensation
+                    : sumMiscBoxes(miscData),
+                )}
+                tone={
+                  Number(
+                    formType === 'nec'
+                      ? necData?.nonemployeeCompensation
+                      : sumMiscBoxes(miscData),
+                  ) > 0
+                    ? 'emerald'
+                    : 'amber'
+                }
               />
               <SummaryCard
                 label="W-9 on file"
-                value={data.hasW9 ? '✓ yes' : '✗ no'}
-                tone={data.hasW9 ? 'emerald' : 'amber'}
+                value={hasW9 ? '✓ yes' : '✗ no'}
+                tone={hasW9 ? 'emerald' : 'amber'}
               />
             </div>
 
-            {data.issues.length === 0 ? (
+            {issues.length === 0 ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                 ✓ All checks passed — ready to generate.
               </div>
             ) : (
               <div className="space-y-2">
-                {data.issues.map((issue, i) => (
+                {issues.map((issue, i) => (
                   <div
                     key={i}
                     className={
@@ -273,7 +454,7 @@ export function Generate1099Modal({
                 onClose={() => setEditingCompany(false)}
                 onSaved={() => {
                   setEditingCompany(false);
-                  void preflightQ.refetch();
+                  refetchPreflight();
                 }}
               />
             )}
@@ -311,6 +492,18 @@ export function Generate1099Modal({
       </div>
     </div>
   );
+}
+
+function sumMiscBoxes(data: MiscPreflightResp | null | undefined): string {
+  if (!data) return '0';
+  let total = 0;
+  for (const v of Object.values(data.boxes)) {
+    if (typeof v === 'string') {
+      const n = Number(v);
+      if (Number.isFinite(n)) total += n;
+    }
+  }
+  return String(total);
 }
 
 interface CompanyCurrent {
