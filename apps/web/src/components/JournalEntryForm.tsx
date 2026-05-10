@@ -204,7 +204,107 @@ export function JournalEntryForm() {
             + Add line
           </button>
         </div>
-        <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+
+        {/* Mobile: stacked card per line. Hidden on tablet+. */}
+        <div className="space-y-3 md:hidden">
+          {lines.map((line, idx) => (
+            <div
+              key={idx}
+              className="space-y-2 rounded-md border border-slate-200 bg-white p-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Line {idx + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeLine(idx)}
+                  disabled={lines.length <= 2}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30"
+                  aria-label="Remove line"
+                >
+                  ✕
+                </button>
+              </div>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-slate-600">Account</span>
+                <select
+                  value={line.accountId}
+                  onChange={(e) => updateLine(idx, { accountId: e.target.value })}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
+                  required
+                >
+                  <option value="">— select account —</option>
+                  {accounts.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.code} — {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-slate-600">Side</span>
+                  <select
+                    value={line.side}
+                    onChange={(e) =>
+                      updateLine(idx, { side: e.target.value as 'debit' | 'credit' })
+                    }
+                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
+                  >
+                    <option value="debit">Debit</option>
+                    <option value="credit">Credit</option>
+                  </select>
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-slate-600">Amount</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={line.amount}
+                    onChange={(e) =>
+                      updateLine(idx, { amount: e.target.value.replace(/[^0-9.]/g, '') })
+                    }
+                    placeholder="0.00"
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-right font-mono text-base focus:border-slate-900 focus:outline-none"
+                  />
+                </label>
+              </div>
+              <label className="block space-y-1">
+                <span className="text-xs font-medium text-slate-600">Memo</span>
+                <input
+                  type="text"
+                  value={line.memo}
+                  onChange={(e) => updateLine(idx, { memo: e.target.value })}
+                  maxLength={500}
+                  placeholder="Optional"
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
+                />
+              </label>
+            </div>
+          ))}
+          <div
+            className={
+              'rounded-md border px-3 py-2 text-sm ' +
+              (balanced
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border-rose-200 bg-rose-50 text-rose-800')
+            }
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-medium">Totals</span>
+              <span className="font-mono text-xs">
+                Dr {formatUsd(totals.debit)} / Cr {formatUsd(totals.credit)}
+              </span>
+            </div>
+            <div className="mt-0.5 font-mono text-xs">
+              {balanced ? '✓ balanced' : `off by ${formatUsd(totals.diff)}`}
+            </div>
+          </div>
+        </div>
+
+        {/* Tablet+: original table layout. */}
+        <div className="hidden overflow-hidden rounded-md border border-slate-200 bg-white md:block">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>

@@ -68,6 +68,30 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ───── Mobile inputs ─────────────────────────────────────────────────────
+   iOS Safari + Chrome auto-zoom into <input> / <textarea> / <select>
+   elements on focus when their font-size is < 16px. Tailwind's text-sm is
+   14px so virtually every input in the app would trigger the zoom. Force
+   16px on mobile only -- desktop keeps the 14px density we built around. */
+@media (max-width: 640px) {
+  input[type='text'],
+  input[type='email'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='password'],
+  input[type='number'],
+  input[type='search'],
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='time'],
+  input[type='week'],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* ───── Subtle motion ─────────────────────────────────────────────────────
    Prefers-reduced-motion respected: every animation collapses to "no
    animation" so vestibular-sensitive users get the final state immediately.

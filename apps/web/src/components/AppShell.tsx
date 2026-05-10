@@ -141,19 +141,69 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   }, []);
 
   const meta = PAGE_META[view];
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Selecting a sidebar item should also close the mobile drawer (no-op on
+  // tablet+ where the sidebar is always visible).
+  function selectAndCloseDrawer(v: View) {
+    setView(v);
+    setDrawerOpen(false);
+  }
 
   return (
     <div className="flex min-h-screen bg-slate-50">
+      {/* Sidebar — visible on tablet+, hidden on mobile (drawer takes over) */}
       <aside className="hidden w-60 shrink-0 sm:block">
         <div className="sticky top-0 h-screen">
           <Sidebar activeView={view} onSelect={setView} />
         </div>
       </aside>
 
+      {/* Mobile drawer — slides in from left when drawerOpen=true */}
+      {drawerOpen && (
+        <div
+          className="kpb-fade-in fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm sm:hidden"
+          onClick={() => setDrawerOpen(false)}
+          aria-hidden
+        />
+      )}
+      <div
+        className={
+          'fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200 ease-out sm:hidden ' +
+          (drawerOpen ? 'translate-x-0' : '-translate-x-full')
+        }
+        role="dialog"
+        aria-label="Navigation"
+      >
+        <Sidebar activeView={view} onSelect={selectAndCloseDrawer} />
+      </div>
+
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur">
-          <div className="flex items-center justify-between gap-4 px-6 py-3">
-            <div className="flex min-w-0 items-center gap-4">
+          <div className="flex items-center justify-between gap-3 px-3 py-3 sm:gap-4 sm:px-6">
+            {/* Mobile-only hamburger */}
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 sm:hidden"
+              aria-label="Open navigation"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                className="h-5 w-5"
+                aria-hidden
+              >
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+
+            <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
               <div className="min-w-0">
                 <h1 className="truncate text-base font-semibold tracking-tight text-slate-900">
                   {meta.title}
@@ -179,7 +229,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
 
         {showNewCompanyModal && <NewCompanyModal onClose={() => setShowNewCompanyModal(false)} />}
 
-        <main className="flex-1 overflow-y-auto px-6 py-6">
+        <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6">
           <div className="mx-auto max-w-6xl space-y-6">
             {view === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
             {view === 'chat' && <Chat />}
