@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
+import { Icon } from './ui/Icon';
 import { AccountsList } from './AccountsList';
 import { BankingList } from './BankingList';
 import { BillsList } from './BillsList';
@@ -36,30 +37,30 @@ interface Membership {
   role: 'owner' | 'admin' | 'bookkeeper' | 'viewer';
 }
 
-const PAGE_TITLE: Record<View, string> = {
-  dashboard: 'Dashboard',
-  chat: 'Ask Claude',
-  estimates: 'Estimates',
-  invoices: 'Invoices',
-  customers: 'Customers',
-  bills: 'Bills',
-  vendors: 'Vendors',
-  mileage: 'Mileage',
-  workers: 'Workers / 1099',
-  banking: 'Banking',
-  payments: 'Payments',
-  accounts: 'Chart of Accounts',
-  'new-entry': 'New Journal Entry',
-  import: 'Import from QuickBooks',
-  reports: 'Reports',
-  'tax-rates': 'Tax Rates',
-  '1099-prep': '1099 Prep',
-  recurring: 'Recurring',
-  'time-entries': 'Time Entries',
-  items: 'Items / Services',
-  'payroll-runs': 'Pay Runs',
-  'fixed-assets': 'Fixed Assets',
-  activity: 'Activity Log',
+const PAGE_META: Record<View, { title: string; subtitle?: string }> = {
+  dashboard: { title: 'Dashboard', subtitle: 'Today at a glance' },
+  chat: { title: 'Ask Claude', subtitle: 'AI bookkeeping assistant' },
+  estimates: { title: 'Estimates', subtitle: 'Quotes ready to convert to invoices' },
+  invoices: { title: 'Invoices', subtitle: 'Customer-facing A/R documents' },
+  customers: { title: 'Customers', subtitle: 'A/R counterparties' },
+  bills: { title: 'Bills', subtitle: 'Vendor-facing A/P documents' },
+  vendors: { title: 'Vendors', subtitle: 'A/P counterparties' },
+  mileage: { title: 'Mileage', subtitle: 'Business-use travel log' },
+  workers: { title: 'Workers / 1099', subtitle: 'Contractors, employees, W-9s' },
+  banking: { title: 'Banking', subtitle: 'Bank accounts + reconciliation' },
+  payments: { title: 'Payments', subtitle: 'Money in and money out' },
+  accounts: { title: 'Chart of Accounts', subtitle: 'Your ledger structure' },
+  'new-entry': { title: 'New journal entry', subtitle: 'Manual ledger posting' },
+  import: { title: 'Import from QuickBooks', subtitle: 'Drop an .iif file to seed your books' },
+  reports: { title: 'Reports', subtitle: 'Trial balance, P&L, A/R, A/P, and more' },
+  'tax-rates': { title: 'Tax rates', subtitle: 'Sales-tax rates applied to invoices' },
+  '1099-prep': { title: '1099 prep', subtitle: 'Year-end NEC + MISC pre-flight' },
+  recurring: { title: 'Recurring', subtitle: 'Monthly retainers + recurring bills' },
+  'time-entries': { title: 'Time entries', subtitle: 'Worker hours that flow into bills' },
+  items: { title: 'Items / services', subtitle: 'Saved fixtures for invoice + bill lines' },
+  'payroll-runs': { title: 'Pay runs', subtitle: 'Batch entry for paychecks' },
+  'fixed-assets': { title: 'Fixed assets', subtitle: 'Capitalized assets + depreciation' },
+  activity: { title: 'Activity log', subtitle: 'Append-only audit trail' },
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
@@ -120,7 +121,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   // slices can pre-select.
   function handleNavigate(target: string) {
     const [primary] = target.split(':');
-    if (primary && (primary in PAGE_TITLE)) {
+    if (primary && (primary in PAGE_META)) {
       setView(primary as View);
     }
   }
@@ -137,44 +138,40 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
     return () => window.removeEventListener('kpb:navigate', handler);
   }, []);
 
+  const meta = PAGE_META[view];
+
   return (
-    <div className="flex min-h-screen bg-slate-100">
-      <aside className="hidden w-56 shrink-0 sm:block">
+    <div className="flex min-h-screen bg-slate-50">
+      <aside className="hidden w-60 shrink-0 sm:block">
         <div className="sticky top-0 h-screen">
           <Sidebar activeView={view} onSelect={setView} />
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-4">
-              <h1 className="text-base font-semibold tracking-tight text-slate-900">
-                {PAGE_TITLE[view]}
-              </h1>
+        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 backdrop-blur">
+          <div className="flex items-center justify-between gap-4 px-6 py-3">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="min-w-0">
+                <h1 className="truncate text-base font-semibold tracking-tight text-slate-900">
+                  {meta.title}
+                </h1>
+                {meta.subtitle && (
+                  <p className="hidden truncate text-xs text-slate-500 sm:block">
+                    {meta.subtitle}
+                  </p>
+                )}
+              </div>
+              <span className="hidden h-8 w-px bg-slate-200 sm:block" />
               <CompanyPicker
                 memberships={memberships}
                 activeId={activeId}
                 onChange={setCompanyId}
                 onAddNew={() => setShowNewCompanyModal(true)}
+                activeRole={active?.role}
               />
             </div>
-            <div className="flex items-center gap-3 text-sm text-slate-600">
-              {active && (
-                <span className="hidden sm:inline">
-                  <span className="text-slate-400">role:</span>{' '}
-                  <span className="font-medium text-slate-900">{active.role}</span>
-                </span>
-              )}
-              <span>{user?.email}</span>
-              <button
-                type="button"
-                onClick={() => void signOut()}
-                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100"
-              >
-                Sign out
-              </button>
-            </div>
+            <UserMenu email={user?.email ?? null} />
           </div>
         </header>
 
@@ -275,32 +272,177 @@ function CompanyPicker({
   activeId,
   onChange,
   onAddNew,
+  activeRole,
 }: {
   memberships: Membership[];
   activeId: string | null;
   onChange: (id: string) => void;
   onAddNew: () => void;
+  activeRole: Membership['role'] | undefined;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = memberships.find((m) => m.companyId === activeId);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const initials = (active?.companyName ?? '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('') || '?';
+
   return (
-    <select
-      value={activeId ?? ''}
-      onChange={(e) => {
-        if (e.target.value === '__new__') {
-          onAddNew();
-        } else {
-          onChange(e.target.value);
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={
+          'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm transition-colors ' +
+          (open
+            ? 'border-slate-400 bg-slate-50'
+            : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50')
         }
-      }}
-      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-900 focus:outline-none"
-    >
-      {memberships.map((m) => (
-        <option key={m.companyId} value={m.companyId}>
-          {m.companyName}
-        </option>
-      ))}
-      <option disabled>──────────</option>
-      <option value="__new__">+ New client…</option>
-    </select>
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded bg-gradient-to-br from-slate-700 to-slate-900 text-[10px] font-semibold text-white">
+          {initials}
+        </span>
+        <span className="max-w-[16ch] truncate font-medium text-slate-900">
+          {active?.companyName ?? 'Pick a client'}
+        </span>
+        {activeRole && (
+          <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:inline">
+            {activeRole}
+          </span>
+        )}
+        <Icon
+          name="chevron-down"
+          className={'h-3.5 w-3.5 text-slate-400 transition-transform ' + (open ? 'rotate-180' : '')}
+        />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg"
+          role="listbox"
+        >
+          <div className="max-h-72 overflow-y-auto py-1">
+            {memberships.map((m) => {
+              const isActive = m.companyId === activeId;
+              return (
+                <button
+                  key={m.companyId}
+                  type="button"
+                  onClick={() => {
+                    onChange(m.companyId);
+                    setOpen(false);
+                  }}
+                  className={
+                    'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-50 ' +
+                    (isActive ? 'bg-emerald-50/40' : '')
+                  }
+                  role="option"
+                  aria-selected={isActive}
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-slate-900">{m.companyName}</div>
+                    <div className="text-[11px] uppercase tracking-wider text-slate-400">
+                      {m.role}
+                    </div>
+                  </div>
+                  {isActive && (
+                    <Icon name="check" className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.25} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onAddNew();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 border-t border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <Icon name="plus" className="h-4 w-4" strokeWidth={2.25} />
+            New client
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMenu({ email }: { email: string | null }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const initial = email ? email[0]?.toUpperCase() ?? '?' : '?';
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-sm font-semibold text-white shadow-sm transition-transform hover:scale-105"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={email ?? ''}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-40 mt-1 w-60 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+          <div className="border-b border-slate-200 px-3 py-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Signed in as
+            </div>
+            <div className="truncate text-sm text-slate-900">{email ?? '—'}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <Icon name="log-out" className="h-4 w-4 text-slate-400" />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
