@@ -4,6 +4,7 @@ import { BalanceSheet } from './BalanceSheet';
 import { PayrollRegister } from './PayrollRegister';
 import { PeriodClose } from './PeriodClose';
 import { ProfitAndLoss } from './ProfitAndLoss';
+import { SalesTaxLiability } from './SalesTaxLiability';
 import { StatementOfCashFlows } from './StatementOfCashFlows';
 import { TaxRates } from './TaxRates';
 import { TrialBalance } from './TrialBalance';
@@ -18,6 +19,7 @@ type ReportView =
   | 'ap-aging'
   | 'payroll-register'
   | 'workers-comp'
+  | 'sales-tax-liability'
   | 'period-close'
   | 'tax-rates';
 
@@ -30,6 +32,7 @@ const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'ap-aging', label: 'A/P Aging' },
   { id: 'payroll-register', label: 'Payroll Register' },
   { id: 'workers-comp', label: "Workers' Comp" },
+  { id: 'sales-tax-liability', label: 'Sales Tax Liability' },
   { id: 'period-close', label: 'Close Period' },
   { id: 'tax-rates', label: 'Tax Rates' },
 ];
@@ -70,6 +73,7 @@ export function Reports() {
       {view === 'ap-aging' && <Aging mode="ap" />}
       {view === 'payroll-register' && <PayrollRegister />}
       {view === 'workers-comp' && <WorkersCompSummary />}
+      {view === 'sales-tax-liability' && <SalesTaxLiability />}
       {view === 'period-close' && <PeriodClose />}
       {view === 'tax-rates' && <TaxRates />}
     </div>

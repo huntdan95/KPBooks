@@ -11,6 +11,7 @@ import {
   nineteenNinetyNineSummary,
   payrollRegister,
   profitAndLoss,
+  salesTaxLiability,
   statementOfCashFlows,
   trialBalance,
   workersCompSummary,
@@ -190,6 +191,11 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
       withinDays,
       rows: await complianceExpiring(tx, withinDays),
     }));
+  });
+
+  app.get('/ledger/reports/sales-tax-liability', async (req) => {
+    const { from, to } = z.object({ from: DateOnly, to: DateOnly }).parse(req.query);
+    return req.withTenantTx(async (tx) => salesTaxLiability(tx, from, to));
   });
 
   app.get('/ledger/reports/1099-summary', async (req) => {

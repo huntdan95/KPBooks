@@ -873,6 +873,184 @@ export async function complianceExpiring(
   }));
 }
 
+// -- Sales tax liability ----------------------------------------------------
+
+export interface SalesTaxLiabilityRateRow {
+  taxRateId: string;
+  name: string;
+  ratePercent: string;
+  isActive: boolean;
+  invoiceCount: number;
+  taxableSales: string;
+  taxCollected: string;
+}
+
+export interface SalesTaxLiability {
+  from: string;
+  to: string;
+  /** The "Sales Tax Payable" GL account, if it exists. Null if not yet seeded. */
+  account: { id: string; code: string; name: string } | null;
+  /** Sum of credits to Sales Tax Payable in [from, to] -- tax accrued in period. */
+  collected: string;
+  /** Sum of debits to Sales Tax Payable in [from, to] -- remittances + adjustments. */
+  remitted: string;
+  /** collected - remitted. Positive = liability grew this period. */
+  netChange: string;
+  /** Cumulative balance of Sales Tax Payable as of `to` -- what you owe today. */
+  endingBalance: string;
+  /** Per-rate breakdown sourced from non-void invoices billed in [from, to]. */
+  byRate: SalesTaxLiabilityRateRow[];
+  /**
+   * Tax collected via posted invoices that have NO tax_rate_id (legacy / manual
+   * tax adjustments). Surfaces as a single "untracked" row so totals reconcile
+   * to the GL.
+   */
+  untracked: { invoiceCount: number; taxCollected: string };
+}
+
+/**
+ * Sales tax liability report. Combines GL-derived figures (the source of
+ * truth for what's owed) with an invoice-level breakdown by rate so the
+ * bookkeeper can fill remittance forms per jurisdiction.
+ *
+ * GL figures use journal_lines against the seeded "Sales Tax Payable"
+ * account (matched by exact name + active, same lookup invoices/posting
+ * uses on the write side). If the account isn't seeded yet, the GL
+ * figures are 0 but the per-rate breakdown still works -- so the report
+ * is useful even before the account has any history.
+ */
+export async function salesTaxLiability(
+  db: Database,
+  from: string,
+  to: string,
+): Promise<SalesTaxLiability> {
+  // Step 1: locate the Sales Tax Payable account (RLS scopes to current company).
+  const stpRows = await db.execute(sql`
+    SELECT a.id, a.code, a.name
+    FROM accounts a
+    WHERE a.name = 'Sales Tax Payable'
+      AND a.is_active = true
+    ORDER BY a.code
+    LIMIT 1
+  `);
+  const stp = (stpRows as unknown as Array<Record<string, unknown>>)[0] ?? null;
+  const account = stp
+    ? { id: String(stp.id), code: String(stp.code), name: String(stp.name) }
+    : null;
+
+  // Step 2: GL aggregates (period collected/remitted + cumulative ending).
+  let collected = '0';
+  let remitted = '0';
+  let endingBalance = '0';
+  if (account) {
+    const periodRows = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(jl.credit), 0) AS credits,
+        COALESCE(SUM(jl.debit), 0)  AS debits
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE jl.account_id = ${account.id}::uuid
+        AND je.entry_date BETWEEN ${from}::date AND ${to}::date
+    `);
+    const p = (periodRows as unknown as Array<Record<string, unknown>>)[0];
+    collected = String(p?.credits ?? '0');
+    remitted = String(p?.debits ?? '0');
+
+    const cumRows = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0) AS balance
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE jl.account_id = ${account.id}::uuid
+        AND je.entry_date <= ${to}::date
+    `);
+    const c = (cumRows as unknown as Array<Record<string, unknown>>)[0];
+    endingBalance = String(c?.balance ?? '0');
+  }
+
+  // Step 3: per-rate breakdown from invoices in period (non-void only). The
+  // taxable_sales sub-select sums ONLY taxable lines per invoice, matching the
+  // base the posting service used to compute tax_amount in the first place.
+  const rateRows = await db.execute(sql`
+    WITH invoice_in_period AS (
+      SELECT
+        i.id,
+        i.tax_rate_id,
+        i.tax_amount,
+        COALESCE((
+          SELECT SUM(il.amount)
+          FROM invoice_lines il
+          WHERE il.invoice_id = i.id AND il.taxable = true
+        ), 0) AS taxable_sales
+      FROM invoices i
+      WHERE i.invoice_date BETWEEN ${from}::date AND ${to}::date
+        AND i.status <> 'void'
+    )
+    SELECT
+      tr.id           AS tax_rate_id,
+      tr.name         AS name,
+      tr.rate_percent AS rate_percent,
+      tr.is_active    AS is_active,
+      COUNT(iip.id)   AS invoice_count,
+      COALESCE(SUM(iip.taxable_sales), 0) AS taxable_sales,
+      COALESCE(SUM(iip.tax_amount), 0)    AS tax_collected
+    FROM tax_rates tr
+    LEFT JOIN invoice_in_period iip ON iip.tax_rate_id = tr.id
+    GROUP BY tr.id, tr.name, tr.rate_percent, tr.is_active
+    HAVING COUNT(iip.id) > 0 OR tr.is_active = true
+    ORDER BY tr.is_active DESC, tr.name ASC
+  `);
+  const byRate: SalesTaxLiabilityRateRow[] = (
+    rateRows as unknown as Array<Record<string, unknown>>
+  ).map((r) => ({
+    taxRateId: String(r.tax_rate_id),
+    name: String(r.name),
+    ratePercent: String(r.rate_percent),
+    isActive: Boolean(r.is_active),
+    invoiceCount: Number(r.invoice_count ?? 0),
+    taxableSales: String(r.taxable_sales ?? '0'),
+    taxCollected: String(r.tax_collected ?? '0'),
+  }));
+
+  // Step 4: untracked tax (invoices with tax > 0 but no tax_rate_id). Should be
+  // rare but the report surfaces them so totals reconcile to the GL even when
+  // legacy data has tax without a linked rate.
+  const untrackedRows = await db.execute(sql`
+    SELECT
+      COUNT(*) AS invoice_count,
+      COALESCE(SUM(i.tax_amount), 0) AS tax_collected
+    FROM invoices i
+    WHERE i.invoice_date BETWEEN ${from}::date AND ${to}::date
+      AND i.status <> 'void'
+      AND i.tax_rate_id IS NULL
+      AND i.tax_amount > 0
+  `);
+  const u = (untrackedRows as unknown as Array<Record<string, unknown>>)[0];
+
+  // netChange = collected - remitted, computed in minor units to avoid string
+  // arithmetic surprises on the wire.
+  const SCALE = 10000n;
+  const netChange = minorToDecimal(
+    decimalToMinor(collected, SCALE) - decimalToMinor(remitted, SCALE),
+    SCALE,
+  );
+
+  return {
+    from,
+    to,
+    account,
+    collected,
+    remitted,
+    netChange,
+    endingBalance,
+    byRate,
+    untracked: {
+      invoiceCount: Number(u?.invoice_count ?? 0),
+      taxCollected: String(u?.tax_collected ?? '0'),
+    },
+  };
+}
+
 // Local minor-unit helpers — bigint arithmetic avoids float traps without pulling Decimal into report wiring.
 function decimalToMinor(s: string, scale: bigint): bigint {
   const [sign, rest] = s.startsWith('-') ? [-1n, s.slice(1)] : [1n, s];
