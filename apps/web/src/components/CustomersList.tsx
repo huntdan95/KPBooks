@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { CustomerDetail } from './CounterpartyDetail';
+import { MergeDuplicatesModal } from './MergeDuplicatesModal';
 import { StatementsPanel } from './StatementsPanel';
 
 interface Customer {
@@ -79,6 +80,7 @@ export function CustomersList() {
   const [mode, setMode] = useState<FormMode>(null);
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [showMerge, setShowMerge] = useState<boolean>(false);
 
   // NOTE: every hook below MUST run on every render; do NOT add an early
   // `if (detailId) return ...` here -- that's a Rules-of-Hooks violation
@@ -142,14 +144,27 @@ export function CustomersList() {
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Customers</h2>
           <p className="text-sm text-slate-500">{customers.length} on file</p>
         </div>
-        <button
-          type="button"
-          onClick={mode ? cancel : startCreate}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
-        >
-          {mode ? 'Cancel' : '+ New customer'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowMerge(true)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            Merge duplicates…
+          </button>
+          <button
+            type="button"
+            onClick={mode ? cancel : startCreate}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            {mode ? 'Cancel' : '+ New customer'}
+          </button>
+        </div>
       </div>
+
+      {showMerge && (
+        <MergeDuplicatesModal kind="customer" onClose={() => setShowMerge(false)} />
+      )}
 
       <StatementsPanel />
 

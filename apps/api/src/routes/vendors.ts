@@ -2,6 +2,11 @@ import { vendors } from '@kpbooks/db';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import {
+  MergeError,
+  MergeSchema,
+  mergeVendors,
+} from '../modules/merge/merge.service.js';
 
 const Address = z
   .object({
@@ -158,5 +163,26 @@ export const vendorsRoutes: FastifyPluginAsync = async (app) => {
         .returning();
       return updated;
     });
+  });
+
+  app.post('/vendors/merge', async (req, reply) => {
+    const body = MergeSchema.parse(req.body);
+    try {
+      const result = await req.withTenantTx(async (tx) =>
+        mergeVendors(
+          tx,
+          { companyId: req.auth!.companyId!, userId: req.auth!.userId },
+          body,
+        ),
+      );
+      return reply.status(200).send(result);
+    } catch (err) {
+      if (err instanceof MergeError) {
+        const status =
+          err.code === 'not_found' ? 404 : err.code === 'delete_failed' ? 409 : 422;
+        return reply.status(status).send({ error: err.code, message: err.message });
+      }
+      throw err;
+    }
   });
 };

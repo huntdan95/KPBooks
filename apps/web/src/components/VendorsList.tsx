@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { VendorDetail } from './CounterpartyDetail';
+import { MergeDuplicatesModal } from './MergeDuplicatesModal';
 
 interface Vendor {
   id: string;
@@ -80,6 +81,7 @@ export function VendorsList() {
   const [mode, setMode] = useState<FormMode>(null);
   const [draft, setDraft] = useState<FormDraft>(emptyDraft);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [showMerge, setShowMerge] = useState<boolean>(false);
 
   // NOTE: every hook MUST run on every render; do NOT add an early
   // `if (detailId) return ...` between hooks here. The branch lives below
@@ -142,14 +144,27 @@ export function VendorsList() {
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">Vendors</h2>
           <p className="text-sm text-slate-500">{vendors.length} on file</p>
         </div>
-        <button
-          type="button"
-          onClick={mode ? cancel : startCreate}
-          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
-        >
-          {mode ? 'Cancel' : '+ New vendor'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowMerge(true)}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            Merge duplicates…
+          </button>
+          <button
+            type="button"
+            onClick={mode ? cancel : startCreate}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
+          >
+            {mode ? 'Cancel' : '+ New vendor'}
+          </button>
+        </div>
       </div>
+
+      {showMerge && (
+        <MergeDuplicatesModal kind="vendor" onClose={() => setShowMerge(false)} />
+      )}
 
       {mode && (
         <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">

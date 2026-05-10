@@ -2,6 +2,11 @@ import { customers } from '@kpbooks/db';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import {
+  MergeError,
+  MergeSchema,
+  mergeCustomers,
+} from '../modules/merge/merge.service.js';
 
 const Address = z
   .object({
@@ -131,5 +136,26 @@ export const customersRoutes: FastifyPluginAsync = async (app) => {
       if (!updated) return reply.status(404).send({ error: 'not_found' });
       return updated;
     });
+  });
+
+  app.post('/customers/merge', async (req, reply) => {
+    const body = MergeSchema.parse(req.body);
+    try {
+      const result = await req.withTenantTx(async (tx) =>
+        mergeCustomers(
+          tx,
+          { companyId: req.auth!.companyId!, userId: req.auth!.userId },
+          body,
+        ),
+      );
+      return reply.status(200).send(result);
+    } catch (err) {
+      if (err instanceof MergeError) {
+        const status =
+          err.code === 'not_found' ? 404 : err.code === 'delete_failed' ? 409 : 422;
+        return reply.status(status).send({ error: err.code, message: err.message });
+      }
+      throw err;
+    }
   });
 };
