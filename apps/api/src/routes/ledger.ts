@@ -7,6 +7,7 @@ import {
   apAging,
   arAging,
   balanceSheet,
+  cashFlowForecast,
   complianceExpiring,
   nineteenNinetyNineSummary,
   payrollRegister,
@@ -196,6 +197,16 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
   app.get('/ledger/reports/sales-tax-liability', async (req) => {
     const { from, to } = z.object({ from: DateOnly, to: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => salesTaxLiability(tx, from, to));
+  });
+
+  app.get('/ledger/reports/cash-flow-forecast', async (req) => {
+    const { asOf, horizonDays } = z
+      .object({
+        asOf: DateOnly,
+        horizonDays: z.coerce.number().int().min(7).max(365).default(90),
+      })
+      .parse(req.query);
+    return req.withTenantTx(async (tx) => cashFlowForecast(tx, asOf, horizonDays));
   });
 
   app.get('/ledger/reports/1099-summary', async (req) => {

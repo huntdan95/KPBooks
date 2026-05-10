@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
+import { CashFlowForecast } from './CashFlowForecast';
 import { PayrollRegister } from './PayrollRegister';
 import { PeriodClose } from './PeriodClose';
 import { ProfitAndLoss } from './ProfitAndLoss';
@@ -15,6 +16,7 @@ type ReportView =
   | 'pnl'
   | 'balance-sheet'
   | 'cash-flows'
+  | 'cash-flow-forecast'
   | 'ar-aging'
   | 'ap-aging'
   | 'payroll-register'
@@ -28,6 +30,7 @@ const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
   { id: 'pnl', label: 'Profit & Loss' },
   { id: 'balance-sheet', label: 'Balance Sheet' },
   { id: 'cash-flows', label: 'Cash Flows' },
+  { id: 'cash-flow-forecast', label: 'Cash Flow Forecast' },
   { id: 'ar-aging', label: 'A/R Aging' },
   { id: 'ap-aging', label: 'A/P Aging' },
   { id: 'payroll-register', label: 'Payroll Register' },
@@ -69,6 +72,7 @@ export function Reports() {
       {view === 'pnl' && <ProfitAndLoss />}
       {view === 'balance-sheet' && <BalanceSheet />}
       {view === 'cash-flows' && <StatementOfCashFlows />}
+      {view === 'cash-flow-forecast' && <CashFlowForecast />}
       {view === 'ar-aging' && <Aging mode="ar" />}
       {view === 'ap-aging' && <Aging mode="ap" />}
       {view === 'payroll-register' && <PayrollRegister />}

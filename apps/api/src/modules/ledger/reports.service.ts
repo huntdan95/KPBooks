@@ -873,6 +873,425 @@ export async function complianceExpiring(
   }));
 }
 
+// -- Cash flow forecast (Slice #39) ----------------------------------------
+
+export interface CashAccountRow {
+  accountId: string;
+  code: string;
+  name: string;
+  subtype: 'bank' | 'credit_card';
+  balance: string;
+}
+
+export interface ForecastArDueItem {
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  invoiceDate: string;
+  dueDate: string;
+  balanceDue: string;
+}
+
+export interface ForecastApDueItem {
+  billId: string;
+  billNumber: string;
+  vendorId: string;
+  vendorName: string;
+  billDate: string;
+  dueDate: string;
+  balanceDue: string;
+}
+
+export interface ForecastRecurringOccurrence {
+  templateId: string;
+  templateName: string;
+  /** customer or vendor display name. */
+  counterpartyName: string;
+  frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annually';
+  occurrenceDate: string;
+  amount: string;
+}
+
+export interface ForecastWeek {
+  weekStart: string;
+  weekEnd: string;
+  openingBalance: string;
+  arDue: string;
+  recurringInflows: string;
+  apDue: string;
+  recurringOutflows: string;
+  inflows: string;
+  outflows: string;
+  netChange: string;
+  closingBalance: string;
+}
+
+export interface CashFlowForecast {
+  asOf: string;
+  horizonDays: number;
+  startingBalance: string;
+  cashAccounts: CashAccountRow[];
+  weeks: ForecastWeek[];
+  arDue: ForecastArDueItem[];
+  apDue: ForecastApDueItem[];
+  recurringInvoices: ForecastRecurringOccurrence[];
+  recurringBills: ForecastRecurringOccurrence[];
+  totals: {
+    arDue: string;
+    apDue: string;
+    recurringInflows: string;
+    recurringOutflows: string;
+    inflows: string;
+    outflows: string;
+    netChange: string;
+    endingBalance: string;
+  };
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDaysIso(base: string, days: number): string {
+  const d = new Date(base + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return isoDate(d);
+}
+
+function addMonthsIso(base: string, months: number, dayOfMonthHint: number | null): string {
+  // dayOfMonthHint=31 means "last day of month". Otherwise we clamp to the
+  // requested day, falling back to the last day of the target month.
+  const [y, m] = base.split('-').map((v) => Number(v));
+  const target = new Date(Date.UTC(y!, m! - 1 + months, 1));
+  // Days in target month: day 0 of next month.
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  const desiredDay = dayOfMonthHint && dayOfMonthHint > 0 ? dayOfMonthHint : Number(base.slice(8, 10));
+  const day = desiredDay >= 31 ? lastDay : Math.min(desiredDay, lastDay);
+  target.setUTCDate(day);
+  return isoDate(target);
+}
+
+function nextOccurrenceDate(
+  prev: string,
+  frequency: 'weekly' | 'biweekly' | 'monthly' | 'quarterly' | 'annually',
+  dayOfMonthHint: number | null,
+): string {
+  switch (frequency) {
+    case 'weekly':
+      return addDaysIso(prev, 7);
+    case 'biweekly':
+      return addDaysIso(prev, 14);
+    case 'monthly':
+      return addMonthsIso(prev, 1, dayOfMonthHint);
+    case 'quarterly':
+      return addMonthsIso(prev, 3, dayOfMonthHint);
+    case 'annually':
+      return addMonthsIso(prev, 12, dayOfMonthHint);
+  }
+}
+
+/**
+ * Cash flow forecast for the next `horizonDays` days. Combines:
+ *   - current cash balance (bank + credit_card subtype accounts)
+ *   - open invoices with due_date in window (expected inflows)
+ *   - open bills with due_date in window (expected outflows)
+ *   - active recurring templates that will fire in the window
+ *
+ * Bucketed into 7-day windows starting from `asOf`, so week 1 is days 0-6,
+ * week 2 is days 7-13, etc. Each week shows opening balance, in/outflows,
+ * and projected closing balance. Drill-down arrays return individual
+ * invoices, bills, and recurring occurrences for the UI.
+ *
+ * Tax on recurring is intentionally ignored -- a forecast is approximate by
+ * nature and the line subtotals (qty × unitPrice) are accurate enough for
+ * cash planning. Tax becomes part of the actual JE when the recurring
+ * template fires.
+ */
+export async function cashFlowForecast(
+  db: Database,
+  asOf: string,
+  horizonDays: number,
+): Promise<CashFlowForecast> {
+  const horizon = Math.max(7, Math.min(horizonDays, 365));
+  const horizonEnd = addDaysIso(asOf, horizon);
+
+  // Step 1: cash account balances as of `asOf`. Bank + credit-card subtypes
+  // are the cash-equivalent accounts; balance = SUM(debit) - SUM(credit) per
+  // normal-balance convention (asset = debit-positive).
+  const cashRows = await db.execute(sql`
+    SELECT
+      a.id      AS account_id,
+      a.code    AS code,
+      a.name    AS name,
+      a.subtype AS subtype,
+      COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
+    FROM accounts a
+    LEFT JOIN journal_lines jl ON jl.account_id = a.id
+    LEFT JOIN journal_entries je
+           ON je.id = jl.entry_id
+          AND je.entry_date <= ${asOf}::date
+    WHERE a.subtype IN ('bank', 'credit_card')
+      AND a.is_active = true
+    GROUP BY a.id, a.code, a.name, a.subtype
+    ORDER BY a.code
+  `);
+
+  const SCALE = 10000n;
+  const cashAccounts: CashAccountRow[] = [];
+  let startingMinor = 0n;
+  for (const r of cashRows as unknown as Array<Record<string, unknown>>) {
+    const balance = String(r.balance ?? '0');
+    cashAccounts.push({
+      accountId: String(r.account_id),
+      code: String(r.code),
+      name: String(r.name),
+      subtype: r.subtype as 'bank' | 'credit_card',
+      balance,
+    });
+    startingMinor += decimalToMinor(balance, SCALE);
+  }
+
+  // Step 2: AR due in window (open invoices, due_date in [asOf, asOf+horizon]).
+  const arRows = await db.execute(sql`
+    SELECT
+      i.id              AS invoice_id,
+      i.invoice_number  AS invoice_number,
+      i.customer_id     AS customer_id,
+      c.display_name    AS customer_name,
+      i.invoice_date    AS invoice_date,
+      i.due_date        AS due_date,
+      i.balance_due     AS balance_due
+    FROM invoices i
+    JOIN customers c ON c.id = i.customer_id
+    WHERE i.status IN ('open', 'partial')
+      AND i.due_date BETWEEN ${asOf}::date AND ${horizonEnd}::date
+      AND i.balance_due > 0
+    ORDER BY i.due_date ASC, i.invoice_number ASC
+  `);
+  const arDue: ForecastArDueItem[] = (arRows as unknown as Array<Record<string, unknown>>).map(
+    (r) => ({
+      invoiceId: String(r.invoice_id),
+      invoiceNumber: String(r.invoice_number),
+      customerId: String(r.customer_id),
+      customerName: String(r.customer_name),
+      invoiceDate: String(r.invoice_date),
+      dueDate: String(r.due_date),
+      balanceDue: String(r.balance_due),
+    }),
+  );
+
+  // Step 3: AP due in window.
+  const apRows = await db.execute(sql`
+    SELECT
+      b.id              AS bill_id,
+      b.bill_number     AS bill_number,
+      b.vendor_id       AS vendor_id,
+      v.display_name    AS vendor_name,
+      b.bill_date       AS bill_date,
+      b.due_date        AS due_date,
+      b.balance_due     AS balance_due
+    FROM bills b
+    JOIN vendors v ON v.id = b.vendor_id
+    WHERE b.status IN ('open', 'partial')
+      AND b.due_date BETWEEN ${asOf}::date AND ${horizonEnd}::date
+      AND b.balance_due > 0
+    ORDER BY b.due_date ASC, b.bill_number ASC
+  `);
+  const apDue: ForecastApDueItem[] = (apRows as unknown as Array<Record<string, unknown>>).map(
+    (r) => ({
+      billId: String(r.bill_id),
+      billNumber: String(r.bill_number),
+      vendorId: String(r.vendor_id),
+      vendorName: String(r.vendor_name),
+      billDate: String(r.bill_date),
+      dueDate: String(r.due_date),
+      balanceDue: String(r.balance_due),
+    }),
+  );
+
+  // Step 4: active recurring templates that COULD fire in the window. Filter
+  // server-side on next_run_date <= horizonEnd; we expand occurrences in JS.
+  const tmplRows = await db.execute(sql`
+    SELECT
+      rt.id            AS template_id,
+      rt.name          AS template_name,
+      rt.kind          AS kind,
+      rt.frequency     AS frequency,
+      rt.day_of_month  AS day_of_month,
+      rt.next_run_date AS next_run_date,
+      rt.end_date      AS end_date,
+      rt.payload       AS payload,
+      COALESCE(c.display_name, v.display_name) AS counterparty_name
+    FROM recurring_templates rt
+    LEFT JOIN customers c ON c.id::text = (rt.payload->>'customerId') AND rt.kind = 'invoice'
+    LEFT JOIN vendors   v ON v.id::text = (rt.payload->>'vendorId')   AND rt.kind = 'bill'
+    WHERE rt.is_active = true
+      AND rt.next_run_date <= ${horizonEnd}::date
+  `);
+
+  const recurringInvoices: ForecastRecurringOccurrence[] = [];
+  const recurringBills: ForecastRecurringOccurrence[] = [];
+  for (const r of tmplRows as unknown as Array<Record<string, unknown>>) {
+    const payload = r.payload as { lines?: Array<{ quantity?: unknown; unitPrice?: unknown }> } | null;
+    const lines = payload?.lines ?? [];
+    let subtotalMinor = 0n;
+    for (const l of lines) {
+      const qty = Number(l.quantity ?? 1);
+      const price = Number(l.unitPrice ?? 0);
+      if (Number.isFinite(qty) && Number.isFinite(price)) {
+        // Convert qty*price to minor units carefully: keep 4 decimal places.
+        const product = qty * price;
+        subtotalMinor += decimalToMinor(product.toFixed(4), SCALE);
+      }
+    }
+    if (subtotalMinor <= 0n) continue;
+    const amount = minorToDecimal(subtotalMinor, SCALE);
+
+    const frequency = r.frequency as ForecastRecurringOccurrence['frequency'];
+    const dayOfMonth = r.day_of_month === null || r.day_of_month === undefined
+      ? null
+      : Number(r.day_of_month);
+    const endDate = r.end_date ? String(r.end_date) : null;
+    let cursor = String(r.next_run_date);
+    // Cap at the soonest of: horizonEnd, end_date.
+    const stopAt = endDate && endDate < horizonEnd ? endDate : horizonEnd;
+    let safety = 0;
+    while (cursor <= stopAt && safety < 366) {
+      // Drop occurrences before asOf -- a stale next_run_date shouldn't double-count.
+      if (cursor >= asOf) {
+        const occ: ForecastRecurringOccurrence = {
+          templateId: String(r.template_id),
+          templateName: String(r.template_name),
+          counterpartyName: r.counterparty_name ? String(r.counterparty_name) : '—',
+          frequency,
+          occurrenceDate: cursor,
+          amount,
+        };
+        if (r.kind === 'invoice') recurringInvoices.push(occ);
+        else recurringBills.push(occ);
+      }
+      cursor = nextOccurrenceDate(cursor, frequency, dayOfMonth);
+      safety++;
+    }
+  }
+
+  // Step 5: bucket into weekly windows from asOf. Week N covers days
+  // [asOf+7N, asOf+7N+6]. Pre-compute number of buckets to fit horizon.
+  const weekCount = Math.ceil(horizon / 7);
+  const buckets: Array<{
+    weekStart: string;
+    weekEnd: string;
+    arMinor: bigint;
+    recurringInMinor: bigint;
+    apMinor: bigint;
+    recurringOutMinor: bigint;
+  }> = [];
+  for (let i = 0; i < weekCount; i++) {
+    const start = addDaysIso(asOf, i * 7);
+    const end = addDaysIso(asOf, Math.min(i * 7 + 6, horizon - 1));
+    buckets.push({
+      weekStart: start,
+      weekEnd: end,
+      arMinor: 0n,
+      recurringInMinor: 0n,
+      apMinor: 0n,
+      recurringOutMinor: 0n,
+    });
+  }
+  const bucketIndex = (date: string): number => {
+    if (date < asOf) return -1;
+    const dayOffset = Math.floor(
+      (Date.UTC(...isoToUtcArgs(date)) - Date.UTC(...isoToUtcArgs(asOf))) /
+        (24 * 60 * 60 * 1000),
+    );
+    if (dayOffset >= horizon) return -1;
+    return Math.floor(dayOffset / 7);
+  };
+
+  for (const it of arDue) {
+    const idx = bucketIndex(it.dueDate);
+    if (idx >= 0) buckets[idx]!.arMinor += decimalToMinor(it.balanceDue, SCALE);
+  }
+  for (const it of apDue) {
+    const idx = bucketIndex(it.dueDate);
+    if (idx >= 0) buckets[idx]!.apMinor += decimalToMinor(it.balanceDue, SCALE);
+  }
+  for (const it of recurringInvoices) {
+    const idx = bucketIndex(it.occurrenceDate);
+    if (idx >= 0) buckets[idx]!.recurringInMinor += decimalToMinor(it.amount, SCALE);
+  }
+  for (const it of recurringBills) {
+    const idx = bucketIndex(it.occurrenceDate);
+    if (idx >= 0) buckets[idx]!.recurringOutMinor += decimalToMinor(it.amount, SCALE);
+  }
+
+  // Step 6: roll opening / closing balance through the buckets.
+  const weeks: ForecastWeek[] = [];
+  let runningMinor = startingMinor;
+  let totArMinor = 0n;
+  let totApMinor = 0n;
+  let totRecInMinor = 0n;
+  let totRecOutMinor = 0n;
+  for (const b of buckets) {
+    const inflowsMinor = b.arMinor + b.recurringInMinor;
+    const outflowsMinor = b.apMinor + b.recurringOutMinor;
+    const netMinor = inflowsMinor - outflowsMinor;
+    const opening = runningMinor;
+    const closing = opening + netMinor;
+    weeks.push({
+      weekStart: b.weekStart,
+      weekEnd: b.weekEnd,
+      openingBalance: minorToDecimal(opening, SCALE),
+      arDue: minorToDecimal(b.arMinor, SCALE),
+      recurringInflows: minorToDecimal(b.recurringInMinor, SCALE),
+      apDue: minorToDecimal(b.apMinor, SCALE),
+      recurringOutflows: minorToDecimal(b.recurringOutMinor, SCALE),
+      inflows: minorToDecimal(inflowsMinor, SCALE),
+      outflows: minorToDecimal(outflowsMinor, SCALE),
+      netChange: minorToDecimal(netMinor, SCALE),
+      closingBalance: minorToDecimal(closing, SCALE),
+    });
+    runningMinor = closing;
+    totArMinor += b.arMinor;
+    totApMinor += b.apMinor;
+    totRecInMinor += b.recurringInMinor;
+    totRecOutMinor += b.recurringOutMinor;
+  }
+  const totInflowsMinor = totArMinor + totRecInMinor;
+  const totOutflowsMinor = totApMinor + totRecOutMinor;
+  const totNetMinor = totInflowsMinor - totOutflowsMinor;
+
+  return {
+    asOf,
+    horizonDays: horizon,
+    startingBalance: minorToDecimal(startingMinor, SCALE),
+    cashAccounts,
+    weeks,
+    arDue,
+    apDue,
+    recurringInvoices,
+    recurringBills,
+    totals: {
+      arDue: minorToDecimal(totArMinor, SCALE),
+      apDue: minorToDecimal(totApMinor, SCALE),
+      recurringInflows: minorToDecimal(totRecInMinor, SCALE),
+      recurringOutflows: minorToDecimal(totRecOutMinor, SCALE),
+      inflows: minorToDecimal(totInflowsMinor, SCALE),
+      outflows: minorToDecimal(totOutflowsMinor, SCALE),
+      netChange: minorToDecimal(totNetMinor, SCALE),
+      endingBalance: minorToDecimal(startingMinor + totNetMinor, SCALE),
+    },
+  };
+}
+
+function isoToUtcArgs(d: string): [number, number, number] {
+  const [y, m, day] = d.split('-').map((v) => Number(v));
+  return [y!, m! - 1, day!];
+}
+
 // -- Sales tax liability ----------------------------------------------------
 
 export interface SalesTaxLiabilityRateRow {
