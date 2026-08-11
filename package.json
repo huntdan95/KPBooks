@@ -10,6 +10,9 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:web": "node scripts/deploy.mjs --web-only",
+    "deploy:api": "node scripts/deploy.mjs --api-only",
     "dev": "pnpm -r --parallel dev",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",

@@ -101,6 +101,26 @@ resource "google_secret_manager_secret" "anthropic_api_key" {
 }
 
 # ─── IAM ─────────────────────────────────────────────────────────────────────
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+# The migrate step in cloudbuild.api.yaml reads kpbooks-database-url at build
+# time. Builds run as the Cloud Build default SA on older projects and the
+# Compute Engine default SA on newer ones — grant both so `gcloud builds
+# submit` works regardless of which default this project resolved to.
+resource "google_secret_manager_secret_iam_member" "cloudbuild_db_url" {
+  secret_id = google_secret_manager_secret.database_url.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+}
+
+resource "google_secret_manager_secret_iam_member" "compute_default_db_url" {
+  secret_id = google_secret_manager_secret.database_url.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_project.current.number}-compute@developer.gserviceaccount.com"
+}
+
 resource "google_secret_manager_secret_iam_member" "api_db_url" {
   secret_id = google_secret_manager_secret.database_url.id
   role      = "roles/secretmanager.secretAccessor"
