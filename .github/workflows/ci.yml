@@ -12,20 +12,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: kpbooks
-          POSTGRES_PASSWORD: kpbooks
-          POSTGRES_DB: kpbooks
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U kpbooks -d kpbooks"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
+    # No postgres service and no DATABASE_URL on purpose: the db test suite's
+    # global-setup boots an embedded Postgres, applies every migration, and
+    # creates the neondb_owner stand-in role that migration 0029 GRANTs to.
+    # The old service-container path skipped migrations entirely (global-setup
+    # returns early when DATABASE_URL is set) and had no neondb_owner, which
+    # is why CI failed on every push since the RLS hard-fix. This path is
+    # byte-for-byte what `pnpm test` does locally.
     steps:
       - uses: actions/checkout@v4
 
@@ -43,5 +36,3 @@ jobs:
       - run: pnpm typecheck
 
       - run: pnpm test
-        env:
-          DATABASE_URL: postgres://kpbooks:kpbooks@localhost:5432/kpbooks
