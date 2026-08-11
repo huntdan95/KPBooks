@@ -39,7 +39,13 @@ export const w9PublicRoutes: FastifyPluginAsync = async (app) => {
   // No requireAuth hook -- public on purpose.
 
   app.get('/w9-upload/:token/info', async (req, reply) => {
-    const { token } = z.object({ token: z.string().min(20).max(120) }).parse(req.params);
+    // A malformed token is indistinguishable from an unknown one on purpose:
+    // anonymous probes get the same 404 either way, with no format hints.
+    const params = z.object({ token: z.string().min(20).max(120) }).safeParse(req.params);
+    if (!params.success) {
+      return reply.status(404).send({ valid: false, reason: 'not_found' });
+    }
+    const { token } = params.data;
     const info = await lookupTokenForPublicView(app.db, token);
     if (!info.valid) {
       return reply.status(info.reason === 'not_found' ? 404 : 410).send({
@@ -52,7 +58,11 @@ export const w9PublicRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post('/w9-upload/:token/upload', async (req, reply) => {
-    const { token } = z.object({ token: z.string().min(20).max(120) }).parse(req.params);
+    const params = z.object({ token: z.string().min(20).max(120) }).safeParse(req.params);
+    if (!params.success) {
+      return reply.status(404).send({ error: 'not_found', message: 'unknown upload link' });
+    }
+    const { token } = params.data;
     const body = UploadViaTokenSchema.parse(req.body);
     try {
       const result = await uploadViaToken(app.db, token, body);

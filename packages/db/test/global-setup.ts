@@ -50,6 +50,21 @@ export async function setup(): Promise<void> {
   process.env.DATABASE_URL = adminUrl;
   console.log('embedded-postgres ready on port', port);
 
+  // Migration 0029 does `GRANT kpbooks_app TO neondb_owner` — Neon's
+  // migration-owner role. It doesn't exist outside Neon, and the file can't
+  // be edited (its hash is recorded in the live DB), so create a stand-in
+  // role here before migrating.
+  {
+    const bootstrapSql = postgres(adminUrl, { max: 1, prepare: false });
+    try {
+      await bootstrapSql.unsafe(
+        `DO $$ BEGIN CREATE ROLE neondb_owner NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$;`,
+      );
+    } finally {
+      await bootstrapSql.end({ timeout: 5 });
+    }
+  }
+
   // Apply migrations as the bootstrap superuser. DDL must run with elevated
   // privileges; the app role exists for runtime queries only.
   const result = spawnSync(
@@ -72,6 +87,10 @@ export async function setup(): Promise<void> {
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kpbooks_app') THEN
           CREATE ROLE kpbooks_app LOGIN PASSWORD '${appPassword}' NOSUPERUSER NOBYPASSRLS;
+        ELSE
+          -- migration 0029 creates kpbooks_app NOLOGIN; tests connect as it
+          -- directly, so promote it to a login role here.
+          ALTER ROLE kpbooks_app LOGIN PASSWORD '${appPassword}' NOSUPERUSER NOBYPASSRLS;
         END IF;
       END
       $$;

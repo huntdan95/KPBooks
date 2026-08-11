@@ -1,5 +1,5 @@
 import { type Database, recurringTemplates } from '@kpbooks/db';
-import { and, asc, desc, eq, gt, lte, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { BillError, createBill } from '../bills/posting.service.js';
 import { InvoiceError, createInvoice } from '../invoices/posting.service.js';
@@ -453,11 +453,12 @@ export async function runAllDue(
       and(
         eq(recurringTemplates.isActive, true),
         lte(recurringTemplates.nextRunDate, today),
+        // endDate IS NULL (open-ended) OR endDate >= today. The previous
+        // eq(endDate, endDate) "dummy true" was NULL in SQL for NULL
+        // end_dates, silently excluding every open-ended template.
         or(
-          // endDate IS NULL OR endDate >= today
-          // drizzle has no isNull helper imported here; use SQL fragment below
-          eq(recurringTemplates.endDate, recurringTemplates.endDate), // dummy true (NULL fails in SQL but FOR updates we'll just filter post-hoc)
-          gt(recurringTemplates.endDate, today),
+          isNull(recurringTemplates.endDate),
+          gte(recurringTemplates.endDate, today),
         ),
       ),
     )

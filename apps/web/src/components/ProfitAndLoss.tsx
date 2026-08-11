@@ -89,7 +89,11 @@ export function ProfitAndLoss() {
             className={inputClass}
           >
             <option value="accrual">Accrual</option>
-            <option value="cash">Cash</option>
+            {/* Cash basis is not implemented server-side yet; offering it
+                produced a hard error. Re-enable when the API supports it. */}
+            <option value="cash" disabled>
+              Cash (coming soon)
+            </option>
           </select>
         </Field>
       </div>

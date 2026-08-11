@@ -3,6 +3,8 @@ import {
   companies,
   paymentApplications,
   payments,
+  payrollRunLines,
+  payrollRuns,
   timeEntries,
   vendors,
 } from '@kpbooks/db';
@@ -111,24 +113,82 @@ async function loadPayStubContext(
     }));
   }
 
-  // 4. YTD totals (calendar year of the pay date).
+  // 4. Payroll-run line for this payment, if the payment came from a pay run.
+  // Pay-run payments post at NET (withholdings are display-only), so the stub
+  // must pull gross + deduction columns from the run line — otherwise a W-2
+  // stub prints gross = net with no withholdings.
+  const [runLine] = await tx
+    .select({
+      gross: payrollRunLines.gross,
+      federalIncomeTax: payrollRunLines.federalIncomeTax,
+      socialSecurity: payrollRunLines.socialSecurity,
+      medicare: payrollRunLines.medicare,
+      stateIncomeTax: payrollRunLines.stateIncomeTax,
+      otherDeductions: payrollRunLines.otherDeductions,
+      net: payrollRunLines.net,
+      hours: payrollRunLines.hours,
+      rate: payrollRunLines.rate,
+      runPeriodStart: payrollRuns.periodStart,
+      runPeriodEnd: payrollRuns.periodEnd,
+    })
+    .from(payrollRunLines)
+    .innerJoin(payrollRuns, eq(payrollRuns.id, payrollRunLines.payrollRunId))
+    .where(eq(payrollRunLines.postedPaymentId, paymentId));
+
+  // 5. YTD totals (calendar year of the pay date).
   const year = payment.paymentDate.slice(0, 4);
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
-  const ytdRows = await tx.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) AS ytd
-    FROM payments
-    WHERE vendor_id = ${payment.vendorId}
-      AND payment_type = 'vendor_sent'
-      AND status = 'posted'
-      AND payment_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
-  `);
-  const ytdGross = String((ytdRows as unknown as Array<{ ytd: string }>)[0]?.ytd ?? '0');
 
-  // 5. Period (best-effort: min/max entry dates if we have any, else just the pay date).
-  let periodStart: string | undefined;
-  let periodEnd: string | undefined;
-  if (lines.length > 0) {
+  let ytdGross: string;
+  let deductions: PayStubData['deductions'];
+  let netYtd: string | undefined;
+  if (runLine) {
+    // Payroll-run payment: YTD figures come from posted run lines (gross
+    // basis), not from net payment amounts.
+    const ytdRows = await tx.execute(sql`
+      SELECT
+        COALESCE(SUM(l.gross), 0)              AS gross,
+        COALESCE(SUM(l.federal_income_tax), 0) AS fit,
+        COALESCE(SUM(l.social_security), 0)    AS ss,
+        COALESCE(SUM(l.medicare), 0)           AS medicare,
+        COALESCE(SUM(l.state_income_tax), 0)   AS sit,
+        COALESCE(SUM(l.other_deductions), 0)   AS other,
+        COALESCE(SUM(l.net), 0)                AS net
+      FROM payroll_run_lines l
+      JOIN payroll_runs r ON r.id = l.payroll_run_id
+      WHERE l.vendor_id = ${payment.vendorId}
+        AND r.status = 'posted'
+        AND r.pay_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
+    `);
+    const ytd = (ytdRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
+    ytdGross = String(ytd.gross ?? '0');
+    netYtd = String(ytd.net ?? '0');
+    const candidates: Array<{ label: string; current: string; ytd: string }> = [
+      { label: 'Federal income tax', current: runLine.federalIncomeTax, ytd: String(ytd.fit ?? '0') },
+      { label: 'Social Security', current: runLine.socialSecurity, ytd: String(ytd.ss ?? '0') },
+      { label: 'Medicare', current: runLine.medicare, ytd: String(ytd.medicare ?? '0') },
+      { label: 'State income tax', current: runLine.stateIncomeTax, ytd: String(ytd.sit ?? '0') },
+      { label: 'Other deductions', current: runLine.otherDeductions, ytd: String(ytd.other ?? '0') },
+    ];
+    deductions = candidates.filter((d) => Number(d.current) !== 0 || Number(d.ytd) !== 0);
+  } else {
+    const ytdRows = await tx.execute(sql`
+      SELECT COALESCE(SUM(amount), 0) AS ytd
+      FROM payments
+      WHERE vendor_id = ${payment.vendorId}
+        AND payment_type = 'vendor_sent'
+        AND status = 'posted'
+        AND payment_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
+    `);
+    ytdGross = String((ytdRows as unknown as Array<{ ytd: string }>)[0]?.ytd ?? '0');
+    deductions = [];
+  }
+
+  // 6. Period: prefer the pay run's period; else best-effort min/max time-entry dates.
+  let periodStart: string | undefined = runLine?.runPeriodStart;
+  let periodEnd: string | undefined = runLine?.runPeriodEnd;
+  if (!periodStart && lines.length > 0) {
     const dates = lines.map((l) => l.entryDate).filter((d): d is string => !!d).sort();
     if (dates.length > 0) {
       periodStart = dates[0];
@@ -136,13 +196,30 @@ async function loadPayStubContext(
     }
   }
 
+  // Payroll-run payments with no time entries: show an hours/rate earnings
+  // line from the run line itself when available.
+  if (runLine && lines.length === 0 && runLine.hours && runLine.rate) {
+    lines = [
+      {
+        description: 'Wages',
+        hours: runLine.hours,
+        rate: runLine.rate,
+        amount: runLine.gross,
+      },
+    ];
+  }
+
   const payerAddress = (company.address as z.infer<typeof Address> | null) ?? {};
   const recipientAddress = (vendor.mailingAddress as z.infer<typeof Address> | null) ?? {};
 
+  // Subcontractors get 1099 treatment identical to contractors on the stub
+  // (the renderer only distinguishes contractor vs employee footnotes).
   const workerType: 'contractor' | 'employee' | null =
-    vendor.workerType === 'contractor' || vendor.workerType === 'employee'
-      ? vendor.workerType
-      : null;
+    vendor.workerType === 'contractor' || vendor.workerType === 'subcontractor'
+      ? 'contractor'
+      : vendor.workerType === 'employee'
+        ? 'employee'
+        : null;
 
   return {
     payer: {
@@ -165,9 +242,12 @@ async function loadPayStubContext(
     paymentMethod: payment.paymentMethod,
     memo: payment.memo,
     lines,
-    grossCurrent: payment.amount,
+    // For payroll-run payments the payment row is NET; gross lives on the run line.
+    grossCurrent: runLine ? runLine.gross : payment.amount,
     grossYtd: ytdGross,
-    deductions: [],
+    deductions,
+    ...(runLine ? { netCurrent: runLine.net } : {}),
+    ...(netYtd !== undefined ? { netYtd } : {}),
   };
 }
 

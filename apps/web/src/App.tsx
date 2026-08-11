@@ -20,6 +20,9 @@ interface MeResponse {
 }
 
 export function App() {
+  // Hooks must run unconditionally, before the public-route early return.
+  const auth = useAuth();
+
   // The /w9-upload/<token> route is intentionally PUBLIC -- contractors
   // open it without an account to upload their W-9. Match it before any
   // auth gating so we don't bounce them through Sign In.
@@ -28,8 +31,6 @@ export function App() {
   if (w9Match) {
     return <W9UploadPage token={w9Match[1]!} />;
   }
-
-  const auth = useAuth();
 
   if (auth.loading) {
     return <Splash label="Starting up…" />;

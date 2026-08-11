@@ -71,21 +71,25 @@ export async function trialBalance(db: Database, asOf: string): Promise<TrialBal
       a.name      AS name,
       a.type      AS type,
       a.subtype   AS subtype,
-      COALESCE(SUM(jl.debit), 0)  AS debit,
-      COALESCE(SUM(jl.credit), 0) AS credit,
+      COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0) AS debit,
+      COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0) AS credit,
       CASE
         WHEN a.type IN ('asset', 'expense')
-          THEN COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)
-        ELSE COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0)
+          THEN COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0)
+        ELSE COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0)
+           - COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0)
       END AS balance
     FROM accounts a
     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-    LEFT JOIN journal_entries je
-           ON je.id = jl.entry_id
-          AND je.entry_date <= ${asOf}::date
+    LEFT JOIN journal_entries je ON je.id = jl.entry_id
+    -- The date predicate must live inside the aggregates (CASE), NOT in the
+    -- LEFT JOIN's ON clause: with it on the join, unmatched je rows still
+    -- leave jl in the result set and SUM(jl.debit) silently sums ALL TIME.
     WHERE a.is_active = true
     GROUP BY a.id, a.code, a.name, a.type, a.subtype
-    HAVING COALESCE(SUM(jl.debit), 0) <> 0 OR COALESCE(SUM(jl.credit), 0) <> 0
+    HAVING COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0) <> 0
+        OR COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0) <> 0
     ORDER BY a.code
   `);
 
@@ -120,15 +124,16 @@ export async function profitAndLoss(
       a.type    AS type,
       CASE
         WHEN a.type = 'revenue'
-          THEN COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0)
+          THEN COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.credit ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.debit  ELSE 0 END), 0)
         WHEN a.type = 'expense'
-          THEN COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)
+          THEN COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.debit  ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.credit ELSE 0 END), 0)
       END AS amount
     FROM accounts a
     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-    LEFT JOIN journal_entries je
-           ON je.id = jl.entry_id
-          AND je.entry_date BETWEEN ${start}::date AND ${end}::date
+    LEFT JOIN journal_entries je ON je.id = jl.entry_id
+    -- Date predicate inside the aggregates, not on the LEFT JOIN — see trialBalance.
     WHERE a.type IN ('revenue', 'expense')
       AND a.is_active = true
     GROUP BY a.id, a.code, a.name, a.type
@@ -180,15 +185,16 @@ export async function balanceSheet(db: Database, asOf: string): Promise<BalanceS
       a.type AS type,
       CASE
         WHEN a.type = 'asset'
-          THEN COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)
+          THEN COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0)
         WHEN a.type IN ('liability', 'equity')
-          THEN COALESCE(SUM(jl.credit), 0) - COALESCE(SUM(jl.debit), 0)
+          THEN COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.credit ELSE 0 END), 0)
+             - COALESCE(SUM(CASE WHEN je.entry_date <= ${asOf}::date THEN jl.debit  ELSE 0 END), 0)
       END AS amount
     FROM accounts a
     LEFT JOIN journal_lines jl ON jl.account_id = a.id
-    LEFT JOIN journal_entries je
-           ON je.id = jl.entry_id
-          AND je.entry_date <= ${asOf}::date
+    LEFT JOIN journal_entries je ON je.id = jl.entry_id
+    -- Date predicate inside the aggregates, not on the LEFT JOIN — see trialBalance.
     WHERE a.type IN ('asset', 'liability', 'equity')
       AND a.is_active = true
     GROUP BY a.id, a.code, a.name, a.type
@@ -224,8 +230,34 @@ export async function balanceSheet(db: Database, asOf: string): Promise<BalanceS
     }
   }
 
-  // Compute YTD net income and roll into equity so the equation balances.
-  // Caller is responsible for closing entries; we don't fabricate retained earnings here.
+  // Roll cumulative net income (revenue/expense activity through asOf) into
+  // equity as a virtual line, the way QuickBooks shows "Net Income" on the
+  // balance sheet. Without it the equation can never balance, since KPBooks
+  // has no year-end closing entries. Over revenue+expense lines,
+  // SUM(credit - debit) IS net income (revenue normal-credit, expense
+  // normal-debit). `imbalance` then only flags genuine inconsistencies.
+  const niRows = await db.execute(sql`
+    SELECT COALESCE(SUM(jl.credit - jl.debit), 0) AS net_income
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE a.type IN ('revenue', 'expense')
+      AND je.entry_date <= ${asOf}::date
+  `);
+  const netIncomeStr = String(
+    (niRows as unknown as Array<Record<string, unknown>>)[0]?.net_income ?? '0',
+  );
+  const netIncomeMinor = decimalToMinor(netIncomeStr, SCALE);
+  if (netIncomeMinor !== 0n) {
+    equity.push({
+      accountId: 'virtual-net-income',
+      code: '',
+      name: 'Net Income',
+      amount: netIncomeStr,
+    });
+    totalEq += netIncomeMinor;
+  }
+
   const imbalance = totalAssets - (totalLiab + totalEq);
 
   return {

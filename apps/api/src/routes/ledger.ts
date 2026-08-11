@@ -137,7 +137,7 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
     return req.withTenantTx(async (tx) => ({ asOf, rows: await trialBalance(tx, asOf) }));
   });
 
-  app.get('/ledger/reports/pnl', async (req) => {
+  app.get('/ledger/reports/pnl', async (req, reply) => {
     const { start, end, basis } = z
       .object({
         start: DateOnly,
@@ -145,6 +145,12 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
         basis: z.enum(['accrual', 'cash']).default('accrual'),
       })
       .parse(req.query);
+    if (basis === 'cash') {
+      return reply.status(422).send({
+        error: 'not_implemented',
+        message: 'cash basis is not implemented yet; use accrual',
+      });
+    }
     return req.withTenantTx(async (tx) => profitAndLoss(tx, start, end, basis));
   });
 

@@ -70,6 +70,10 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   const { companyId, setCompanyId } = useCurrentCompany();
   const [view, setView] = useState<View>('dashboard');
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
+  // Mobile drawer state. Must be declared up here with the other hooks — a
+  // hook below the `!isMember` early return changes the hook count when that
+  // flag flips (first-login bootstrap, company pick) and white-screens the app.
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isMember = companyId !== null && memberships.some((m) => m.companyId === companyId);
 
@@ -96,6 +100,36 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Dashboard tiles can ask the shell to navigate to a specific view +
+  // optional sub-tab (e.g. "reports:ar-aging"). The colon-separated form is
+  // expanded by handleNavigate -- the sub-tab portion is currently dropped
+  // (Reports defaults to Trial Balance) but kept in the protocol so future
+  // slices can pre-select.
+  function handleNavigate(target: string) {
+    const [primary] = target.split(':');
+    if (primary && (primary in PAGE_META)) {
+      setView(primary as View);
+    }
+  }
+
+  // Components rendered deep in the tree (e.g. Workers detail -> "open 1099
+  // prep") can ask the shell to navigate by dispatching a `kpb:navigate` event
+  // with the view id as `detail`. Avoids prop-drilling through every tab.
+  //
+  // This hook MUST stay above the `!isMember` early return: `isMember` flips
+  // at runtime (first-login bootstrap, company pick), and a hook that appears
+  // only on one side of that flip changes the hook count between renders,
+  // which makes React throw and white-screens the app.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent<string>).detail;
+      if (typeof target === 'string') handleNavigate(target);
+    };
+    window.addEventListener('kpb:navigate', handler);
+    return () => window.removeEventListener('kpb:navigate', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // If we have no valid company selected, force a pick before rendering the
   // app. Covers: never bootstrapped (initial empty localStorage), id revoked,
   // id stale across deploys, or a transient race where memberships hasn't
@@ -116,32 +150,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
   const activeId = companyId;
   const active = memberships.find((m) => m.companyId === activeId);
 
-  // Dashboard tiles can ask the shell to navigate to a specific view +
-  // optional sub-tab (e.g. "reports:ar-aging"). The colon-separated form is
-  // expanded by handleNavigate -- the sub-tab portion is currently dropped
-  // (Reports defaults to Trial Balance) but kept in the protocol so future
-  // slices can pre-select.
-  function handleNavigate(target: string) {
-    const [primary] = target.split(':');
-    if (primary && (primary in PAGE_META)) {
-      setView(primary as View);
-    }
-  }
-
-  // Components rendered deep in the tree (e.g. Workers detail -> "open 1099
-  // prep") can ask the shell to navigate by dispatching a `kpb:navigate` event
-  // with the view id as `detail`. Avoids prop-drilling through every tab.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const target = (e as CustomEvent<string>).detail;
-      if (typeof target === 'string') handleNavigate(target);
-    };
-    window.addEventListener('kpb:navigate', handler);
-    return () => window.removeEventListener('kpb:navigate', handler);
-  }, []);
-
   const meta = PAGE_META[view];
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Selecting a sidebar item should also close the mobile drawer (no-op on
   // tablet+ where the sidebar is always visible).

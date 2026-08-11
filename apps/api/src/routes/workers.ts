@@ -15,7 +15,7 @@ import {
 } from '../modules/workers/workers.service.js';
 
 const ListQuery = z.object({
-  workerType: z.enum(['contractor', 'employee']).optional(),
+  workerType: z.enum(['contractor', 'subcontractor', 'employee']).optional(),
   active: z.enum(['true', 'false']).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
 });

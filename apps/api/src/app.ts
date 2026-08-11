@@ -2,6 +2,7 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { ZodError } from 'zod';
 import { type Config, corsOrigins } from './config.js';
 import { dbPlugin } from './plugins/db.js';
 import { firebaseAuthPlugin } from './plugins/firebase-auth.js';
@@ -69,6 +70,26 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   });
   await app.register(rlsContextPlugin);
 
+  // Must be set BEFORE the route plugins are registered: Fastify snapshots the
+  // error handler into each plugin's encapsulated context at registration
+  // time, so a handler set after register() never applies to those routes —
+  // they'd fall back to Fastify's default handler, which leaks raw error
+  // messages (Zod issues, Postgres errors) to clients on 500s.
+  app.setErrorHandler((err, req, reply) => {
+    req.log.error({ err }, 'request failed');
+    const e = err as Error & { validation?: unknown; statusCode?: number };
+    if (e.validation) {
+      return reply.status(400).send({ error: 'validation_failed', details: e.validation });
+    }
+    if (err instanceof ZodError) {
+      return reply.status(400).send({ error: 'validation_failed', details: err.issues });
+    }
+    if (typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 600) {
+      return reply.status(e.statusCode).send({ error: e.name ?? 'error', message: e.message });
+    }
+    return reply.status(500).send({ error: 'internal_error' });
+  });
+
   await app.register(healthRoutes, { prefix: '/v1' });
   await app.register(meRoutes, { prefix: '/v1' });
   await app.register(companiesRoutes, { prefix: '/v1' });
@@ -98,18 +119,6 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(documentsRoutes, { prefix: '/v1' });
   await app.register(ledgerRoutes, { prefix: '/v1' });
-
-  app.setErrorHandler((err, req, reply) => {
-    req.log.error({ err }, 'request failed');
-    const e = err as Error & { validation?: unknown; statusCode?: number };
-    if (e.validation) {
-      return reply.status(400).send({ error: 'validation_failed', details: e.validation });
-    }
-    if (typeof e.statusCode === 'number' && e.statusCode >= 400 && e.statusCode < 600) {
-      return reply.status(e.statusCode).send({ error: e.name ?? 'error', message: e.message });
-    }
-    return reply.status(500).send({ error: 'internal_error' });
-  });
 
   return app;
 }
