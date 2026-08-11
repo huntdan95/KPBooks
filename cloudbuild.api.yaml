@@ -22,7 +22,9 @@ steps:
       - |
         set -euo pipefail
         corepack enable pnpm
-        pnpm install --frozen-lockfile --filter @kpbooks/db...
+        # --filter kpbooks includes the workspace root: the migrate script
+        # runs via tsx, which is a root devDependency.
+        pnpm install --frozen-lockfile --filter kpbooks --filter @kpbooks/db...
         pnpm --filter @kpbooks/db migrate
 
   - name: 'gcr.io/cloud-builders/docker'
