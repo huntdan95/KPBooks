@@ -67,7 +67,13 @@ steps:
       - '--cpu=1'
       - '--memory=512Mi'
       - '--port=8080'
-      - '--timeout=60'
+      # 300s: commit-transactions posts IIF blocks sequentially against Neon,
+      # so a large chunk needs headroom beyond 60s. The web client chunks big
+      # imports (apps/web/src/lib/iif-commit.ts) because browser traffic goes
+      # through the Firebase Hosting /v1 rewrite, which is capped at 60s by
+      # the platform regardless of this flag; the raised timeout protects
+      # direct API callers and slow chunks.
+      - '--timeout=300'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/kpbooks/api:$BUILD_ID'

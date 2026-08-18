@@ -46,10 +46,13 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
         : {}),
     },
     trustProxy: true,
-    // Default Fastify limit is 1 MiB; raise to 16 MiB to fit IIF imports
-    // (hundreds of accounts/customers/vendors) and base64-encoded W-9 / W-4
-    // / I-9 PDFs uploaded via /workers/:vendorId/documents (10 MiB raw -> ~14 MiB base64).
-    bodyLimit: 16 * 1024 * 1024,
+    // Default Fastify limit is 1 MiB; raise to 32 MiB so multi-year IIF
+    // imports fit: the preview leg accepts up to 12 MB of raw IIF text
+    // (JSON-escaped it grows a bit) and the commit-transactions leg re-sends
+    // the parsed blocks as JSON (roughly 2x the raw text). Also covers
+    // base64-encoded W-9 / W-4 / I-9 PDFs uploaded via
+    // /workers/:vendorId/documents (10 MiB raw -> ~14 MiB base64).
+    bodyLimit: 32 * 1024 * 1024,
     disableRequestLogging: false,
     requestIdHeader: 'x-request-id',
     genReqId: () => crypto.randomUUID(),

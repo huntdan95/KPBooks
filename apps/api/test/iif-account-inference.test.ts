@@ -149,6 +149,115 @@ describe('inferAccountType', () => {
     });
   });
 
+  it('classifies accumulated depreciation/amortization as contra fixed assets, not P&L expense', () => {
+    // "Accumulated Depreciation" sits on virtually every QBD balance sheet.
+    // The bare "depreciation" alternative in the other-expense rule used to
+    // claim it first, so the annual depreciation JE netted to zero on the
+    // P&L (net income overstated) and the balance sheet lost its
+    // accumulated depreciation entirely.
+    expect(inferAccountType('Accumulated Depreciation')).toEqual({
+      type: 'asset',
+      subtype: 'fixed_asset',
+    });
+    expect(inferAccountType('Accumulated Amortization')).toEqual({
+      type: 'asset',
+      subtype: 'fixed_asset',
+    });
+    expect(inferAccountType('Accum. Depreciation')).toEqual({
+      type: 'asset',
+      subtype: 'fixed_asset',
+    });
+    // The expense side of the same JE stays on the P&L.
+    expect(inferAccountType('Depreciation')).toEqual({
+      type: 'expense',
+      subtype: 'other_expense',
+    });
+    expect(inferAccountType('Depreciation Expense')).toEqual({
+      type: 'expense',
+      subtype: 'other_expense',
+    });
+  });
+
+  it('keeps QBD default payroll EXPENSE accounts on the P&L', () => {
+    // "Payroll Expenses" / "Payroll Tax Expense" exist on every
+    // payroll-enabled QBD company file; classifying them as liabilities
+    // strips wages off the P&L and parks a phantom negative liability on
+    // the balance sheet.
+    expect(inferAccountType('Payroll Expenses')).toEqual({
+      type: 'expense',
+      subtype: 'expense',
+    });
+    expect(inferAccountType('Payroll Expenses:Wages')).toEqual({
+      type: 'expense',
+      subtype: 'expense',
+    });
+    expect(inferAccountType('Payroll Tax Expense')).toEqual({
+      type: 'expense',
+      subtype: 'other_expense',
+    });
+    // Genuine payroll liabilities keep their classification.
+    expect(inferAccountType('Payroll Liabilities')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    expect(inferAccountType('Wages Payable')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    expect(inferAccountType('Federal Withholding')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+  });
+
+  it('classifies receivable-side loans as assets, not debt', () => {
+    expect(inferAccountType('Loan Receivable')).toEqual({
+      type: 'asset',
+      subtype: 'other_current_asset',
+    });
+    expect(inferAccountType('Interest Receivable')).toEqual({
+      type: 'asset',
+      subtype: 'other_current_asset',
+    });
+    // Loans we OWE stay liabilities.
+    expect(inferAccountType('Bank Loan')).toEqual({
+      type: 'liability',
+      subtype: 'long_term_liability',
+    });
+  });
+
+  it('classifies deposits HELD from customers as liabilities, not assets', () => {
+    // QBD's standard "Customer Deposits" / "Client Deposits" accounts are
+    // Other Current Liabilities (retainers we owe back). The generic
+    // deposit->asset pattern used to put them on the asset side, presenting
+    // $18k of retainers as a negative current asset.
+    expect(inferAccountType('Customer Deposits')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    expect(inferAccountType('Client Deposits')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    expect(inferAccountType('Tenant Deposits')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    expect(inferAccountType('Deposits Held')).toEqual({
+      type: 'liability',
+      subtype: 'other_current_liability',
+    });
+    // Deposits we PAID (and Undeposited Funds) stay on the asset side.
+    expect(inferAccountType('Undeposited Funds')).toEqual({
+      type: 'asset',
+      subtype: 'other_current_asset',
+    });
+    expect(inferAccountType('Deposits on Purchases')).toEqual({
+      type: 'asset',
+      subtype: 'other_current_asset',
+    });
+  });
+
   it('defaults to ordinary expense for ambiguous names', () => {
     expect(inferAccountType('Subcontractor Expense')).toEqual({
       type: 'expense',

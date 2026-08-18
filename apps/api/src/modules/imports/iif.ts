@@ -1,10 +1,15 @@
 import {
   type Database,
   accounts as accountsTable,
+  companies as companiesTable,
   customers as customersTable,
+  journalEntries,
+  journalLines,
+  payments as paymentsTable,
   vendors as vendorsTable,
 } from '@kpbooks/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { PostingError, postEntry } from '../ledger/posting.service.js';
 
@@ -20,10 +25,16 @@ import { PostingError, postEntry } from '../ledger/posting.service.js';
  *   !CUST   ...columns...    -- customers
  *   !VEND   ...columns...    -- vendors
  *
- * Other sections (TRNS+SPL transactions, INVITEM, EMP, CLASS, etc.) are
- * ignored for v1. We also ignore subaccounts (parent-child) -- everything
- * lands flat. That keeps the slice tight; transaction + hierarchy support
- * is a follow-up slice.
+ * Transaction sections (!TRNS/!SPL/!ENDTRNS) are parsed into posting blocks
+ * and committed as journal entries by commitIifTransactions; money-movement
+ * blocks that name a known vendor/customer also land in the payments
+ * subledger so 1099 totals, payroll registers, and statements see imported
+ * history. Sub-account colon paths keep the full path as the account NAME
+ * (transactions resolve by full path); commitIifImport additionally links
+ * parent_id so report rollups survive the migration. Customer:job paths
+ * still import flat -- the customers table has no hierarchy column yet; the
+ * commit result warns when that happens. Other list sections (INVITEM, EMP,
+ * CLASS, etc.) surface in unrecognizedSections so nothing drops silently.
  */
 
 // ------------------------- Types --------------------------------------------
@@ -55,7 +66,14 @@ export interface ParsedAccount {
   description?: string | undefined;
   /** Auto-assigned suggestion: a 4-digit code derived from type ordering. */
   suggestedCode: string;
+  /** False when the QBD row is marked HIDDEN=Y (made inactive in QBD). */
+  isActive: boolean;
 }
+
+/** Best-effort structured address parsed from QBD's BADDR1-5/SADDR1-5 lines.
+ * Same jsonb shape the CRUD routes use ({ street1, street2, city, state,
+ * postalCode, country }). */
+export type ParsedAddress = Record<string, string>;
 
 export interface ParsedCustomer {
   displayName: string;
@@ -64,6 +82,10 @@ export interface ParsedCustomer {
   phone?: string | undefined;
   notes?: string | undefined;
   defaultTermsDays?: number | undefined;
+  billingAddress?: ParsedAddress | undefined;
+  shippingAddress?: ParsedAddress | undefined;
+  /** False when the QBD row is marked HIDDEN=Y (made inactive in QBD). */
+  isActive: boolean;
 }
 
 export interface ParsedVendor {
@@ -75,6 +97,9 @@ export interface ParsedVendor {
   defaultTermsDays?: number | undefined;
   is1099Vendor: boolean;
   taxId?: string | undefined;
+  mailingAddress?: ParsedAddress | undefined;
+  /** False when the QBD row is marked HIDDEN=Y (made inactive in QBD). */
+  isActive: boolean;
 }
 
 export interface ParsedSplit {
@@ -142,6 +167,14 @@ export interface IifPreview {
   unrecognizedSections: string[];
   /** Parser warnings (unmapped account types, malformed rows, etc.). */
   warnings: string[];
+  /**
+   * Posting blocks excluded at parse time for data errors (out of balance,
+   * fewer than 2 lines). They are counted in transactionCounts but never
+   * enter `transactions`, so without this list the UI's per-type table would
+   * mislabel them "skipped (non-posting)" and the final commit summary would
+   * have no trace of them at all.
+   */
+  excludedTransactions: { rowNumber: number; qbType: string; reason: string }[];
 }
 
 // ------------------------- ACCNTTYPE map ------------------------------------
@@ -155,6 +188,7 @@ const ACCNT_TYPE_MAP: Record<string, { type: AccountType; subtype: AccountSubtyp
   FIXASSET: { type: 'asset', subtype: 'fixed_asset' },
   OASSET: { type: 'asset', subtype: 'other_asset' },
   OCLIAB: { type: 'liability', subtype: 'other_current_liability' },
+  OLIAB: { type: 'liability', subtype: 'long_term_liability' },
   LTLIAB: { type: 'liability', subtype: 'long_term_liability' },
   EQUITY: { type: 'equity', subtype: 'equity' },
   INC: { type: 'revenue', subtype: 'income' },
@@ -172,6 +206,19 @@ const TYPE_CODE_PREFIX: Record<AccountType, number> = {
   revenue: 4000,
   expense: 5000,
 };
+
+/**
+ * Auto-plug ceiling for out-of-balance blocks: one cent, in 4dp micros. QBD
+ * keeps single-currency ledgers penny-balanced, but multicurrency home-value
+ * exports and hand-touched files can carry 1-cent drift -- dropping a
+ * $12,000 deposit over $0.01 loses the whole transaction. Anything beyond a
+ * cent is data corruption, not rounding: those blocks still exclude.
+ */
+const ROUNDING_PLUG_MAX_MICROS = 100n;
+/** Account the auto-plug posts to. If the chart doesn't have it, it flows
+ * through missingAccounts like any other referenced name, so the drift stays
+ * visible and reviewable instead of silently vanishing into another line. */
+const ROUNDING_ACCOUNT_NAME = 'Rounding';
 
 /**
  * QB TRNSTYPE -> KPBooks journal source_type. Non-posting types map to
@@ -204,8 +251,15 @@ const TRNSTYPE_MAP: Record<
   XFER: { sourceType: 'bank_transaction', posts: true },
   'CREDIT CARD CHARGE': { sourceType: 'bank_transaction', posts: true },
   'CCARD CHARGE': { sourceType: 'bank_transaction', posts: true },
+  // Real QBD credit-card-charge exports often use bare "CCARD"; Intuit's IIF
+  // reference documents plain "CREDIT CARD" for the same transaction.
+  CCARD: { sourceType: 'bank_transaction', posts: true },
+  'CREDIT CARD': { sourceType: 'bank_transaction', posts: true },
   'CREDIT CARD CREDIT': { sourceType: 'bank_transaction', posts: true },
   'CCARD CREDIT': { sourceType: 'bank_transaction', posts: true },
+  'CCARD REFUND': { sourceType: 'bank_transaction', posts: true },
+  // Refund on a cash sale -- the money-out counterpart of CASH SALE.
+  'CASH REFUND': { sourceType: 'invoice', posts: true },
   'GENERAL JOURNAL': { sourceType: 'manual', posts: true },
   'GEN JRNL': { sourceType: 'manual', posts: true },
   GENJRNL: { sourceType: 'manual', posts: true },
@@ -217,31 +271,73 @@ const TRNSTYPE_MAP: Record<
   INVADJUST: { sourceType: 'manual', posts: true },
   'ITEM RECEIPT': { sourceType: 'bill', posts: true },
   ITEMRCPT: { sourceType: 'bill', posts: true },
-  // Non-posting documents.
+  // Non-posting documents. Intuit's documented IIF keywords are the PLURAL
+  // forms (ESTIMATES, SALES ORDERS, PURCHASE ORDERS); the singulars are kept
+  // for hand-built files. The normalised fallback strips only spaces/hyphens,
+  // so it cannot bridge singular/plural -- a missing plural here would fall
+  // through to the posts:true default and book fabricated P&L activity.
   ESTIMATE: { sourceType: 'import', posts: false },
+  ESTIMATES: { sourceType: 'import', posts: false },
   'SALES ORDER': { sourceType: 'import', posts: false },
+  'SALES ORDERS': { sourceType: 'import', posts: false },
   'PURCHASE ORDER': { sourceType: 'import', posts: false },
+  'PURCHASE ORDERS': { sourceType: 'import', posts: false },
   PURCHORD: { sourceType: 'import', posts: false },
   SALESORD: { sourceType: 'import', posts: false },
   STATEMENT: { sourceType: 'import', posts: false },
 };
 
+/**
+ * Secondary lookup keyed with spaces/hyphens stripped. Real QBD exports vary
+ * spelling by version ("BILLPMT -CHECK" vs "BILL PMT-CHECK"), so before
+ * falling back to the generic 'import' mapping we retry with whitespace and
+ * hyphens removed. All colliding keys in TRNSTYPE_MAP map to identical
+ * values (e.g. "CASH SALE"/"CASHSALE"), so last-write-wins is safe here.
+ */
+const TRNSTYPE_MAP_NORMALISED: Record<
+  string,
+  { sourceType: ParsedTransaction['sourceType']; posts: boolean }
+> = Object.fromEntries(
+  Object.entries(TRNSTYPE_MAP).map(([k, v]) => [k.replace(/[\s-]+/g, ''), v]),
+);
+
 function lookupTrnsType(
   raw: string,
 ): { sourceType: ParsedTransaction['sourceType']; posts: boolean } {
-  const upper = raw.toUpperCase();
-  return TRNSTYPE_MAP[upper] ?? { sourceType: 'import', posts: true };
+  const upper = raw.trim().toUpperCase();
+  return (
+    TRNSTYPE_MAP[upper] ??
+    TRNSTYPE_MAP_NORMALISED[upper.replace(/[\s-]+/g, '')] ??
+    { sourceType: 'import', posts: true }
+  );
 }
 
-/** Parse "01/15/2026" / "1/15/2026" / "01/15/26" / "2026-01-15" -> "YYYY-MM-DD". */
-export function normaliseDate(raw: string): string | null {
+/** True when (year, month, day) is a real calendar date -- rejects 2/30,
+ * 4/31, and 2/29 in non-leap years, which a plain 1-31 bounds check lets
+ * through. Postgres would reject such a value later with an opaque error
+ * that aborts the whole import transaction, so it must die here. */
+function isRealCalendarDate(year: number, month: number, day: number): boolean {
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+/** Calendar-validate an already-shaped "YYYY-MM-DD" string. */
+function isRealIsoDate(s: string): boolean {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m !== null && isRealCalendarDate(+m[1]!, +m[2]!, +m[3]!);
+}
+
+/** Parse "01/15/2026" / "1/15/2026" / "01/15/26" / "2026-01-15" -> "YYYY-MM-DD".
+ * Slash dates read month-first by default; pass dayFirst=true for files
+ * detected as D/M/Y-locale exports (see the re-parse pass in parseIif). */
+export function normaliseDate(raw: string, dayFirst = false): string | null {
   const s = raw.trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return isRealIsoDate(s) ? s : null;
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
   if (!m) return null;
-  const month = parseInt(m[1]!, 10);
-  const day = parseInt(m[2]!, 10);
+  const month = parseInt(m[dayFirst ? 2 : 1]!, 10);
+  const day = parseInt(m[dayFirst ? 1 : 2]!, 10);
   let year = parseInt(m[3]!, 10);
   if (m[3]!.length === 2) {
     // Two-digit years: 00-49 -> 2000s, 50-99 -> 1900s. QB exports are usually
@@ -249,6 +345,7 @@ export function normaliseDate(raw: string): string | null {
     year = year < 50 ? 2000 + year : 1900 + year;
   }
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (!isRealCalendarDate(year, month, day)) return null;
   const mm = String(month).padStart(2, '0');
   const dd = String(day).padStart(2, '0');
   return `${year}-${mm}-${dd}`;
@@ -264,10 +361,23 @@ export function normaliseAmount(raw: string): string | null {
     negative = true;
     s = s.slice(1, -1).trim();
   }
-  // Strip currency symbol, commas, spaces.
-  s = s.replace(/[$,\s]/g, '');
+  // Strip currency symbol and spaces; commas are vetted below before removal.
+  s = s.replace(/[$\s]/g, '');
+  // A comma followed by 1-2 trailing digits is a DECIMAL comma ("1.234,56",
+  // "1234,56", "1,50" -- continental-locale conversion tools; QBD's
+  // supported US/CA/UK editions all write period decimals). Stripping it as
+  // a thousands separator shifts the magnitude 100-1000x, and because every
+  // line of a block shifts identically the block still balances and posts
+  // silently wrong. Reject instead: the row fails loudly and the block is
+  // excluded with a warning. Valid US grouping always has exactly 3 digits
+  // after each comma, so this never rejects a genuine QBD amount.
+  if (/,\d{1,2}$/.test(s)) return null;
+  s = s.replace(/,/g, '');
   if (s.startsWith('-')) {
-    negative = !negative;
+    // Inside accounting parens a leading minus is redundant confirmation of
+    // the sign -- "(-250.00)" is negative 250. Toggling here read it as
+    // POSITIVE and imported such blocks with debit/credit inverted.
+    negative = true;
     s = s.slice(1);
   } else if (s.startsWith('+')) {
     s = s.slice(1);
@@ -281,7 +391,120 @@ export function normaliseAmount(raw: string): string | null {
 
 // ------------------------- Parser -------------------------------------------
 
-export function parseIif(text: string): IifPreview {
+/**
+ * Split one IIF line into cells. QBD wraps fields containing commas, quotes,
+ * or tabs in double quotes with `""` escaping, so a bare split('\t') stores
+ * literal quote characters, rejects quoted amounts like "1,234.56", and lets
+ * an embedded tab shift every later column. Only fields that START with a
+ * quote are treated as quoted; everything else is taken verbatim.
+ */
+export function splitIifLine(raw: string): string[] {
+  const cells: string[] = [];
+  let i = 0;
+  for (;;) {
+    if (raw[i] === '"') {
+      // Quoted field: consume to the closing quote, honouring "" escapes.
+      let value = '';
+      i++;
+      while (i < raw.length) {
+        if (raw[i] === '"') {
+          if (raw[i + 1] === '"') {
+            value += '"';
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        value += raw[i];
+        i++;
+      }
+      // Keep any (malformed) trailing chars before the tab rather than lose data.
+      const tab = raw.indexOf('\t', i);
+      cells.push(value + raw.slice(i, tab === -1 ? raw.length : tab));
+      if (tab === -1) return cells;
+      i = tab + 1;
+    } else {
+      const tab = raw.indexOf('\t', i);
+      cells.push(raw.slice(i, tab === -1 ? raw.length : tab));
+      if (tab === -1) return cells;
+      i = tab + 1;
+    }
+  }
+}
+
+/**
+ * Longest list-entity name we accept. Real QBD maxima are well below this
+ * (account paths ~159 chars, customer:job paths ~209), so anything longer is
+ * corrupt -- skip the row with a warning instead of letting the commit-time
+ * schema reject the entire request.
+ */
+const MAX_NAME_LENGTH = 255;
+/** journal memos are capped at 500 by the posting service; truncate to match. */
+const MAX_MEMO_LENGTH = 500;
+
+function truncateMemo(raw: string, rowNo: number, warnings: string[]): string | undefined {
+  if (!raw) return undefined;
+  if (raw.length <= MAX_MEMO_LENGTH) return raw;
+  warnings.push(`row ${rowNo}: memo longer than ${MAX_MEMO_LENGTH} chars; truncated`);
+  return raw.slice(0, MAX_MEMO_LENGTH);
+}
+
+const EmailCheck = z.string().email().max(200);
+
+/**
+ * QB's e-mail field is free text: it routinely holds several addresses
+ * ("ap@acme.com;billing@acme.com") or notes. Keep the first valid address so
+ * one messy field can't invalidate the whole row; warn about what was dropped.
+ */
+function sanitiseEmail(
+  raw: string,
+  rowNo: number,
+  label: string,
+  warnings: string[],
+): string | undefined {
+  const s = raw.trim();
+  if (!s) return undefined;
+  if (EmailCheck.safeParse(s).success) return s;
+  const valid = s.split(/[;,\s]+/).find((c) => c && EmailCheck.safeParse(c).success);
+  if (valid) {
+    warnings.push(`row ${rowNo}: ${label} email "${s}" holds multiple values; keeping "${valid}"`);
+    return valid;
+  }
+  warnings.push(`row ${rowNo}: ${label} email "${s}" is not a valid address; importing without email`);
+  return undefined;
+}
+
+/**
+ * Friendly labels for list sections we recognise but don't import (yet). A
+ * full QBD lists export also carries OTHERNAME, TERMS, PAYMETH, etc. --
+ * every unhandled section is surfaced (unknown tags pass through raw) so
+ * users never assume records came over when they were dropped.
+ */
+const SECTION_FRIENDLY_NAMES: Record<string, string> = {
+  INVITEM: 'inventory items',
+  EMP: 'employees',
+  CLASS: 'classes',
+  TIMEACT: 'time activities',
+  OTHERNAME: 'other names',
+  TERMS: 'payment terms',
+  PAYMETH: 'payment methods',
+  SHIPMETH: 'shipping methods',
+  CTYPE: 'customer types',
+  CUSTTYPE: 'customer types',
+  VTYPE: 'vendor types',
+  VENDTYPE: 'vendor types',
+  INVMEMO: 'customer messages',
+  SALESTAXCODE: 'sales tax codes',
+  BUD: 'budgets',
+  TODO: 'to-do notes',
+};
+
+export function parseIif(
+  text: string,
+  opts?: { dateOrder?: 'mdy' | 'dmy' },
+): IifPreview {
+  const dayFirst = opts?.dateOrder === 'dmy';
   const accounts: ParsedAccount[] = [];
   const customers: ParsedCustomer[] = [];
   const vendors: ParsedVendor[] = [];
@@ -290,6 +513,7 @@ export function parseIif(text: string): IifPreview {
   let nonPostingSkipped = 0;
   const unrecognizedSections: string[] = [];
   const warnings: string[] = [];
+  const excludedTransactions: IifPreview['excludedTransactions'] = [];
   const seenSections = new Set<string>();
 
   // Maps section tag -> column index map.
@@ -297,13 +521,66 @@ export function parseIif(text: string): IifPreview {
 
   // TRNS+SPL+ENDTRNS state machine.
   let pendingTransaction: ParsedTransaction | null = null;
+  // True while inside a block whose TRNS row itself failed parsing (bad
+  // date/amount, missing ACCNT/TRNSTYPE). The block is already tracked in
+  // transactionCounts + excludedTransactions at the TRNS row, so its SPL
+  // rows are swallowed without the per-row "outside a TRNS block" noise.
+  let inExcludedBlock = false;
+  // Date-order evidence gathered while parsing (only in the default M/D/Y
+  // pass): a rejected date shaped like day-first is D/M/Y-locale evidence, a
+  // parsed date with day 13-31 proves M/D/Y, and a parsed date with both
+  // components <= 12 proves nothing. Drives the re-parse / warnings after
+  // the loop.
+  const dateStats = { dayFirstDates: 0, monthFirstDates: 0, ambiguousDates: 0, example: '' };
 
   const finalisePending = (rowNo: number) => {
     if (!pendingTransaction) return;
     const { qbType, posts } = pendingTransaction;
     transactionCounts[qbType] = (transactionCounts[qbType] ?? 0) + 1;
     if (posts && pendingTransaction.lines.length >= 2) {
-      transactions.push(pendingTransaction);
+      // Balance check at parse time. An unbalanced block (rounding drift,
+      // truncated split rows) would otherwise sail through the preview and
+      // only be dropped at commit -- after the user has confirmed -- leaving
+      // the imported bank balance off from the real statement with no chance
+      // to fix the file first.
+      const imbalance = pendingTransaction.lines.reduce(
+        (acc, l) => acc + signedAmountToMicros(l.amount),
+        0n,
+      );
+      const absImbalance = imbalance < 0n ? -imbalance : imbalance;
+      if (imbalance === 0n) {
+        transactions.push(pendingTransaction);
+      } else if (absImbalance <= ROUNDING_PLUG_MAX_MICROS) {
+        // Penny drift (multicurrency home-value exports, hand-edited files):
+        // post the block with an explicit Rounding line instead of dropping
+        // it whole. The entry still nets to exactly zero -- the plug is a
+        // real, visible journal line -- so balance enforcement is not
+        // relaxed, and the warning points the user at the Rounding account.
+        pendingTransaction.lines.push({
+          account: ROUNDING_ACCOUNT_NAME,
+          amount: microsToDecimal(-imbalance),
+          name: undefined,
+          memo: 'rounding adjustment added at import',
+          classRef: undefined,
+        });
+        warnings.push(
+          `row ${pendingTransaction.rowNumber}: ${qbType} block is out of balance by ` +
+            `${microsToDecimal(imbalance)} (debits minus credits); a "${ROUNDING_ACCOUNT_NAME}" ` +
+            `line was added so it can post -- review the ${ROUNDING_ACCOUNT_NAME} account after import`,
+        );
+        transactions.push(pendingTransaction);
+      } else {
+        warnings.push(
+          `row ${pendingTransaction.rowNumber}: ${qbType} block is out of balance by ` +
+            `${microsToDecimal(imbalance)} (debits minus credits); it will NOT be imported -- ` +
+            `fix the amounts and re-import`,
+        );
+        excludedTransactions.push({
+          rowNumber: pendingTransaction.rowNumber,
+          qbType,
+          reason: `out of balance by ${microsToDecimal(imbalance)} (debits minus credits)`,
+        });
+      }
     } else if (!posts) {
       nonPostingSkipped++;
     } else {
@@ -311,15 +588,30 @@ export function parseIif(text: string): IifPreview {
       warnings.push(
         `row ${rowNo}: ${qbType} block has only ${pendingTransaction.lines.length} line(s); skipping`,
       );
+      excludedTransactions.push({
+        rowNumber: pendingTransaction.rowNumber,
+        qbType,
+        reason: `block has only ${pendingTransaction.lines.length} line(s)`,
+      });
     }
     pendingTransaction = null;
   };
 
-  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  // Editors that re-save an IIF as "UTF-8 with BOM" prepend U+FEFF; when the
+  // upload path falls back to windows-1252 those same bytes decode as "ï»¿".
+  // Either way the first header row would fail startsWith('!') and the whole
+  // first section would be silently dropped. Lone \r (legacy/mixed line
+  // endings) is normalised too so a stray carriage return can't hide in a cell.
+  const lines = text
+    .replace(/^\uFEFF/, '')
+    .replace(/^ï»¿/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n');
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? '';
     if (!raw.trim()) continue;
-    const cells = raw.split('\t');
+    const cells = splitIifLine(raw);
     const tag = cells[0] ?? '';
 
     if (tag.startsWith('!')) {
@@ -380,7 +672,30 @@ export function parseIif(text: string): IifPreview {
         warnings.push(`row ${i + 1}: TRNS encountered while previous block had no ENDTRNS`);
         finalisePending(i + 1);
       }
-      pendingTransaction = parseTrnsRow(cells, cols, i + 1, warnings);
+      const parsed = parseTrnsRow(cells, cols, i + 1, warnings, dateStats, dayFirst);
+      if ('failed' in parsed) {
+        // The block's header row is unusable, so nothing can post -- but the
+        // block must still be tracked structurally (transactionCounts +
+        // excludedTransactions, or nonPostingSkipped for non-posting types),
+        // exactly like out-of-balance blocks. A free-text warning alone
+        // leaves the preview's counts and the post-commit screen reading
+        // "0 skipped / 0 excluded" while the register is silently short.
+        transactionCounts[parsed.qbType] = (transactionCounts[parsed.qbType] ?? 0) + 1;
+        if (parsed.posts) {
+          excludedTransactions.push({
+            rowNumber: i + 1,
+            qbType: parsed.qbType,
+            reason: parsed.reason,
+          });
+        } else {
+          nonPostingSkipped++;
+        }
+        pendingTransaction = null;
+        inExcludedBlock = true;
+        continue;
+      }
+      pendingTransaction = parsed;
+      inExcludedBlock = false;
       continue;
     }
 
@@ -391,7 +706,12 @@ export function parseIif(text: string): IifPreview {
         continue;
       }
       if (!pendingTransaction) {
-        warnings.push(`row ${i + 1}: SPL row outside a TRNS block; skipping`);
+        // Splits of a block whose TRNS row failed parsing are accounted for
+        // by that block's excludedTransactions entry -- don't emit one noisy
+        // warning per orphaned split on top of it.
+        if (!inExcludedBlock) {
+          warnings.push(`row ${i + 1}: SPL row outside a TRNS block; skipping`);
+        }
         continue;
       }
       const split = parseSplRow(cells, cols, i + 1, warnings);
@@ -401,6 +721,16 @@ export function parseIif(text: string): IifPreview {
 
     if (tag === 'ENDTRNS') {
       finalisePending(i + 1);
+      inExcludedBlock = false;
+      continue;
+    }
+
+    if (tag === 'HDR') {
+      // !HDR/HDR is the version stamp (PROD/VER/REL/IIFVER metadata) at the
+      // top of every real QBD transaction export. It carries no records, so
+      // surfacing it in unrecognizedSections rendered "Skipped (not yet
+      // supported): HDR" on every genuine export -- implying data was
+      // dropped when nothing was.
       continue;
     }
 
@@ -417,23 +747,58 @@ export function parseIif(text: string): IifPreview {
     finalisePending(lines.length);
   }
 
-  for (const tag of ['INVITEM', 'EMP', 'CLASS', 'TIMEACT']) {
-    if (seenSections.has(tag)) {
-      const friendly =
-        tag === 'INVITEM'
-          ? 'inventory items'
-          : tag === 'EMP'
-            ? 'employees'
-            : tag === 'CLASS'
-              ? 'classes'
-              : tag === 'TIMEACT'
-                ? 'time activities'
-                : tag;
-      if (!unrecognizedSections.includes(friendly)) unrecognizedSections.push(friendly);
-    }
+  for (const tag of seenSections) {
+    const friendly = SECTION_FRIENDLY_NAMES[tag] ?? tag;
+    if (!unrecognizedSections.includes(friendly)) unrecognizedSections.push(friendly);
+  }
+
+  // IIF DATE fields follow the exporting machine's Windows short-date locale.
+  // A TRNS date that fails the month check with a plausible day-first shape
+  // (e.g. "25/05/2026") is D/M/Y-locale evidence; a parsed date whose second
+  // component is 13-31 proves M/D/Y. When every readable slash date says
+  // day-first and nothing says month-first, the file IS a D/M/Y export:
+  // re-read the whole file day-first so every date lands in the right month,
+  // instead of dropping the day-13+ rows and silently transposing the rest
+  // (a check dated 05/03 would otherwise post to May instead of March).
+  if (!dayFirst && dateStats.dayFirstDates > 0 && dateStats.monthFirstDates === 0) {
+    const reparsed = parseIif(text, { dateOrder: 'dmy' });
+    reparsed.warnings.unshift(
+      `TRNS dates in this file look like day/month/year (e.g. "${dateStats.example}"), so ALL ` +
+        `dates were read as day/month/year. Verify a sample transaction's date in the preview ` +
+        `before confirming; to keep files unambiguous, re-export from QuickBooks on a machine ` +
+        `with US (M/D/YYYY) regional date settings.`,
+    );
+    return reparsed;
+  }
+  if (!dayFirst && dateStats.dayFirstDates > 0) {
+    // Mixed evidence: some dates prove month-first, others look day-first.
+    // The day-first-shaped rows were dropped per-row above; the file itself
+    // is corrupt, so no re-parse can fix it.
+    warnings.push(
+      `${dateStats.dayFirstDates} TRNS date(s) look like day/month/year (e.g. "${dateStats.example}") ` +
+        `but other dates in this file are unambiguously month/day/year. KPBooks reads IIF dates as ` +
+        `month/day/year (M/D/YYYY); the day/month/year-shaped rows were skipped -- check the file ` +
+        `for corrupt dates and re-import.`,
+    );
+  } else if (!dayFirst && dateStats.monthFirstDates === 0 && dateStats.ambiguousDates > 0) {
+    // Every slash date in the file has day <= 12: nothing in the data can
+    // prove the order, and a D/M/Y-locale export would import with every
+    // date transposed and ZERO other warnings. Say so while the user can
+    // still check a sample transaction against QuickBooks.
+    warnings.push(
+      `Every transaction date in this file has a day of 12 or lower, so month/day order cannot ` +
+        `be verified from the data. Dates were read as month/day/year (US, M/D/YYYY). If this ` +
+        `file was exported on a machine with day/month/year regional settings, every date is ` +
+        `transposed -- verify a sample transaction's date against QuickBooks before confirming.`,
+    );
   }
 
   // Assign suggested codes after all accounts parsed so we can group by type.
+  // Accounts with a real QBD number (ACCNUM) keep it -- fabricating codes
+  // would renumber the customer's entire chart. Synthetic codes fill the
+  // gaps, stepping over file-provided numbers so an import can't collide
+  // with itself.
+  const usedCodes = new Set(accounts.map((a) => a.suggestedCode).filter(Boolean));
   const counters: Record<AccountType, number> = {
     asset: 0,
     liability: 0,
@@ -442,8 +807,35 @@ export function parseIif(text: string): IifPreview {
     expense: 0,
   };
   for (const a of accounts) {
-    counters[a.type]++;
-    a.suggestedCode = String(TYPE_CODE_PREFIX[a.type] + counters[a.type] * 10);
+    if (a.suggestedCode) continue;
+    let code: string;
+    do {
+      counters[a.type]++;
+      code = String(TYPE_CODE_PREFIX[a.type] + counters[a.type] * 10);
+    } while (usedCodes.has(code));
+    a.suggestedCode = code;
+    usedCodes.add(code);
+  }
+
+  // Transactions that reference a HIDDEN (inactive-in-QBD) account will be
+  // skipped per-row at commit -- the posting service refuses inactive
+  // accounts. Surface that at preview, while the user can still plan around
+  // it, instead of springing per-row errors on the completion screen.
+  const hiddenNames = new Set(
+    accounts.filter((a) => !a.isActive).map((a) => a.name.toLowerCase()),
+  );
+  if (hiddenNames.size > 0 && transactions.length > 0) {
+    const affected = transactions.filter((t) =>
+      t.lines.some((l) => hiddenNames.has(l.account.toLowerCase())),
+    ).length;
+    if (affected > 0) {
+      warnings.push(
+        `${affected} transaction(s) reference account(s) marked inactive (HIDDEN=Y) in this ` +
+          `file's account list and will be skipped at import. To post that history: re-activate ` +
+          `the account(s), re-import this file (already-posted transactions are skipped as ` +
+          `duplicates), then de-activate them again.`,
+      );
+    }
   }
 
   return {
@@ -456,6 +848,7 @@ export function parseIif(text: string): IifPreview {
     missingAccounts: [], // populated by the API layer (needs DB access)
     unrecognizedSections,
     warnings,
+    excludedTransactions,
   };
 }
 
@@ -488,11 +881,25 @@ export function inferAccountType(name: string): {
   if (/\b(accounts? payable|a\/p)\b/.test(n) && !/receivable/.test(n)) {
     return { type: 'liability', subtype: 'accounts_payable' };
   }
-  // Sales tax / payroll liabilities (other_current_liability bucket).
-  if (/\b(sales tax|payroll|withholding|liability|payable)\b/.test(n)) {
+  // Receivable-side balances that aren't the A/R control account ("Loan
+  // Receivable", "Interest Receivable") belong on the asset side -- checked
+  // before the loan/liability patterns so they can't be flipped into debt.
+  if (/\breceivables?\b/.test(n) && !/payable/.test(n)) {
+    return { type: 'asset', subtype: 'other_current_asset' };
+  }
+  // Explicit liability wording always wins (Payroll Liabilities, Wages
+  // Payable, Federal Withholding).
+  if (/\b(liabilit(?:y|ies)|payable|withholding)\b/.test(n)) {
     if (/long.?term|note|loan|mortgage/.test(n)) {
       return { type: 'liability', subtype: 'long_term_liability' };
     }
+    return { type: 'liability', subtype: 'other_current_liability' };
+  }
+  // "sales tax" / "payroll" suggest a liability only when the name isn't
+  // expense-worded: QBD's default payroll EXPENSE accounts ("Payroll
+  // Expenses", "Payroll Tax Expense", "Payroll Expenses:Wages") are on every
+  // payroll-enabled company file and must stay on the P&L.
+  if (/\b(sales tax|payroll)\b/.test(n) && !/\b(expenses?|wages?|salar(?:y|ies))\b/.test(n)) {
     return { type: 'liability', subtype: 'other_current_liability' };
   }
   if (/\b(loan|mortgage|note payable)\b/.test(n)) {
@@ -501,6 +908,23 @@ export function inferAccountType(name: string): {
   // Fixed assets. Handle common plurals.
   if (/\b(equipment|vehicles?|trucks?|machinery|buildings?|furniture|fixtures?|land|computers?)\b/.test(n)) {
     return { type: 'asset', subtype: 'fixed_asset' };
+  }
+  // Contra fixed-asset accounts: "Accumulated Depreciation" / "Accumulated
+  // Amortization" sit on virtually every QBD balance sheet. Must be decided
+  // before the other-expense rule below, whose bare "depreciation" /
+  // "amortization" alternatives would land the contra-asset on the P&L --
+  // netting the annual depreciation JE to zero and leaving the balance
+  // sheet with fixed assets but no accumulated depreciation.
+  if (/\baccum(?:ulated)?\.?\s+(depreciation|amortization|amortisation|depletion)\b/.test(n)) {
+    return { type: 'asset', subtype: 'fixed_asset' };
+  }
+  // Deposits HELD from customers are money we owe back: QBD's standard
+  // "Customer Deposits" / "Client Deposits" accounts are Other Current
+  // Liabilities. Checked before the generic deposit pattern below, which
+  // keeps catching deposits we PAID ("Deposits on Purchases", "Security
+  // Deposit" paid to a landlord) and Undeposited Funds on the asset side.
+  if (/\b(customer|client|tenant)s?'?s?\s+deposits?\b/.test(n) || /\bdeposits?\s+held\b/.test(n)) {
+    return { type: 'liability', subtype: 'other_current_liability' };
   }
   // Inventory / WIP / prepaid -> other current asset.
   if (/\b(inventory|stock|wip|work in progress|prepaid|deposits?|undeposited)\b/.test(n)) {
@@ -569,6 +993,12 @@ export function buildMissingAccounts(
   const sortedNames = Array.from(referenced.keys()).sort();
   for (const name of sortedNames) {
     if (knownLower.has(name.toLowerCase())) continue;
+    if (name.length > MAX_NAME_LENGTH) {
+      preview.warnings.push(
+        `referenced account name longer than ${MAX_NAME_LENGTH} chars; cannot auto-create: "${name.slice(0, 60)}…"`,
+      );
+      continue;
+    }
     const inferred = inferAccountType(name);
     counters[inferred.type]++;
     const code = String(TYPE_CODE_PREFIX_FOR_INFER[inferred.type] + counters[inferred.type] * 10 + 5);
@@ -583,37 +1013,148 @@ export function buildMissingAccounts(
   return out;
 }
 
+/**
+ * Preview-time disclosure for the standard two-file migration (lists IIF
+ * first, then the transactions IIF). Accounts that already exist in the
+ * chart but are INACTIVE -- typically created from the lists file's
+ * HIDDEN=Y rows -- fail every transaction that references them at commit
+ * ("account X is inactive"), yet they never show in missingAccounts (they
+ * exist) and the in-file HIDDEN warning in parseIif only covers accounts
+ * defined in THIS file's !ACCNT section. The preview route calls this with
+ * the DB's inactive account names so the user can plan (re-activate,
+ * import, de-activate again) instead of discovering hundreds of per-row
+ * errors on the completion screen.
+ */
+export function warnInactiveAccountRefs(
+  preview: IifPreview,
+  inactiveExistingNames: ReadonlySet<string>,
+): void {
+  if (inactiveExistingNames.size === 0 || preview.transactions.length === 0) return;
+  // Names this file itself re-defines as HIDDEN=Y already got the in-file
+  // warning -- don't say the same thing twice.
+  const coveredInFile = new Set(
+    preview.accounts.filter((a) => !a.isActive).map((a) => a.name.toLowerCase()),
+  );
+  const inactiveLower = new Set<string>();
+  for (const n of inactiveExistingNames) {
+    const key = n.toLowerCase();
+    if (!coveredInFile.has(key)) inactiveLower.add(key);
+  }
+  if (inactiveLower.size === 0) return;
+  const affectedNames = new Map<string, string>(); // lower-cased -> file casing
+  let affected = 0;
+  for (const t of preview.transactions) {
+    let hit = false;
+    for (const l of t.lines) {
+      const key = l.account.toLowerCase();
+      if (inactiveLower.has(key)) {
+        hit = true;
+        if (!affectedNames.has(key)) affectedNames.set(key, l.account);
+      }
+    }
+    if (hit) affected++;
+  }
+  if (affected === 0) return;
+  const names = Array.from(affectedNames.values());
+  const shown = names.slice(0, 5).map((n) => `"${n}"`).join(', ');
+  const more = names.length > 5 ? ` and ${names.length - 5} more` : '';
+  preview.warnings.push(
+    `${affected} transaction(s) reference account(s) that exist in your chart but are ` +
+      `inactive (${shown}${more}) and will be skipped at import. To post that history: ` +
+      `re-activate the account(s), re-import this file (already-posted transactions are ` +
+      `skipped as duplicates), then de-activate them again.`,
+  );
+}
+
+/**
+ * TRNS-row outcome for an unusable header row (invalid DATE, missing ACCNT,
+ * invalid AMOUNT, missing TRNSTYPE). Carries what parseIif needs to track
+ * the whole block structurally -- see the excludedTransactions contract on
+ * IifPreview: without it these blocks appeared only as free-text warnings
+ * and left no post-commit trace at all.
+ */
+interface TrnsRowFailure {
+  failed: true;
+  qbType: string;
+  posts: boolean;
+  reason: string;
+}
+
 function parseTrnsRow(
   cells: string[],
   cols: Record<string, number>,
   rowNo: number,
   warnings: string[],
-): ParsedTransaction | null {
+  dateStats: {
+    dayFirstDates: number;
+    monthFirstDates: number;
+    ambiguousDates: number;
+    example: string;
+  },
+  dayFirst: boolean,
+): ParsedTransaction | TrnsRowFailure {
   const cell = (col: string) => (cells[cols[col] ?? -1] ?? '').trim();
   const qbType = cell('TRNSTYPE');
   if (!qbType) {
     warnings.push(`row ${rowNo}: TRNS row missing TRNSTYPE; skipping`);
-    return null;
+    return { failed: true, qbType: 'UNKNOWN', posts: true, reason: 'TRNS row missing TRNSTYPE' };
   }
+  const failed = (reason: string): TrnsRowFailure => ({
+    failed: true,
+    qbType: qbType.toUpperCase(),
+    posts: lookupTrnsType(qbType).posts,
+    reason,
+  });
   const dateRaw = cell('DATE');
-  const date = normaliseDate(dateRaw);
+  const date = normaliseDate(dateRaw, dayFirst);
+  // Date-order evidence, gathered only in the default month-first pass. A
+  // rejected date whose first component is a plausible day (13-31) and
+  // second a plausible month (1-12) points at a D/M/Y-locale export; a
+  // parsed date with day 13-31 proves M/D/Y; a parsed date with both
+  // components <= 12 is ambiguous. parseIif re-parses or warns at file
+  // level based on these counts.
+  if (!dayFirst) {
+    const parts = dateRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    if (parts) {
+      const first = +parts[1]!;
+      const second = +parts[2]!;
+      if (!date && first > 12 && first <= 31 && second >= 1 && second <= 12) {
+        // Only count D/M/Y-locale evidence when the transposed reading is a
+        // REAL calendar date (two-digit years expand exactly as normaliseDate
+        // does). "31/02/2026" is invalid in BOTH orders -- plain corruption,
+        // not locale evidence -- yet it used to increment this counter and,
+        // with every other date ambiguous (day <= 12), flip the entire file
+        // to day/month/year, silently transposing every date in the import.
+        let year = +parts[3]!;
+        if (parts[3]!.length === 2) year = year < 50 ? 2000 + year : 1900 + year;
+        if (isRealCalendarDate(year, second, first)) {
+          dateStats.dayFirstDates++;
+          if (!dateStats.example) dateStats.example = dateRaw.trim();
+        }
+      } else if (date && second > 12) {
+        dateStats.monthFirstDates++;
+      } else if (date && first <= 12 && second <= 12) {
+        dateStats.ambiguousDates++;
+      }
+    }
+  }
   if (!date) {
     warnings.push(`row ${rowNo}: invalid TRNS date "${dateRaw}"; skipping block`);
-    return null;
+    return failed(`invalid TRNS date "${dateRaw}"`);
   }
   const account = cell('ACCNT');
   if (!account) {
     warnings.push(`row ${rowNo}: TRNS row missing ACCNT; skipping block`);
-    return null;
+    return failed('TRNS row missing ACCNT');
   }
   const amountRaw = cell('AMOUNT');
   const amount = normaliseAmount(amountRaw);
   if (amount == null) {
     warnings.push(`row ${rowNo}: invalid TRNS amount "${amountRaw}"; skipping block`);
-    return null;
+    return failed(`invalid TRNS amount "${amountRaw}"`);
   }
-  const docNum = cell('DOCNUM') || undefined;
-  const memo = cell('MEMO') || undefined;
+  const docNum = cell('DOCNUM') ? cell('DOCNUM').slice(0, 120) : undefined;
+  const memo = truncateMemo(cell('MEMO'), rowNo, warnings);
   const name = cell('NAME') || undefined;
   const classRef = cell('CLASS') || undefined;
   const mapped = lookupTrnsType(qbType);
@@ -657,7 +1198,7 @@ function parseSplRow(
     warnings.push(`row ${rowNo}: invalid SPL amount "${amountRaw}"; skipping`);
     return null;
   }
-  const memo = cell('MEMO') || undefined;
+  const memo = truncateMemo(cell('MEMO'), rowNo, warnings);
   const name = cell('NAME') || undefined;
   const classRef = cell('CLASS') || undefined;
   return { account, amount, name, memo, classRef };
@@ -675,7 +1216,37 @@ function parseAccountRow(
     warnings.push(`row ${rowNo}: ACCNT row missing NAME; skipping`);
     return null;
   }
-  const qbType = cell('ACCNTTYPE') || 'EXP';
+  if (name.length > MAX_NAME_LENGTH) {
+    warnings.push(
+      `row ${rowNo}: account name longer than ${MAX_NAME_LENGTH} chars; skipping row`,
+    );
+    return null;
+  }
+  // Uppercase before the map lookup: real QBD exports emit uppercase
+  // keywords, but hand-edited and conversion-tool files carry "Bank"/"bank",
+  // and a raw-cased lookup silently reclassified balance-sheet accounts as
+  // expenses. Matches the TRNSTYPE path, which uppercases before its lookup.
+  const rawType = cell('ACCNTTYPE');
+  if (!rawType) {
+    // A blank/absent ACCNTTYPE (truncated row, or a converted file whose
+    // header lacks the column) used to take the EXP default silently -- a
+    // balance-sheet account created as an expense with nothing flagging it
+    // beyond a type column the user would have to notice. Disclose it the
+    // same way the unknown-type branch below does.
+    warnings.push(
+      `row ${rowNo}: ACCNT row for "${name}" has no ACCNTTYPE -- treating as expense`,
+    );
+  }
+  const qbType = (rawType || 'EXP').toUpperCase();
+  // Non-posting accounts (Estimates, Purchase Orders, ...) never hit the
+  // ledger -- skip them entirely, matching how non-posting TRNS blocks are
+  // handled, instead of creating junk expense accounts.
+  if (qbType === 'NONPOSTING') {
+    warnings.push(
+      `row ${rowNo}: non-posting account "${name}" skipped (does not post to the ledger)`,
+    );
+    return null;
+  }
   const mapped = ACCNT_TYPE_MAP[qbType];
   if (!mapped) {
     warnings.push(
@@ -684,14 +1255,56 @@ function parseAccountRow(
   }
   const desc = cell('DESC');
   const final = mapped ?? { type: 'expense' as const, subtype: 'expense' as const };
+  // Real QBD lists exports carry the customer's own numbering in ACCNUM.
+  // Preserve it -- CPAs cross-reference old QBD reports and workpapers by
+  // these numbers. Accounts without one get a synthetic code in the
+  // post-pass. Cap at 40 chars to match the commit schema.
+  const accnum = cell('ACCNUM').slice(0, 40);
   return {
     name,
     qbType,
     type: final.type,
     subtype: final.subtype,
-    description: desc || undefined,
-    suggestedCode: '', // assigned later
+    description: desc ? desc.slice(0, 500) : undefined,
+    suggestedCode: accnum, // synthetic code assigned later when empty
+    // QBD marks records made inactive with HIDDEN=Y. A 15-year company file
+    // routinely carries hundreds of retired accounts; arriving active they
+    // flood every picker and accept new postings to accounts the CPA
+    // deliberately closed.
+    isActive: cell('HIDDEN').toUpperCase() !== 'Y',
   };
+}
+
+/**
+ * QBD address blocks are five free-text lines (BADDR1-5 / SADDR1-5): the
+ * first line is usually the payee/customer name, the middle lines the
+ * street, and the last a "City, ST 12345" line. Best-effort structure into
+ * the { street1, street2, city, state, postalCode } jsonb shape the rest of
+ * KPBooks uses (1099 recipient addresses, statements, invoices). Anything
+ * that doesn't match stays in the street lines so no data is dropped.
+ */
+function parseAddressLines(
+  rawLines: string[],
+  dropNames: (string | undefined)[],
+): ParsedAddress | undefined {
+  const lines = rawLines.map((l) => l.trim()).filter(Boolean);
+  const drop = new Set(
+    dropNames.filter((n): n is string => Boolean(n)).map((n) => n.toLowerCase()),
+  );
+  while (lines.length > 0 && drop.has(lines[0]!.toLowerCase())) lines.shift();
+  if (lines.length === 0) return undefined;
+  const out: ParsedAddress = {};
+  const last = lines[lines.length - 1]!;
+  const cityLine = last.match(/^(.+?),?\s+([A-Za-z]{2})\.?,?\s+(\d{5}(?:-\d{4})?)$/);
+  if (cityLine) {
+    lines.pop();
+    out.city = cityLine[1]!.replace(/,$/, '').slice(0, 100);
+    out.state = cityLine[2]!.toUpperCase();
+    out.postalCode = cityLine[3]!;
+  }
+  if (lines.length > 0) out.street1 = lines[0]!.slice(0, 200);
+  if (lines.length > 1) out.street2 = lines.slice(1).join(', ').slice(0, 200);
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function parseCustomerRow(
@@ -706,20 +1319,39 @@ function parseCustomerRow(
     warnings.push(`row ${rowNo}: CUST row missing NAME; skipping`);
     return null;
   }
-  // QB IIF often uses PRINTAS for the company name and NAME for the contact.
-  const printAs = cell('PRINTAS');
+  if (name.length > MAX_NAME_LENGTH) {
+    warnings.push(`row ${rowNo}: customer name longer than ${MAX_NAME_LENGTH} chars; skipping row`);
+    return null;
+  }
+  // Real QBD !CUST exports carry the company in COMPANYNAME. PRINTAS is a
+  // vendor/employee "Print on Check as" field -- kept only as a fallback for
+  // files that happen to have it.
+  const company = cell('COMPANYNAME') || cell('PRINTAS');
   const note = cell('NOTE');
   const phone = cell('PHONE1');
-  const email = cell('EMAIL');
+  const email = sanitiseEmail(cell('EMAIL'), rowNo, `customer "${name}"`, warnings);
   const terms = cell('TERMS');
-  const termsDays = parseTermsToDays(terms);
+  const termsDays = parseTermsToDays(terms, rowNo, `customer "${name}"`, warnings);
+  // Real QBD !CUST exports carry the billing address in BADDR1-5 and the
+  // shipping address in SADDR1-5.
+  const billingAddress = parseAddressLines(
+    ['BADDR1', 'BADDR2', 'BADDR3', 'BADDR4', 'BADDR5'].map((c) => cell(c)),
+    [name, company],
+  );
+  const shippingAddress = parseAddressLines(
+    ['SADDR1', 'SADDR2', 'SADDR3', 'SADDR4', 'SADDR5'].map((c) => cell(c)),
+    [name, company],
+  );
   return {
     displayName: name,
-    companyName: printAs && printAs !== name ? printAs : undefined,
-    email: email || undefined,
+    companyName: company && company !== name ? company.slice(0, 255) : undefined,
+    email,
     phone: phone || undefined,
-    notes: note || undefined,
+    notes: note ? note.slice(0, 2000) : undefined,
     defaultTermsDays: termsDays,
+    billingAddress,
+    shippingAddress,
+    isActive: cell('HIDDEN').toUpperCase() !== 'Y',
   };
 }
 
@@ -735,30 +1367,72 @@ function parseVendorRow(
     warnings.push(`row ${rowNo}: VEND row missing NAME; skipping`);
     return null;
   }
-  const printAs = cell('PRINTAS');
+  if (name.length > MAX_NAME_LENGTH) {
+    warnings.push(`row ${rowNo}: vendor name longer than ${MAX_NAME_LENGTH} chars; skipping row`);
+    return null;
+  }
+  // Prefer COMPANYNAME (the actual company field); PRINTAS ("Print on Check
+  // as") is the historical fallback.
+  const company = cell('COMPANYNAME') || cell('PRINTAS');
   const note = cell('NOTE');
   const phone = cell('PHONE1');
-  const email = cell('EMAIL');
+  const email = sanitiseEmail(cell('EMAIL'), rowNo, `vendor "${name}"`, warnings);
   const terms = cell('TERMS');
   const taxId = cell('TAXID');
-  const eligible = cell('VENDOR1099').toUpperCase() === 'Y';
+  // Real QBD VEND headers name the 1099-eligibility column "1099";
+  // "VENDOR1099" is kept as a fallback for hand-built files.
+  const eligible = (cell('1099') || cell('VENDOR1099')).toUpperCase() === 'Y';
+  // Real QBD !VEND exports carry the mailing address in ADDR1-5 (BADDR/SADDR
+  // belong to the !CUST section) -- the same address the January 1099-NEC
+  // run needs for every 1099-flagged vendor. BADDR1-5 is kept as a fallback
+  // for hand-built files.
+  const mailingAddress =
+    parseAddressLines(
+      ['ADDR1', 'ADDR2', 'ADDR3', 'ADDR4', 'ADDR5'].map((c) => cell(c)),
+      [name, company],
+    ) ??
+    parseAddressLines(
+      ['BADDR1', 'BADDR2', 'BADDR3', 'BADDR4', 'BADDR5'].map((c) => cell(c)),
+      [name, company],
+    );
   return {
     displayName: name,
-    companyName: printAs && printAs !== name ? printAs : undefined,
-    email: email || undefined,
+    companyName: company && company !== name ? company.slice(0, 255) : undefined,
+    email,
     phone: phone || undefined,
-    notes: note || undefined,
-    defaultTermsDays: parseTermsToDays(terms),
+    notes: note ? note.slice(0, 2000) : undefined,
+    defaultTermsDays: parseTermsToDays(terms, rowNo, `vendor "${name}"`, warnings),
     is1099Vendor: eligible,
     taxId: taxId || undefined,
+    mailingAddress,
+    isActive: cell('HIDDEN').toUpperCase() !== 'Y',
   };
 }
 
-function parseTermsToDays(terms: string): number | undefined {
+function parseTermsToDays(
+  terms: string,
+  rowNo: number,
+  label: string,
+  warnings: string[],
+): number | undefined {
   if (!terms) return undefined;
   // Common QB strings: "Net 30", "Net 15", "Due on receipt", "1% 10 Net 30".
   const m = terms.match(/Net\s*(\d+)/i);
-  if (m && m[1]) return parseInt(m[1], 10);
+  if (m && m[1]) {
+    const days = parseInt(m[1], 10);
+    // The commit schema caps defaultTermsDays at 365. QBD terms are
+    // user-defined free text ("Net 400" is legal there), and an over-cap
+    // value that sailed through preview would 400 the ENTIRE commit with a
+    // ZodError. Degrade to no-default-terms with a warning instead
+    // (mirrors sanitiseEmail).
+    if (days > 365) {
+      warnings.push(
+        `row ${rowNo}: ${label} terms "${terms}" exceed Net 365; importing without default terms`,
+      );
+      return undefined;
+    }
+    return days;
+  }
   if (/due\s*on\s*receipt/i.test(terms)) return 0;
   return undefined;
 }
@@ -766,7 +1440,10 @@ function parseTermsToDays(terms: string): number | undefined {
 // ------------------------- Commit -------------------------------------------
 
 const CommitAccount = z.object({
-  name: z.string().min(1).max(120),
+  // QBD sub-account colon paths run to ~159 chars (31/level, 5 levels); 255
+  // gives headroom. The parser skips anything longer, so one corrupt row can
+  // never 400 the whole commit.
+  name: z.string().min(1).max(255),
   type: z.enum(['asset', 'liability', 'equity', 'revenue', 'expense']),
   subtype: z.enum([
     'bank',
@@ -788,26 +1465,59 @@ const CommitAccount = z.object({
   ]),
   code: z.string().min(1).max(40),
   description: z.string().max(500).optional(),
+  /** False for QBD HIDDEN=Y rows (inactive in QBD). */
+  isActive: z.boolean().default(true),
 });
 
+/**
+ * QB's e-mail field is free text, so an unparseable value must degrade to
+ * "no email" instead of throwing a ZodError that 400s the entire commit
+ * (the parser already keeps the first valid address at preview time; the
+ * .catch is the backstop for anything that slips through).
+ */
+const TolerantEmail = z.string().email().max(200).optional().catch(undefined);
+
+/**
+ * Address shape shared with the customers/vendors CRUD routes. The .catch
+ * backstop degrades a malformed address to "no address" rather than letting
+ * one row 400 the whole commit (same policy as TolerantEmail).
+ */
+const TolerantAddress = z
+  .object({
+    street1: z.string().max(200).optional(),
+    street2: z.string().max(200).optional(),
+    city: z.string().max(100).optional(),
+    state: z.string().max(60).optional(),
+    postalCode: z.string().max(20).optional(),
+    country: z.string().max(60).optional(),
+  })
+  .optional()
+  .catch(undefined);
+
 const CommitCustomer = z.object({
-  displayName: z.string().min(1).max(200),
-  companyName: z.string().max(200).optional(),
-  email: z.string().email().max(200).optional(),
+  // Customer:job colon paths run to ~209 chars (41/level, 5 levels).
+  displayName: z.string().min(1).max(255),
+  companyName: z.string().max(255).optional(),
+  email: TolerantEmail,
   phone: z.string().max(40).optional(),
   notes: z.string().max(2000).optional(),
   defaultTermsDays: z.number().int().min(0).max(365).optional(),
+  billingAddress: TolerantAddress,
+  shippingAddress: TolerantAddress,
+  isActive: z.boolean().default(true),
 });
 
 const CommitVendor = z.object({
-  displayName: z.string().min(1).max(200),
-  companyName: z.string().max(200).optional(),
-  email: z.string().email().max(200).optional(),
+  displayName: z.string().min(1).max(255),
+  companyName: z.string().max(255).optional(),
+  email: TolerantEmail,
   phone: z.string().max(40).optional(),
   notes: z.string().max(2000).optional(),
   defaultTermsDays: z.number().int().min(0).max(365).optional(),
   is1099Vendor: z.boolean().default(false),
   taxId: z.string().max(40).optional(),
+  mailingAddress: TolerantAddress,
+  isActive: z.boolean().default(true),
 });
 
 export const CommitIifSchema = z.object({
@@ -826,6 +1536,8 @@ export interface CommitResult {
   vendorsCreated: number;
   vendorsSkipped: number;
   conflicts: { kind: 'account' | 'customer' | 'vendor'; identifier: string; reason: string }[];
+  /** Rows that imported but need attention (renumbered codes, missing 1099 TINs). */
+  warnings: string[];
 }
 
 export interface CommitContext {
@@ -834,10 +1546,33 @@ export interface CommitContext {
 }
 
 /**
- * Skip-on-conflict policy: if a name (or account code) already exists in the
- * company, the row is skipped. The caller sees a count + a list of skipped
- * identifiers so they know what to fix manually. This keeps the import
- * idempotent -- a second run with the same file is a no-op.
+ * Smallest not-taken account code: numeric codes count up (1010 -> 1011);
+ * anything else gets a numeric suffix. BigInt because codes run to 40 chars.
+ */
+function nextFreeCode(requested: string, taken: ReadonlySet<string>): string {
+  if (/^\d+$/.test(requested)) {
+    let n = BigInt(requested);
+    for (;;) {
+      n += 1n;
+      const candidate = String(n).padStart(requested.length, '0');
+      if (!taken.has(candidate)) return candidate;
+    }
+  }
+  for (let i = 2; ; i++) {
+    const suffix = `-${i}`;
+    const candidate = requested.slice(0, 40 - suffix.length) + suffix;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Skip-on-conflict policy: if a NAME already exists in the company, the row
+ * is skipped -- names are the identity, so a second run with the same file
+ * is a no-op. An account whose name is new but whose code is taken (every
+ * company is seeded with a default chart using 1010/1100/...) is NOT
+ * skipped: it gets the next free code, because dropping it would strand
+ * every transaction that references it. The caller sees skip counts, a
+ * conflict list, and warnings for renumbered rows.
  */
 export async function commitIifImport(
   tx: Database,
@@ -852,87 +1587,136 @@ export async function commitIifImport(
     vendorsCreated: 0,
     vendorsSkipped: 0,
     conflicts: [],
+    warnings: [],
   };
 
-  // Account conflict detection: by code (unique within company) and by name.
-  if (input.accounts.length > 0) {
-    const codes = input.accounts.map((a) => a.code);
-    const names = input.accounts.map((a) => a.name);
-    const existing = await tx
-      .select({ code: accountsTable.code, name: accountsTable.name })
-      .from(accountsTable)
-      .where(
-        and(
-          eq(accountsTable.companyId, ctx.companyId),
-          inArray(accountsTable.code, codes),
-        ),
-      );
-    const existingByCode = new Set(existing.map((r) => r.code));
-    const existingByName = new Set(
-      (
-        await tx
-          .select({ name: accountsTable.name })
-          .from(accountsTable)
-          .where(
-            and(
-              eq(accountsTable.companyId, ctx.companyId),
-              inArray(accountsTable.name, names),
-            ),
-          )
-      ).map((r) => r.name),
-    );
+  // Serialise concurrent imports for this company: conflict detection below
+  // is read-then-write, so two overlapping commits would each see the
+  // pre-commit snapshot and both insert. The xact-scoped advisory lock makes
+  // the second request wait until the first commits.
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('kpbooks.iif_import'), hashtext(${ctx.companyId}))`,
+  );
 
-    const usedCodesThisImport = new Set<string>();
+  // Account conflict detection: by code (unique within company) and by name.
+  // Names are compared case-insensitively to match buildMissingAccounts and
+  // commitIifTransactions (QBD casing routinely differs from what the user
+  // typed into KPBooks), so we fetch the whole chart rather than inArray on
+  // exact strings. Just-inserted rows are added to the sets so a duplicated
+  // list row within one file can't create a duplicate record.
+  if (input.accounts.length > 0) {
+    const existing = await tx
+      .select({
+        id: accountsTable.id,
+        code: accountsTable.code,
+        name: accountsTable.name,
+        type: accountsTable.type,
+        subtype: accountsTable.subtype,
+      })
+      .from(accountsTable)
+      .where(eq(accountsTable.companyId, ctx.companyId));
+    const existingByCode = new Set(existing.map((r) => r.code));
+    const existingByName = new Set(existing.map((r) => r.name.toLowerCase()));
+    const existingRowByName = new Map(existing.map((r) => [r.name.toLowerCase(), r]));
+    // lower-cased name -> id of accounts created by THIS run, for the
+    // sub-account parent linking pass below.
+    const createdIdByName = new Map<string, string>();
+
     for (const a of input.accounts) {
-      if (existingByCode.has(a.code) || usedCodesThisImport.has(a.code)) {
-        result.accountsSkipped++;
-        result.conflicts.push({
-          kind: 'account',
-          identifier: a.name,
-          reason: `code ${a.code} already exists`,
-        });
-        continue;
-      }
-      if (existingByName.has(a.name)) {
+      if (existingByName.has(a.name.toLowerCase())) {
         result.accountsSkipped++;
         result.conflicts.push({
           kind: 'account',
           identifier: a.name,
           reason: 'name already exists',
         });
+        // The skip keeps the EXISTING account (names are identity), but if
+        // the file disagrees about its type, the chart may be carrying a
+        // heuristic guess from an earlier transactions-first import. Say so
+        // -- otherwise the wrong classification survives every re-import of
+        // the lists file with only "already exists" noise as a trace, and
+        // the migrated balance sheet never matches QBD with no clue why.
+        const stored = existingRowByName.get(a.name.toLowerCase());
+        if (
+          stored?.type &&
+          stored.subtype &&
+          (stored.type !== a.type || stored.subtype !== a.subtype)
+        ) {
+          result.warnings.push(
+            `account "${a.name}": this file says ${a.type}/${a.subtype} but the existing ` +
+              `account is ${stored.type}/${stored.subtype} -- the existing type was kept; ` +
+              `edit the account in the chart of accounts if the file is right`,
+          );
+        }
         continue;
       }
-      await tx.insert(accountsTable).values({
-        companyId: ctx.companyId,
-        code: a.code,
-        name: a.name,
-        type: a.type,
-        subtype: a.subtype as never,
-        currency: 'USD',
-        description: a.description ?? null,
-      });
-      usedCodesThisImport.add(a.code);
+      let code = a.code;
+      if (existingByCode.has(code)) {
+        // The name is new, so this is a numbering clash (the seeded default
+        // chart already uses 1010/1100/...), not a re-import. Renumber to
+        // the next free code instead of dropping the account -- a skipped
+        // account fails every transaction that references it by name.
+        code = nextFreeCode(code, existingByCode);
+        result.warnings.push(
+          `account "${a.name}": code ${a.code} already exists; assigned ${code} instead`,
+        );
+      }
+      const [created] = await tx
+        .insert(accountsTable)
+        .values({
+          companyId: ctx.companyId,
+          code,
+          name: a.name,
+          type: a.type,
+          subtype: a.subtype as never,
+          currency: 'USD',
+          description: a.description ?? null,
+          // HIDDEN=Y in QBD -> inactive here, so retired accounts don't
+          // flood pickers or accept new postings.
+          isActive: a.isActive,
+        })
+        .returning({ id: accountsTable.id });
+      if (created) createdIdByName.set(a.name.toLowerCase(), created.id);
+      existingByCode.add(code);
+      existingByName.add(a.name.toLowerCase());
       result.accountsCreated++;
+    }
+
+    // QBD sub-accounts arrive as colon paths ("Utilities:Gas & Electric").
+    // The full path stays as the NAME (transactions resolve accounts by full
+    // path), but parent_id must be linked too or every balance-sheet / P&L
+    // rollup by parent account is lost after migration. Runs after the
+    // insert loop so a parent defined later in the same file still resolves.
+    for (const a of input.accounts) {
+      const childId = createdIdByName.get(a.name.toLowerCase());
+      if (!childId) continue; // skipped rows were never created
+      const colon = a.name.lastIndexOf(':');
+      if (colon <= 0) continue;
+      const parentName = a.name.slice(0, colon).trim();
+      const parentId =
+        createdIdByName.get(parentName.toLowerCase()) ??
+        existingRowByName.get(parentName.toLowerCase())?.id;
+      if (!parentId) {
+        result.warnings.push(
+          `account "${a.name}": parent "${parentName}" not found -- imported without a hierarchy link`,
+        );
+        continue;
+      }
+      await tx.update(accountsTable).set({ parentId }).where(eq(accountsTable.id, childId));
     }
   }
 
   if (input.customers.length > 0) {
-    const names = input.customers.map((c) => c.displayName);
     const existing = new Set(
       (
         await tx
           .select({ name: customersTable.displayName })
           .from(customersTable)
-          .where(
-            and(
-              eq(customersTable.companyId, ctx.companyId),
-              inArray(customersTable.displayName, names),
-            ),
-          )
-      ).map((r) => r.name),
+          .where(eq(customersTable.companyId, ctx.companyId))
+      ).map((r) => r.name.toLowerCase()),
     );
     for (const c of input.customers) {
-      if (existing.has(c.displayName)) {
+      if (existing.has(c.displayName.toLowerCase())) {
         result.customersSkipped++;
         result.conflicts.push({
           kind: 'customer',
@@ -949,28 +1733,38 @@ export async function commitIifImport(
         phone: c.phone ?? null,
         notes: c.notes ?? null,
         defaultTermsDays: c.defaultTermsDays ?? null,
+        billingAddress: c.billingAddress ?? null,
+        shippingAddress: c.shippingAddress ?? null,
+        isActive: c.isActive,
       });
+      existing.add(c.displayName.toLowerCase());
       result.customersCreated++;
+    }
+
+    // QBD customer:job colon paths import as independent customers -- the
+    // customers table has no parent/job column yet, so the hierarchy cannot
+    // be represented. Say so instead of letting the user assume job-costing
+    // rollups came over.
+    const jobPaths = input.customers.filter((c) => c.displayName.includes(':')).length;
+    if (jobPaths > 0) {
+      result.warnings.push(
+        `${jobPaths} customer name(s) contain ":" (QBD customer:job paths) -- jobs import as ` +
+          `separate top-level customers; job-under-customer hierarchy is not preserved yet`,
+      );
     }
   }
 
   if (input.vendors.length > 0) {
-    const names = input.vendors.map((v) => v.displayName);
     const existing = new Set(
       (
         await tx
           .select({ name: vendorsTable.displayName })
           .from(vendorsTable)
-          .where(
-            and(
-              eq(vendorsTable.companyId, ctx.companyId),
-              inArray(vendorsTable.displayName, names),
-            ),
-          )
-      ).map((r) => r.name),
+          .where(eq(vendorsTable.companyId, ctx.companyId))
+      ).map((r) => r.name.toLowerCase()),
     );
     for (const v of input.vendors) {
-      if (existing.has(v.displayName)) {
+      if (existing.has(v.displayName.toLowerCase())) {
         result.vendorsSkipped++;
         result.conflicts.push({
           kind: 'vendor',
@@ -979,15 +1773,21 @@ export async function commitIifImport(
         });
         continue;
       }
-      // 1099 invariant: tax ID required when flagged.
+      // A 1099-flagged vendor without a tax ID still imports -- dropping the
+      // row would lose the vendor (and the 1099 flag) entirely. The missing
+      // TIN is surfaced as a warning; 1099 form generation validates it
+      // again, and the W-9 request flow exists to collect it before year-end.
       if (v.is1099Vendor && !(v.taxId && v.taxId.length > 0)) {
-        result.vendorsSkipped++;
-        result.conflicts.push({
-          kind: 'vendor',
-          identifier: v.displayName,
-          reason: '1099 vendor without tax ID -- skipped (add manually)',
-        });
-        continue;
+        result.warnings.push(
+          `vendor "${v.displayName}" is 1099-flagged but has no tax ID -- collect a W-9 before generating 1099s`,
+        );
+      }
+      // Same disclosure for the mailing address: the 1099-NEC needs a
+      // recipient street/city/state/ZIP just as much as the TIN.
+      if (v.is1099Vendor && !v.mailingAddress) {
+        result.warnings.push(
+          `vendor "${v.displayName}" is 1099-flagged but has no mailing address -- 1099 forms need street, city, state, and ZIP`,
+        );
       }
       await tx.insert(vendorsTable).values({
         companyId: ctx.companyId,
@@ -999,7 +1799,10 @@ export async function commitIifImport(
         defaultTermsDays: v.defaultTermsDays ?? null,
         is1099Vendor: v.is1099Vendor,
         taxId: v.taxId ?? null,
+        mailingAddress: v.mailingAddress ?? null,
+        isActive: v.isActive,
       });
+      existing.add(v.displayName.toLowerCase());
       result.vendorsCreated++;
     }
   }
@@ -1047,7 +1850,211 @@ export type CommitIifTransactionsInput = z.infer<typeof CommitIifTransactionsSch
 export interface TransactionCommitResult {
   posted: number;
   skipped: number;
+  /** Blocks identical to an already-posted journal entry -- silently not
+   * re-posted so re-importing the same file can't double-book the ledger. */
+  duplicates: number;
+  /** All-zero blocks (QBD exports voided checks as 0.00 lines) -- nothing to
+   * post, counted separately so they don't read as failures. */
+  voided: number;
+  /** Posted blocks that ALSO wrote a payments-subledger row (vendor check /
+   * bill payment / customer payment whose TRNS NAME matched a vendor or
+   * customer) so 1099 totals, payroll registers, and statements see the
+   * imported history. */
+  paymentsLinked: number;
+  /**
+   * Duplicate blocks whose earlier run posted GL-only (the payee matched no
+   * vendor/customer at the time) but whose payee matches NOW: the missing
+   * payments-subledger row is written against the already-posted entry.
+   * Without this, the documented remediation -- create the vendor, re-import
+   * the same file -- silently no-ops and 1099 totals stay short with no
+   * remaining signal.
+   */
+  paymentsBackfilled: number;
+  /**
+   * Non-fatal disclosures. Today: a posted block whose date+reference match
+   * an existing entry with different amounts/accounts -- the signature of a
+   * transaction edited in QuickBooks after an earlier import, which the
+   * content fingerprint cannot treat as a duplicate (both versions are now
+   * on the ledger and only this warning says so).
+   */
+  warnings: string[];
+  /**
+   * Money-movement blocks that posted to the GL but wrote NO payments row
+   * because the TRNS NAME matched no vendor/customer (payee typo variants,
+   * QBD "Other Names", employees on PAYCHECKs, vendors unticked at import).
+   * 1099 totals, payroll registers, and statements read the payments table,
+   * so these amounts are invisible there -- aggregated per payee so the
+   * user gets an actionable list instead of a silent shortfall.
+   */
+  unlinkedPayees: { name: string; count: number; total: string }[];
   errors: { rowNumber: number; qbType: string; reason: string }[];
+}
+
+/**
+ * Content fingerprint used for idempotent transaction import. Two entries are
+ * "the same transaction" when date + reference + memo + the exact multiset of
+ * (account, signed amount) lines match. sourceType is deliberately excluded:
+ * it is derived metadata (the TRNSTYPE map can improve between releases) and
+ * must not defeat duplicate detection on re-import.
+ */
+function entryFingerprint(
+  entryDate: string,
+  reference: string | null | undefined,
+  memo: string | null | undefined,
+  lines: { accountId: string; signedAmount: string }[],
+): string {
+  const lineKey = lines
+    .map((l) => `${l.accountId}:${l.signedAmount}`)
+    .sort()
+    .join('|');
+  return createHash('sha256')
+    .update(`${entryDate}\u0000${reference ?? ''}\u0000${memo ?? ''}\u0000${lineKey}`)
+    .digest('hex');
+}
+
+/** Canonicalise a NUMERIC string to the parser's 4dp form for fingerprinting. */
+function canonAmount(raw: string): string {
+  return normaliseAmount(raw) ?? raw;
+}
+
+/**
+ * Rename-proof provenance stamped on every imported entry (journal_entries.
+ * source_id): a UUID derived from the FILE's own content -- date, reference,
+ * memo, and the sorted multiset of (lower-cased account NAME as written in
+ * the file, signed amount) -- rather than from resolved accountIds. The
+ * accountId fingerprint above breaks when an account is renamed in KPBooks
+ * between imports: the file's old name re-resolves to a freshly auto-created
+ * account, every block touching it gets a different fingerprint, and the
+ * whole file re-posts. This stamp survives any rename because nothing in it
+ * depends on chart state; a re-imported block is tied to the file, not to
+ * volatile accountIds. Formatted as a v8-style UUID so it fits the uuid
+ * column; a hash can never collide with the real document ids other modules
+ * store in source_id. Zero-amount lines are dropped to mirror the posted
+ * lines the accountId fingerprint sees.
+ */
+function importSourceId(
+  entryDate: string,
+  reference: string | null | undefined,
+  memo: string | null | undefined,
+  lines: { account: string; amount: string }[],
+): string {
+  const lineKey = lines
+    .filter((l) => !/^-?0+\.0{4}$/.test(l.amount))
+    .map((l) => `${l.account.toLowerCase()}:${canonAmount(l.amount)}`)
+    .sort()
+    .join('|');
+  const digest = createHash('sha256')
+    .update(`iif\u0000${entryDate}\u0000${reference ?? ''}\u0000${memo ?? ''}\u0000${lineKey}`)
+    .digest('hex');
+  // First 16 bytes as a UUID: version nibble forced to 8 ("custom"), RFC
+  // variant bits on the 17th hex digit.
+  const variant = ((parseInt(digest[16]!, 16) & 0x3) | 0x8).toString(16);
+  const hex = `${digest.slice(0, 12)}8${digest.slice(13, 16)}${variant}${digest.slice(17, 32)}`;
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Split a values list into batches safe for a single inArray(): each bound
+ * value is one bind parameter, and postgres.js hard-rejects statements with
+ * >= 65,534 parameters. 10k leaves ample headroom for the other bindings in
+ * the statement.
+ */
+const IN_ARRAY_CHUNK_SIZE = 10_000;
+function chunkForInArray<T>(values: readonly T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < values.length; i += IN_ARRAY_CHUNK_SIZE) {
+    out.push(values.slice(i, i + IN_ARRAY_CHUNK_SIZE));
+  }
+  return out;
+}
+
+/**
+ * QBD money-out TRNSTYPEs that should also write a vendor_sent payments row,
+ * keyed with spaces/hyphens stripped (like TRNSTYPE_MAP_NORMALISED). 1099-NEC
+ * totals, the payroll register, and workers-comp summaries read the payments
+ * table -- not the GL -- so an import that stops at journal_entries silently
+ * understates every one of them (a $40k year of subcontractor checks would
+ * vanish from the January 1099 run).
+ */
+const VENDOR_SENT_TRNSTYPES: Record<string, 'check' | 'credit_card'> = {
+  CHECK: 'check',
+  CHK: 'check',
+  BILLPMT: 'check',
+  BILLPMTCHECK: 'check',
+  BILLPMTCCARD: 'credit_card',
+  PAYCHECK: 'check',
+  LIABILITYCHECK: 'check',
+  LIABCHECK: 'check',
+};
+
+/** Money-in TRNSTYPEs that should write a customer_received payments row
+ * (customer statements and A/R views read the payments table). */
+const CUSTOMER_RECEIVED_TRNSTYPES = new Set(['PAYMENT', 'RCPT']);
+
+interface PaymentLink {
+  paymentType: 'vendor_sent' | 'customer_received';
+  counterpartyId: string;
+  method: 'check' | 'credit_card' | 'other';
+  bankAccountId: string;
+  /** Positive 4dp amount (the TRNS-line total). */
+  amount: string;
+}
+
+/**
+ * Decide whether a posting block should also land in the payments subledger.
+ * The TRNS (first) line carries the transaction total against the bank-side
+ * account and the payee/customer NAME; a money-out type whose NAME matches a
+ * vendor becomes vendor_sent, a money-in payment whose NAME matches a
+ * customer becomes customer_received. Anything else stays GL-only --
+ * `unmatchedPayee` reports the NAME when a money-movement block WOULD have
+ * linked but found no counterparty, so the commit can disclose the gap
+ * (those amounts are otherwise silently missing from 1099 totals and
+ * payroll registers).
+ */
+function derivePaymentLink(
+  t: CommitIifTransactionsInput['transactions'][number],
+  trnsAccountId: string,
+  vendorIdByName: ReadonlyMap<string, string>,
+  customerIdByName: ReadonlyMap<string, string>,
+): { link: PaymentLink | null; unmatchedPayee: string | null } {
+  const none = { link: null, unmatchedPayee: null };
+  const trns = t.lines[0];
+  if (!trns?.name) return none;
+  const negative = trns.amount.startsWith('-');
+  const positive = negative ? trns.amount.slice(1) : trns.amount;
+  if (amountToMicros(positive) === 0n) return none;
+  const key = t.qbType.replace(/[\s-]+/g, '');
+  const counterparty = trns.name.toLowerCase();
+  const vendorMethod = VENDOR_SENT_TRNSTYPES[key];
+  if (vendorMethod && negative) {
+    const vendorId = vendorIdByName.get(counterparty);
+    if (!vendorId) return { link: null, unmatchedPayee: trns.name };
+    return {
+      link: {
+        paymentType: 'vendor_sent',
+        counterpartyId: vendorId,
+        method: vendorMethod,
+        bankAccountId: trnsAccountId,
+        amount: positive,
+      },
+      unmatchedPayee: null,
+    };
+  }
+  if (CUSTOMER_RECEIVED_TRNSTYPES.has(key) && !negative) {
+    const customerId = customerIdByName.get(counterparty);
+    if (!customerId) return { link: null, unmatchedPayee: trns.name };
+    return {
+      link: {
+        paymentType: 'customer_received',
+        counterpartyId: customerId,
+        method: 'other',
+        bankAccountId: trnsAccountId,
+        amount: positive,
+      },
+      unmatchedPayee: null,
+    };
+  }
+  return none;
 }
 
 /**
@@ -1066,15 +2073,216 @@ export async function commitIifTransactions(
   ctx: CommitContext,
   input: CommitIifTransactionsInput,
 ): Promise<TransactionCommitResult> {
-  const result: TransactionCommitResult = { posted: 0, skipped: 0, errors: [] };
+  const result: TransactionCommitResult = {
+    posted: 0,
+    skipped: 0,
+    duplicates: 0,
+    voided: 0,
+    paymentsLinked: 0,
+    paymentsBackfilled: 0,
+    warnings: [],
+    unlinkedPayees: [],
+    errors: [],
+  };
   if (input.transactions.length === 0) return result;
+  // Per-payee aggregation of money-movement blocks that posted GL-only (see
+  // TransactionCommitResult.unlinkedPayees). Keyed case-insensitively.
+  const unlinkedByPayee = new Map<string, { name: string; count: number; totalMicros: bigint }>();
+  const noteUnlinkedPayee = (payee: string, trnsAmount: string) => {
+    const abs = trnsAmount.startsWith('-') ? trnsAmount.slice(1) : trnsAmount;
+    const key = payee.toLowerCase();
+    const agg = unlinkedByPayee.get(key) ?? { name: payee, count: 0, totalMicros: 0n };
+    agg.count++;
+    agg.totalMicros += amountToMicros(abs);
+    unlinkedByPayee.set(key, agg);
+  };
 
-  // Build a lower-cased name -> id map for fast resolution. We rely on RLS
-  // having scoped the tx to ctx.companyId already.
+  // Serialise concurrent imports for this company. The fingerprint dedupe
+  // below is read-then-write: two overlapping commit requests would each see
+  // the pre-commit snapshot (READ COMMITTED), find zero prior fingerprints,
+  // and both post every block -- doubling the whole ledger. The xact-scoped
+  // advisory lock makes the second request wait until the first commits, so
+  // its fingerprint scan sees the first run's entries.
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtext('kpbooks.iif_import'), hashtext(${ctx.companyId}))`,
+  );
+
+  // Closed-period pre-check. The DB trigger enforces this too, but it is a
+  // plain BEFORE INSERT trigger: letting it fire mid-import aborts the outer
+  // Postgres transaction, every later statement fails with 25P02, and the
+  // driver rolls the whole batch back -- an opaque 500 instead of the
+  // per-row "closed period" skip this function's contract promises.
+  const [companyRow] = await tx
+    .select({ closedThroughDate: companiesTable.closedThroughDate })
+    .from(companiesTable)
+    .where(eq(companiesTable.id, ctx.companyId));
+  const closedThrough = companyRow?.closedThroughDate ?? null;
+
+  // Build a lower-cased name -> matching-accounts map for resolution. We
+  // rely on RLS having scoped the tx to ctx.companyId already. The value is
+  // a LIST because nothing enforces name uniqueness in the chart (only
+  // company+code is unique; the CRUD routes will happily hold 'Insurance'
+  // and 'INSURANCE'). Resolution prefers the exact-cased match and refuses
+  // to guess between case-twins -- a single last-write-wins Map built off an
+  // unordered SELECT silently routed every line to whichever twin the scan
+  // returned last.
   const accountRows = await tx
     .select({ id: accountsTable.id, name: accountsTable.name, isActive: accountsTable.isActive })
     .from(accountsTable);
-  const byName = new Map(accountRows.map((a) => [a.name.toLowerCase(), a]));
+  const byName = new Map<string, typeof accountRows>();
+  for (const a of accountRows) {
+    const key = a.name.toLowerCase();
+    const bucket = byName.get(key);
+    if (bucket) bucket.push(a);
+    else byName.set(key, [a]);
+  }
+
+  // Counterparty maps so money-movement blocks can land in the payments
+  // subledger (see derivePaymentLink). The lists commit runs first, so
+  // vendors/customers created from this same file are already visible here.
+  const vendorRows = await tx
+    .select({ id: vendorsTable.id, name: vendorsTable.displayName })
+    .from(vendorsTable);
+  const vendorIdByName = new Map(vendorRows.map((v) => [v.name.toLowerCase(), v.id]));
+  const customerRows = await tx
+    .select({ id: customersTable.id, name: customersTable.displayName })
+    .from(customersTable);
+  const customerIdByName = new Map(customerRows.map((c) => [c.name.toLowerCase(), c.id]));
+
+  // Idempotency: fingerprint every journal entry already posted on the dates
+  // this file touches. Re-importing the same file (the documented
+  // fix-and-re-run workflow, or a double-click on Confirm after a timeout)
+  // must skip already-posted blocks instead of double-booking the ledger.
+  // Counts form a multiset so a file that legitimately contains N identical
+  // blocks still posts N on first import and skips exactly N on re-import.
+  // Impossible calendar dates (2/30 -- hand-edited files) are excluded here
+  // and reported per-row in the loop below: entry_date is a Postgres `date`,
+  // so one bad literal in this pre-scan query would abort the entire
+  // transaction before a single block posts.
+  const importDates = Array.from(
+    new Set(
+      input.transactions.filter((t) => t.posts && isRealIsoDate(t.date)).map((t) => t.date),
+    ),
+  );
+  // Fingerprint -> ids of matching pre-existing entries (a multiset: N
+  // identical prior copies mean N ids). Ids are kept, not just counts, so a
+  // duplicate skip can backfill a missing payments-subledger link against
+  // the exact entry it duplicates.
+  const existingFingerprints = new Map<string, string[]>();
+  // The same pre-existing entries indexed by their import-content stamp
+  // (journal_entries.source_id -- see importSourceId): the rename-proof
+  // duplicate path. Only entries posted by this importer carry a
+  // content-derived source_id; real document ids stored there by other
+  // modules can never equal a computed hash, so a hit here IS a prior
+  // import of the same block. The per-entry reverse maps let an id consumed
+  // via one index be removed from the other, keeping multiset semantics.
+  const existingBySourceId = new Map<string, string[]>();
+  const sourceIdByEntryId = new Map<string, string>();
+  const fingerprintByEntryId = new Map<string, string>();
+  // Pre-existing entries that already carry a payments row -- the backfill
+  // below must write at most one payments row per entry.
+  const entriesWithPayments = new Set<string>();
+  // (date, reference) index of the same pre-existing entries, for the
+  // edited-in-QBD disclosure: a block that POSTS (fingerprint differs) while
+  // an entry with the same date+reference exists is the signature of a
+  // transaction edited in QuickBooks after an earlier import. Duplicate
+  // skips consume their own entry's key so a file with N legitimately
+  // identical blocks doesn't trip the warning.
+  const existingByDateRef = new Map<string, number>();
+  const dateRefKeyByEntryId = new Map<string, string>();
+  if (importDates.length > 0) {
+    // Both pre-scan queries are chunked: postgres.js rejects any single
+    // statement with >= 65,534 bind parameters (MAX_PARAMETERS_EXCEEDED),
+    // and a multi-year re-import can put more journal-entry ids on the
+    // file's dates than that -- the scan also sweeps entries from OTHER
+    // imports and manual work sharing those dates. One unchunked inArray
+    // would abort the whole commit with a driver error exactly when the
+    // documented fix-and-re-run workflow needs the duplicate scan most.
+    const entryRows: {
+      id: string;
+      entryDate: string;
+      memo: string | null;
+      reference: string | null;
+      sourceId: string | null;
+    }[] = [];
+    for (const dates of chunkForInArray(importDates)) {
+      const rows = await tx
+        .select({
+          id: journalEntries.id,
+          entryDate: journalEntries.entryDate,
+          memo: journalEntries.memo,
+          reference: journalEntries.reference,
+          sourceId: journalEntries.sourceId,
+        })
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, ctx.companyId),
+            inArray(journalEntries.entryDate, dates),
+          ),
+        );
+      entryRows.push(...rows);
+    }
+    if (entryRows.length > 0) {
+      const lineRows: {
+        entryId: string;
+        accountId: string;
+        debit: string;
+        credit: string;
+      }[] = [];
+      for (const entryIds of chunkForInArray(entryRows.map((e) => e.id))) {
+        const rows = await tx
+          .select({
+            entryId: journalLines.entryId,
+            accountId: journalLines.accountId,
+            debit: journalLines.debit,
+            credit: journalLines.credit,
+          })
+          .from(journalLines)
+          .where(inArray(journalLines.entryId, entryIds));
+        lineRows.push(...rows);
+      }
+      const linesByEntry = new Map<string, { accountId: string; signedAmount: string }[]>();
+      for (const l of lineRows) {
+        const debit = canonAmount(l.debit);
+        const credit = canonAmount(l.credit);
+        if (debit === '0.0000' && credit === '0.0000') continue;
+        const signedAmount = debit !== '0.0000' ? debit : `-${credit}`;
+        (
+          linesByEntry.get(l.entryId) ?? linesByEntry.set(l.entryId, []).get(l.entryId)!
+        ).push({ accountId: l.accountId, signedAmount });
+      }
+      for (const e of entryRows) {
+        const fp = entryFingerprint(e.entryDate, e.reference, e.memo, linesByEntry.get(e.id) ?? []);
+        const bucket = existingFingerprints.get(fp);
+        if (bucket) bucket.push(e.id);
+        else existingFingerprints.set(fp, [e.id]);
+        fingerprintByEntryId.set(e.id, fp);
+        if (e.sourceId) {
+          const sourceBucket = existingBySourceId.get(e.sourceId);
+          if (sourceBucket) sourceBucket.push(e.id);
+          else existingBySourceId.set(e.sourceId, [e.id]);
+          sourceIdByEntryId.set(e.id, e.sourceId);
+        }
+        if (e.reference) {
+          const key = `${e.entryDate} ${e.reference}`;
+          existingByDateRef.set(key, (existingByDateRef.get(key) ?? 0) + 1);
+          dateRefKeyByEntryId.set(e.id, key);
+        }
+      }
+      // Which of those entries already have a payments-subledger row (the
+      // backfill in the duplicate branch must never write a second one).
+      for (const entryIds of chunkForInArray(entryRows.map((e) => e.id))) {
+        const rows = await tx
+          .select({ entryId: paymentsTable.postedJournalEntryId })
+          .from(paymentsTable)
+          .where(inArray(paymentsTable.postedJournalEntryId, entryIds));
+        for (const r of rows) {
+          if (r.entryId) entriesWithPayments.add(r.entryId);
+        }
+      }
+    }
+  }
 
   for (const t of input.transactions) {
     if (!t.posts) {
@@ -1082,12 +2290,44 @@ export async function commitIifTransactions(
       continue;
     }
 
+    // Hand-edited files can carry impossible calendar dates ("2026-02-31")
+    // that pass the YYYY-MM-DD shape check. Postgres would reject the
+    // literal (22008) and poison the batch; fail just this row instead.
+    if (!isRealIsoDate(t.date)) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: `invalid calendar date "${t.date}"`,
+      });
+      continue;
+    }
+
     // Resolve every line's account before posting.
-    const resolved: { accountId: string; signedAmount: string; memo?: string | undefined }[] = [];
+    const resolved: {
+      accountId: string;
+      signedAmount: string;
+      memo?: string | undefined;
+      dimensionJson?: Record<string, unknown> | undefined;
+    }[] = [];
     let unresolved: string | null = null;
     let inactiveAccount: string | null = null;
+    let ambiguousAccount: string | null = null;
     for (const line of t.lines) {
-      const acc = byName.get(line.account.toLowerCase());
+      const candidates = byName.get(line.account.toLowerCase()) ?? [];
+      let acc = candidates.length === 1 ? candidates[0] : undefined;
+      if (!acc && candidates.length > 1) {
+        // Case-twins exist ('Insurance' vs 'INSURANCE'): the exact-cased
+        // match wins; with no exact match the row is ambiguous and fails
+        // per-row instead of silently posting to an arbitrary twin.
+        const exact = candidates.filter((c) => c.name === line.account);
+        if (exact.length === 1) {
+          acc = exact[0];
+        } else {
+          ambiguousAccount = line.account;
+          break;
+        }
+      }
       if (!acc) {
         unresolved = line.account;
         break;
@@ -1096,7 +2336,30 @@ export async function commitIifTransactions(
         inactiveAccount = line.account;
         break;
       }
-      resolved.push({ accountId: acc.id, signedAmount: line.amount, memo: line.memo });
+      // Preserve QBD class tracking and per-line customer/vendor/job names.
+      // journal_lines.dimension_json is the documented home for these
+      // cross-references; dropping them makes P&L-by-class and job costing
+      // unrecoverable after migration.
+      const dims: Record<string, unknown> = {};
+      if (line.classRef) dims.class = line.classRef;
+      if (line.name) dims.name = line.name;
+      resolved.push({
+        accountId: acc.id,
+        signedAmount: line.amount,
+        memo: line.memo,
+        dimensionJson: Object.keys(dims).length > 0 ? dims : undefined,
+      });
+    }
+    if (ambiguousAccount !== null) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason:
+          `account "${ambiguousAccount}" matches multiple accounts in the chart that differ ` +
+          `only by letter case -- rename one and re-import`,
+      });
+      continue;
     }
     if (unresolved !== null) {
       result.skipped++;
@@ -1127,6 +2390,7 @@ export async function commitIifTransactions(
       currency: string;
       fxRate: string;
       memo?: string | undefined;
+      dimensionJson?: Record<string, unknown> | undefined;
     }[] = [];
     let debitMicros = 0n;
     let creditMicros = 0n;
@@ -1141,6 +2405,7 @@ export async function commitIifTransactions(
           currency: 'USD',
           fxRate: '1',
           memo: r.memo,
+          dimensionJson: r.dimensionJson,
         });
         creditMicros += amountToMicros(positive);
       } else {
@@ -1150,11 +2415,19 @@ export async function commitIifTransactions(
           currency: 'USD',
           fxRate: '1',
           memo: r.memo,
+          dimensionJson: r.dimensionJson,
         });
         debitMicros += amountToMicros(r.signedAmount);
       }
     }
 
+    if (lines.length === 0) {
+      // All-zero block: QBD exports voided checks as TRNS 0.00 + SPL 0.00.
+      // Legitimately nothing to post -- counting it as an error would send
+      // the customer hand-auditing the ledger for checks that never existed.
+      result.voided++;
+      continue;
+    }
     if (lines.length < 2) {
       result.skipped++;
       result.errors.push({
@@ -1175,15 +2448,200 @@ export async function commitIifTransactions(
       continue;
     }
 
+    // Duplicate guard: an identical entry already exists in the ledger --
+    // this block was posted by a previous run of the same file. Skip it.
+    // Two independent identities are consulted: the resolved-accountId
+    // fingerprint (which also matches manually keyed history), and the
+    // file-content source_id stamped at post time, which survives account
+    // renames in KPBooks between imports -- without it, a renamed account's
+    // old name re-resolves to a freshly auto-created twin, every block
+    // touching it fingerprints differently, and the documented safe
+    // re-import double-books the ledger.
+    const fingerprint = entryFingerprint(
+      t.date,
+      t.reference,
+      t.memo,
+      lines.map((l) => ({
+        accountId: l.accountId,
+        signedAmount: l.debit ?? `-${l.credit ?? '0.0000'}`,
+      })),
+    );
+    const contentSourceId = importSourceId(t.date, t.reference, t.memo, t.lines);
+    // Consume one prior copy (multiset semantics: N identical blocks in the
+    // file skip against exactly N prior copies). Prefer a copy that still
+    // lacks a payments row so the backfill below can repair it; identical
+    // copies are interchangeable otherwise.
+    const pickDuplicate = (bucket: string[] | undefined): string | undefined => {
+      if (!bucket || bucket.length === 0) return undefined;
+      let idx = bucket.findIndex((id) => !entriesWithPayments.has(id));
+      if (idx < 0) idx = bucket.length - 1;
+      return bucket.splice(idx, 1)[0]!;
+    };
+    // An id consumed via one index must leave the other, or a later block
+    // could skip twice against the same prior entry.
+    const consumeFromBucket = (
+      map: Map<string, string[]>,
+      key: string | undefined,
+      id: string,
+    ) => {
+      const bucket = key === undefined ? undefined : map.get(key);
+      if (!bucket) return;
+      const i = bucket.indexOf(id);
+      if (i >= 0) bucket.splice(i, 1);
+    };
+    let dupEntryId = pickDuplicate(existingFingerprints.get(fingerprint));
+    if (dupEntryId !== undefined) {
+      consumeFromBucket(existingBySourceId, sourceIdByEntryId.get(dupEntryId), dupEntryId);
+    } else {
+      dupEntryId = pickDuplicate(existingBySourceId.get(contentSourceId));
+      if (dupEntryId !== undefined) {
+        consumeFromBucket(existingFingerprints, fingerprintByEntryId.get(dupEntryId), dupEntryId);
+      }
+    }
+    if (dupEntryId !== undefined) {
+      // const alias: the narrowed type must survive into the payments
+      // closure below (narrowing on a `let` resets inside closures).
+      const dupId = dupEntryId;
+      result.duplicates++;
+      if (!entriesWithPayments.has(dupId)) {
+        const { link: dupLink, unmatchedPayee: dupUnmatched } = derivePaymentLink(
+          t,
+          resolved[0]!.accountId,
+          vendorIdByName,
+          customerIdByName,
+        );
+        if (dupLink) {
+          // The earlier run posted this block GL-only because the payee
+          // matched nobody then; it matches now, so write the missing
+          // payments row against the already-posted entry. This is what
+          // makes "create the vendor, re-import the same file" actually
+          // repair 1099/payroll/statement totals.
+          try {
+            await tx.transaction(async (inner) => {
+              await inner.insert(paymentsTable).values({
+                companyId: ctx.companyId,
+                paymentType: dupLink.paymentType,
+                customerId:
+                  dupLink.paymentType === 'customer_received' ? dupLink.counterpartyId : null,
+                vendorId: dupLink.paymentType === 'vendor_sent' ? dupLink.counterpartyId : null,
+                paymentDate: t.date,
+                paymentMethod: dupLink.method,
+                reference: t.reference ?? null,
+                bankAccountId: dupLink.bankAccountId,
+                amount: dupLink.amount,
+                memo: t.memo ?? null,
+                status: 'posted',
+                postedJournalEntryId: dupId,
+              });
+            });
+            entriesWithPayments.add(dupId);
+            result.paymentsBackfilled++;
+          } catch (err) {
+            result.errors.push({
+              rowNumber: t.rowNumber,
+              qbType: t.qbType,
+              reason: `payment backfill failed: ${err instanceof Error ? err.message : String(err)}`,
+            });
+          }
+        } else if (dupUnmatched) {
+          // Still unlinked on re-import: keep disclosing the shortfall so
+          // "N duplicates skipped" can't read as fixed while 1099 totals
+          // stay short.
+          noteUnlinkedPayee(dupUnmatched, t.lines[0]?.amount ?? '0.0000');
+        }
+      }
+      const dateRefKey = dateRefKeyByEntryId.get(dupId);
+      if (dateRefKey !== undefined) {
+        // This exact copy is accounted for; don't let a later block that
+        // legitimately shares its date+reference trip the edited-transaction
+        // disclosure.
+        const n = existingByDateRef.get(dateRefKey) ?? 0;
+        if (n > 1) existingByDateRef.set(dateRefKey, n - 1);
+        else existingByDateRef.delete(dateRefKey);
+      }
+      continue;
+    }
+
+    // Closed-period pre-check (after the duplicate guard so a re-import of a
+    // file whose entries predate a later year-end close still reads as
+    // duplicates, not errors). The DB trigger remains the enforcement of
+    // record; this check exists so the failure is a per-row skip instead of
+    // a mid-transaction abort.
+    if (closedThrough !== null && t.date <= closedThrough) {
+      result.skipped++;
+      result.errors.push({
+        rowNumber: t.rowNumber,
+        qbType: t.qbType,
+        reason: `cannot post to closed period (entry date ${t.date} is on or before closed-through ${closedThrough})`,
+      });
+      continue;
+    }
+
+    const { link: paymentLink, unmatchedPayee } = derivePaymentLink(
+      t,
+      resolved[0]!.accountId,
+      vendorIdByName,
+      customerIdByName,
+    );
+
     try {
-      await postEntry(tx, { companyId: ctx.companyId, userId: ctx.userId }, {
-        entryDate: t.date,
-        sourceType: t.sourceType,
-        memo: t.memo,
-        reference: t.reference,
-        lines,
+      // Savepoint per block: any SQL failure inside postEntry (a trigger, a
+      // constraint) must roll back just this block. Without it the error --
+      // even though caught right here -- aborts the outer Postgres
+      // transaction, every later statement fails with 25P02, and the driver
+      // rolls back the entire import at commit time.
+      await tx.transaction(async (inner) => {
+        const entry = await postEntry(inner, { companyId: ctx.companyId, userId: ctx.userId }, {
+          entryDate: t.date,
+          sourceType: t.sourceType,
+          // Rename-proof duplicate provenance, derived from the file's own
+          // account names and amounts -- see importSourceId.
+          sourceId: contentSourceId,
+          memo: t.memo,
+          reference: t.reference,
+          lines,
+        });
+        if (paymentLink) {
+          await inner.insert(paymentsTable).values({
+            companyId: ctx.companyId,
+            paymentType: paymentLink.paymentType,
+            customerId:
+              paymentLink.paymentType === 'customer_received' ? paymentLink.counterpartyId : null,
+            vendorId:
+              paymentLink.paymentType === 'vendor_sent' ? paymentLink.counterpartyId : null,
+            paymentDate: t.date,
+            paymentMethod: paymentLink.method,
+            reference: t.reference ?? null,
+            bankAccountId: paymentLink.bankAccountId,
+            amount: paymentLink.amount,
+            memo: t.memo ?? null,
+            status: 'posted',
+            postedJournalEntryId: entry.id,
+          });
+        }
       });
       result.posted++;
+      if (t.reference && (existingByDateRef.get(`${t.date} ${t.reference}`) ?? 0) > 0) {
+        // Same date + reference as a pre-existing entry, but different
+        // content (the fingerprint didn't match): the signature of a
+        // transaction edited in QuickBooks after an earlier import. Both
+        // versions are now on the ledger -- say so, because nothing else
+        // will.
+        result.warnings.push(
+          `row ${t.rowNumber}: ${t.qbType} ref "${t.reference}" on ${t.date} posted as a new ` +
+            `entry, but an entry with the same date and reference already exists with different ` +
+            `amounts/accounts. If this transaction was edited in QuickBooks after an earlier ` +
+            `import, the previous version is still on the ledger -- review and reverse it.`,
+        );
+      }
+      if (paymentLink) {
+        result.paymentsLinked++;
+      } else if (unmatchedPayee) {
+        // Posted to the GL, but no payments-subledger row: aggregate per
+        // payee so the result can disclose exactly whose 1099/payroll
+        // totals are short instead of leaving only a count difference.
+        noteUnlinkedPayee(unmatchedPayee, t.lines[0]?.amount ?? '0.0000');
+      }
     } catch (err) {
       result.skipped++;
       const reason =
@@ -1196,6 +2654,10 @@ export async function commitIifTransactions(
     }
   }
 
+  result.unlinkedPayees = Array.from(unlinkedByPayee.values())
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((a) => ({ name: a.name, count: a.count, total: microsToDecimal(a.totalMicros) }));
+
   return result;
 }
 
@@ -1203,4 +2665,16 @@ function amountToMicros(s: string): bigint {
   // s is already validated to /^\d+\.\d{4}$/ shape (positive).
   const [whole = '0', frac = '0000'] = s.split('.');
   return BigInt(whole) * 10000n + BigInt(frac);
+}
+
+/** Signed variant for the parser's canonical "-123.4500" strings. */
+function signedAmountToMicros(s: string): bigint {
+  return s.startsWith('-') ? -amountToMicros(s.slice(1)) : amountToMicros(s);
+}
+
+/** 4dp-micros bigint -> human decimal string ("100" -> "0.0100"). */
+function microsToDecimal(m: bigint): string {
+  const neg = m < 0n;
+  const abs = neg ? -m : m;
+  return `${neg ? '-' : ''}${abs / 10000n}.${(abs % 10000n).toString().padStart(4, '0')}`;
 }

@@ -1,7 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { decodeIifBuffer } from '../lib/decode-iif';
+import {
+  assertCommitCompanyUnchanged,
+  chunkListsForCommit,
+  chunkTransactionsForCommit,
+  mergeListsCommitResults,
+  mergeTransactionCommitResults,
+} from '../lib/iif-commit';
+import { mapsToLabel } from '../lib/iif-preview';
 
 type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
 type AccountSubtype =
@@ -29,6 +38,8 @@ interface ParsedAccount {
   subtype: AccountSubtype;
   description?: string;
   suggestedCode: string;
+  /** False when the row is marked HIDDEN=Y (inactive) in QuickBooks. */
+  isActive?: boolean;
 }
 interface ParsedCustomer {
   displayName: string;
@@ -37,6 +48,9 @@ interface ParsedCustomer {
   phone?: string;
   notes?: string;
   defaultTermsDays?: number;
+  billingAddress?: Record<string, string>;
+  shippingAddress?: Record<string, string>;
+  isActive?: boolean;
 }
 interface ParsedVendor {
   displayName: string;
@@ -47,6 +61,8 @@ interface ParsedVendor {
   defaultTermsDays?: number;
   is1099Vendor: boolean;
   taxId?: string;
+  mailingAddress?: Record<string, string>;
+  isActive?: boolean;
 }
 interface ParsedSplit {
   account: string;
@@ -91,6 +107,9 @@ interface IifPreview {
   missingAccounts: ReferencedAccount[];
   unrecognizedSections: string[];
   warnings: string[];
+  /** Blocks excluded at parse time for data errors (out of balance,
+   * truncated) -- counted in transactionCounts but never posted. */
+  excludedTransactions?: { rowNumber: number; qbType: string; reason: string }[];
 }
 interface CommitResult {
   accountsCreated: number;
@@ -100,10 +119,29 @@ interface CommitResult {
   vendorsCreated: number;
   vendorsSkipped: number;
   conflicts: { kind: 'account' | 'customer' | 'vendor'; identifier: string; reason: string }[];
+  /** Rows that imported but need attention (renumbered codes, missing 1099 TINs). */
+  warnings: string[];
 }
 interface TransactionCommitResult {
   posted: number;
   skipped: number;
+  /** Blocks identical to an already-posted journal entry (re-import of the same file). */
+  duplicates: number;
+  /** All-zero blocks (voided checks) -- nothing to post. */
+  voided: number;
+  /** Posted blocks that also wrote a vendor/customer payment record (1099s, statements). */
+  paymentsLinked: number;
+  /** Duplicate blocks whose earlier run posted GL-only and whose payee
+   * matches a vendor/customer NOW -- the missing payment record was written
+   * against the already-posted entry (the fix-and-re-import remediation). */
+  paymentsBackfilled: number;
+  /** Non-fatal disclosures, e.g. a posted block that looks like a
+   * transaction edited in QuickBooks after an earlier import. */
+  warnings?: string[];
+  /** Money-movement blocks that posted GL-only because the payee name matched
+   * no vendor/customer -- these amounts are missing from 1099 totals and
+   * payroll registers until fixed. */
+  unlinkedPayees?: { name: string; count: number; total: string }[];
   errors: { rowNumber: number; qbType: string; reason: string }[];
 }
 
@@ -115,13 +153,22 @@ export function Imports() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<Stage>('upload');
+  const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<IifPreview | null>(null);
+  // The company this preview was parsed against. The commit must post to
+  // THIS company and no other: the header's company picker stays usable
+  // while a preview is open, and a commit scoped to whichever company is
+  // active at Confirm time would import one client's books into another's.
+  const [previewCompanyId, setPreviewCompanyId] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [committed, setCommitted] = useState<CommitResult | null>(null);
   const [committedTxns, setCommittedTxns] = useState<TransactionCommitResult | null>(null);
   // Per-row include flags so users can opt rows out before commit.
   const [accountInclude, setAccountInclude] = useState<boolean[]>([]);
+  // Editable code per !ACCNT row -- the suggestion may clash with the
+  // existing chart, so the user must be able to fix it before committing.
+  const [accountCodes, setAccountCodes] = useState<string[]>([]);
   const [customerInclude, setCustomerInclude] = useState<boolean[]>([]);
   const [vendorInclude, setVendorInclude] = useState<boolean[]>([]);
   const [includeTransactions, setIncludeTransactions] = useState<boolean>(true);
@@ -131,11 +178,21 @@ export function Imports() {
   >([]);
 
   const previewMutation = useMutation({
-    mutationFn: async (text: string) =>
-      api<IifPreview>('/imports/iif/preview', { method: 'POST', companyId, body: { text } }),
-    onSuccess: (data) => {
+    // companyId travels as a mutation variable so onSuccess can bind the
+    // preview to the company it was actually parsed against -- reading the
+    // hook value in onSuccess would race a company switch made while the
+    // parse request was in flight.
+    mutationFn: async (vars: { text: string; companyId: string | null }) =>
+      api<IifPreview>('/imports/iif/preview', {
+        method: 'POST',
+        companyId: vars.companyId,
+        body: { text: vars.text },
+      }),
+    onSuccess: (data, vars) => {
+      setPreviewCompanyId(vars.companyId);
       setPreview(data);
       setAccountInclude(data.accounts.map(() => true));
+      setAccountCodes(data.accounts.map((a) => a.suggestedCode));
       setCustomerInclude(data.customers.map(() => true));
       setVendorInclude(data.vendors.map(() => true));
       setMissingDraft(
@@ -151,22 +208,37 @@ export function Imports() {
   const commitMutation = useMutation({
     mutationFn: async () => {
       if (!preview) throw new Error('no preview');
+      // The preview was parsed against previewCompanyId's chart, and the
+      // commit must never land anywhere else. The reset-on-company-change
+      // effect below normally clears a stale preview before this can run;
+      // this guard is the backstop for any render race (cross-tenant
+      // import protection -- see assertCommitCompanyUnchanged).
+      assertCommitCompanyUnchanged(previewCompanyId, companyId);
+      const committedCompanyId = previewCompanyId!;
       const fromIif = preview.accounts
-        .filter((_, i) => accountInclude[i])
-        .map((a) => ({
+        .map((a, i) => ({ a, i }))
+        .filter(({ i }) => accountInclude[i])
+        .map(({ a, i }) => ({
           name: a.name,
           type: a.type,
           subtype: a.subtype,
-          code: a.suggestedCode,
+          code: accountCodes[i]?.trim() || a.suggestedCode,
           ...(a.description ? { description: a.description } : {}),
+          // HIDDEN=Y in QuickBooks -> inactive here.
+          ...(a.isActive === false ? { isActive: false } : {}),
         }));
       const fromMissing = missingDraft
-        .filter((m) => m.include)
-        .map((m) => ({
+        .map((m, i) => ({ m, i }))
+        .filter(({ m }) => m.include)
+        .map(({ m, i }) => ({
           name: m.name,
           type: m.suggestedType,
           subtype: m.suggestedSubtype,
-          code: m.suggestedCode,
+          // Same blank-code fallback as the !ACCNT rows above: an emptied
+          // input reverts to the original suggestion. An empty code would
+          // 400 the entire commit with a concatenated-array index the user
+          // can't map back to either visible table.
+          code: m.suggestedCode.trim() || (preview.missingAccounts[i]?.suggestedCode ?? m.name),
         }));
       const accounts = [...fromIif, ...fromMissing];
       const customers = preview.customers
@@ -176,39 +248,75 @@ export function Imports() {
         .filter((_, i) => vendorInclude[i])
         .map((v) => stripUndef(v));
       // Step 1: lists (accounts/customers/vendors). Has to land before
-      // transactions so the by-name account lookup resolves.
-      const listsResult = await api<CommitResult>('/imports/iif/commit', {
-        method: 'POST',
-        companyId,
-        body: { accounts, customers, vendors },
-      });
-
-      // Step 2: transactions. Optional via the includeTransactions toggle.
-      let txResult: TransactionCommitResult = { posted: 0, skipped: 0, errors: [] };
-      if (includeTransactions && preview.transactions.length > 0) {
-        txResult = await api<TransactionCommitResult>(
-          '/imports/iif/commit-transactions',
-          {
+      // transactions so the by-name account lookup resolves. Chunked like
+      // the transactions leg below: the server awaits one INSERT per row,
+      // so a 12-year company file's lists (thousands of customers/vendors)
+      // in ONE request would blow the same 60s Cloud Run / Firebase rewrite
+      // caps and roll the whole commit back on every retry. Skip-on-name-
+      // conflict makes a mid-sequence failure resumable: clicking Confirm
+      // again skips the chunks that already landed.
+      const listResults: CommitResult[] = [];
+      for (const chunk of chunkListsForCommit({ accounts, customers, vendors })) {
+        listResults.push(
+          await api<CommitResult>('/imports/iif/commit', {
             method: 'POST',
-            companyId,
-            body: { transactions: preview.transactions },
-          },
+            companyId: committedCompanyId,
+            body: chunk,
+          }),
         );
       }
+      const listsResult: CommitResult = mergeListsCommitResults(listResults);
 
-      return { listsResult, txResult };
+      // Step 2: transactions. Optional via the includeTransactions toggle.
+      let txResult: TransactionCommitResult = {
+        posted: 0,
+        skipped: 0,
+        duplicates: 0,
+        voided: 0,
+        paymentsLinked: 0,
+        paymentsBackfilled: 0,
+        warnings: [],
+        unlinkedPayees: [],
+        errors: [],
+      };
+      if (includeTransactions && preview.transactions.length > 0) {
+        // One request per chunk: Cloud Run and the Firebase Hosting rewrite
+        // cap any single request at 60s, and the server posts blocks one at
+        // a time -- a multi-year export in one POST times out with a bare
+        // "API 504" after silently posting an unknown fraction. Bounded
+        // chunks keep every request fast, and the server's duplicate scan
+        // makes a mid-sequence failure resumable: clicking Confirm again
+        // skips the chunks that already landed.
+        const chunkResults: TransactionCommitResult[] = [];
+        for (const chunk of chunkTransactionsForCommit(preview.transactions)) {
+          chunkResults.push(
+            await api<TransactionCommitResult>('/imports/iif/commit-transactions', {
+              method: 'POST',
+              companyId: committedCompanyId,
+              body: { transactions: chunk },
+            }),
+          );
+        }
+        txResult = { ...txResult, ...mergeTransactionCommitResults(chunkResults) };
+      }
+
+      return { listsResult, txResult, committedCompanyId };
     },
-    onSuccess: ({ listsResult, txResult }) => {
+    onSuccess: ({ listsResult, txResult, committedCompanyId }) => {
+      // A company switch mid-commit already reset the flow (the import
+      // itself still landed in the company it was previewed under); don't
+      // resurrect a completion screen for another company's import.
+      if (committedCompanyId !== companyId) return;
       setCommitted(listsResult);
       setCommittedTxns(txResult);
       setStage('committed');
       // Refresh downstream lists + ledger views.
-      void queryClient.invalidateQueries({ queryKey: ['accounts', companyId] });
-      void queryClient.invalidateQueries({ queryKey: ['customers', companyId] });
-      void queryClient.invalidateQueries({ queryKey: ['vendors', companyId] });
-      void queryClient.invalidateQueries({ queryKey: ['trial-balance', companyId] });
-      void queryClient.invalidateQueries({ queryKey: ['pnl', companyId] });
-      void queryClient.invalidateQueries({ queryKey: ['balance-sheet', companyId] });
+      void queryClient.invalidateQueries({ queryKey: ['accounts', committedCompanyId] });
+      void queryClient.invalidateQueries({ queryKey: ['customers', committedCompanyId] });
+      void queryClient.invalidateQueries({ queryKey: ['vendors', committedCompanyId] });
+      void queryClient.invalidateQueries({ queryKey: ['trial-balance', committedCompanyId] });
+      void queryClient.invalidateQueries({ queryKey: ['pnl', committedCompanyId] });
+      void queryClient.invalidateQueries({ queryKey: ['balance-sheet', committedCompanyId] });
     },
   });
 
@@ -216,16 +324,29 @@ export function Imports() {
     setStage('upload');
     setFileName(null);
     setPreview(null);
+    setPreviewCompanyId(null);
     setParseError(null);
     setCommitted(null);
     setCommittedTxns(null);
     setAccountInclude([]);
+    setAccountCodes([]);
     setCustomerInclude([]);
     setVendorInclude([]);
     setMissingDraft([]);
     setIncludeTransactions(true);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
+
+  // Switching companies invalidates the in-flight flow entirely: the
+  // preview was parsed against the previous company's chart, and AppShell
+  // renders <Imports /> unkeyed, so nothing else clears a still-open
+  // preview when the header dropdown changes. Without this reset, Confirm
+  // would post the previewed file into whichever company is now active --
+  // a cross-tenant import into the wrong client's books.
+  useEffect(() => {
+    if (previewCompanyId !== null && companyId !== previewCompanyId) reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset is stable in behaviour; re-running on its identity would loop
+  }, [companyId, previewCompanyId]);
 
   const SUBTYPES_BY_TYPE: Record<AccountType, AccountSubtype[]> = {
     asset: ['bank', 'accounts_receivable', 'other_current_asset', 'fixed_asset', 'other_asset'],
@@ -253,31 +374,72 @@ export function Imports() {
   async function handleFile(file: File) {
     setFileName(file.name);
     setParseError(null);
-    const text = await file.text();
+    // QuickBooks Desktop exports are typically Windows-1252, not UTF-8, and
+    // Excel "Unicode Text" re-saves are UTF-16 -- decodeIifBuffer sniffs
+    // BOMs and falls back appropriately so neither silently scrambles the
+    // parse (see lib/decode-iif.ts).
+    const buffer = await file.arrayBuffer();
+    const decoded = decodeIifBuffer(buffer);
+    if ('error' in decoded) {
+      setParseError(decoded.error);
+      return;
+    }
+    const text = decoded.text;
     if (!text.trim()) {
       setParseError('File is empty.');
       return;
     }
-    if (text.length > 5_000_000) {
-      setParseError(`File is ${(text.length / 1e6).toFixed(1)} MB. The import accepts up to 5 MB.`);
+    if (text.length > 12_000_000) {
+      setParseError(
+        `File is ${(text.length / 1e6).toFixed(1)} MB. The import accepts up to 12 MB — export ` +
+          'from QuickBooks in date-range chunks (File > Utilities > Export) and import each one. ' +
+          'Re-importing overlapping ranges is safe for unchanged transactions: already-posted ' +
+          'transactions are skipped as duplicates. (A transaction edited in QuickBooks since an ' +
+          'earlier import posts again — the import warns when it detects that.)',
+      );
       return;
     }
-    previewMutation.mutate(text);
+    previewMutation.mutate({ text, companyId });
   }
+
+  // Blocks excluded at parse time for data errors. They never reach the
+  // commit, so both the preview table and the completion screen must
+  // disclose them from the preview payload.
+  const excludedTxns = preview?.excludedTransactions ?? [];
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">Import from QuickBooks</h2>
         <p className="text-sm text-slate-500">
-          Upload an .iif export to bring over your chart of accounts, customers, and vendors. v1
-          only imports lists — historical transactions stay in your QB file as the archive of
-          record. Post an opening journal entry once accounts are imported.
+          Upload an .iif export to bring over your chart of accounts, customers, vendors, and
+          historical transactions. Transactions post to the ledger as journal entries by default —
+          do NOT also post an opening journal entry, or every balance will be double-counted. To
+          bring over lists only, untick “Import transactions” in the preview and post an opening
+          journal entry instead.
         </p>
       </div>
 
       {stage === 'upload' && (
-        <div className="rounded-md border-2 border-dashed border-slate-300 bg-white p-8">
+        <div
+          onDragOver={(e) => {
+            // preventDefault is required: without it the browser's default
+            // action for a dropped file is to navigate away to the file.
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            const file = e.dataTransfer?.files?.[0];
+            if (file) void handleFile(file);
+          }}
+          className={
+            'rounded-md border-2 border-dashed bg-white p-8 transition-colors ' +
+            (dragOver ? 'border-emerald-400 bg-emerald-50/40' : 'border-slate-300')
+          }
+        >
           <input
             ref={fileInputRef}
             type="file"
@@ -313,6 +475,15 @@ export function Imports() {
               {preview.vendors.length} vendors · {preview.transactions.length} postable transactions
               {preview.nonPostingSkipped > 0 && (
                 <> · {preview.nonPostingSkipped} non-posting (estimates / orders)</>
+              )}
+              {excludedTxns.length > 0 && (
+                <>
+                  {' '}
+                  ·{' '}
+                  <span className="font-medium text-rose-700">
+                    {excludedTxns.length} excluded (data errors — see warnings)
+                  </span>
+                </>
               )}
               {missingDraft.length > 0 && (
                 <> · {missingDraft.length} missing accounts to auto-create</>
@@ -367,8 +538,25 @@ export function Imports() {
                           onChange={(e) => toggleAt(setAccountInclude, i, e.target.checked)}
                         />
                       </td>
-                      <td className="px-3 py-2 font-mono text-slate-500">{a.suggestedCode}</td>
-                      <td className="px-3 py-2 text-slate-900">{a.name}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="text"
+                          value={accountCodes[i] ?? a.suggestedCode}
+                          onChange={(e) =>
+                            setAccountCodes((prev) =>
+                              prev.map((c, j) => (j === i ? e.target.value : c)),
+                            )
+                          }
+                          maxLength={40}
+                          className="w-24 rounded-md border border-slate-300 px-2 py-1 font-mono text-xs focus:border-slate-900 focus:outline-none"
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-slate-900">
+                        {a.name}
+                        {a.isActive === false && (
+                          <span className="ml-2 text-xs text-slate-400">inactive in QuickBooks</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-slate-700">
                         {a.type} · {a.subtype.replace(/_/g, ' ')}
                       </td>
@@ -408,7 +596,14 @@ export function Imports() {
                         />
                       </td>
                       <td className="px-3 py-2 text-slate-900">
-                        <div className="font-medium">{c.displayName}</div>
+                        <div className="font-medium">
+                          {c.displayName}
+                          {c.isActive === false && (
+                            <span className="ml-2 text-xs font-normal text-slate-400">
+                              inactive in QuickBooks
+                            </span>
+                          )}
+                        </div>
                         {c.companyName && <div className="text-xs text-slate-500">{c.companyName}</div>}
                       </td>
                       <td className="px-3 py-2 text-slate-700">{c.email ?? '—'}</td>
@@ -452,7 +647,14 @@ export function Imports() {
                         />
                       </td>
                       <td className="px-3 py-2 text-slate-900">
-                        <div className="font-medium">{v.displayName}</div>
+                        <div className="font-medium">
+                          {v.displayName}
+                          {v.isActive === false && (
+                            <span className="ml-2 text-xs font-normal text-slate-400">
+                              inactive in QuickBooks
+                            </span>
+                          )}
+                        </div>
                         {v.companyName && <div className="text-xs text-slate-500">{v.companyName}</div>}
                       </td>
                       <td className="px-3 py-2 text-slate-700">{v.email ?? '—'}</td>
@@ -571,7 +773,7 @@ export function Imports() {
             </section>
           )}
 
-          {preview.transactions.length > 0 && (
+          {(preview.transactions.length > 0 || excludedTxns.length > 0) && (
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-slate-700">
@@ -603,16 +805,26 @@ export function Imports() {
                       .sort(([a], [b]) => a.localeCompare(b))
                       .map(([qbType, count]) => {
                         // The first txn of this type tells us how it'll map.
+                        // Types with no surviving sample were either
+                        // non-posting OR excluded for data errors -- the two
+                        // must not read the same (an excluded CHECK is not an
+                        // intentionally skipped document class).
                         const sample = preview.transactions.find((t) => t.qbType === qbType);
-                        const mapsTo = sample
-                          ? sample.posts
-                            ? `journal_entry (${sample.sourceType})`
-                            : 'skipped (non-posting)'
-                          : 'skipped (non-posting)';
+                        const excludedOfType = excludedTxns.filter(
+                          (e) => e.qbType === qbType,
+                        ).length;
+                        const mapsTo = mapsToLabel(sample, excludedOfType);
+                        const suffix =
+                          sample && excludedOfType > 0
+                            ? ` — ${excludedOfType} of ${count} excluded (data error; see warnings)`
+                            : '';
                         return (
                           <tr key={qbType}>
                             <td className="px-4 py-2 font-mono text-slate-900">{qbType}</td>
-                            <td className="px-4 py-2 text-slate-700">{mapsTo}</td>
+                            <td className="px-4 py-2 text-slate-700">
+                              {mapsTo}
+                              {suffix}
+                            </td>
                             <td className="px-4 py-2 text-right font-mono text-slate-900">{count}</td>
                           </tr>
                         );
@@ -675,11 +887,34 @@ export function Imports() {
               {committedTxns && (
                 <li>
                   {committedTxns.posted} transactions posted
+                  {committedTxns.paymentsLinked > 0
+                    ? `, ${committedTxns.paymentsLinked} linked to vendor/customer payment records (1099s, statements)`
+                    : ''}
                   {committedTxns.skipped > 0 ? `, ${committedTxns.skipped} skipped` : ''}
+                  {committedTxns.duplicates > 0
+                    ? `, ${committedTxns.duplicates} already imported (duplicates skipped)`
+                    : ''}
+                  {committedTxns.paymentsBackfilled > 0
+                    ? `, ${committedTxns.paymentsBackfilled} payment record(s) backfilled for previously imported transactions`
+                    : ''}
+                  {committedTxns.voided > 0
+                    ? `, ${committedTxns.voided} voided (0.00 — nothing to post)`
+                    : ''}
                 </li>
               )}
             </ul>
           </div>
+
+          {committed.warnings.length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">{committed.warnings.length} import note(s):</p>
+              <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+                {committed.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {committed.conflicts.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -709,6 +944,73 @@ export function Imports() {
                   <li>… and {committedTxns.errors.length - 200} more</li>
                 )}
               </ul>
+            </div>
+          )}
+
+          {committedTxns && (committedTxns.warnings ?? []).length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">
+                {(committedTxns.warnings ?? []).length} transaction note(s):
+              </p>
+              <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+                {(committedTxns.warnings ?? []).slice(0, 200).map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+                {(committedTxns.warnings ?? []).length > 200 && (
+                  <li>… and {(committedTxns.warnings ?? []).length - 200} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          {/* Blocks dropped at parse time never reach the commit, so the
+              posted/skipped counts above can't account for them. Without this
+              box the completion screen would show "0 skipped, 0 errors" while
+              the bank register is silently short. */}
+          {includeTransactions && excludedTxns.length > 0 && (
+            <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+              <p className="font-medium">
+                {excludedTxns.length} transaction block(s) from the file were NOT imported (data
+                errors found before posting):
+              </p>
+              <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+                {excludedTxns.slice(0, 200).map((e, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{e.qbType}</span> at row {e.rowNumber} — {e.reason}
+                  </li>
+                ))}
+                {excludedTxns.length > 200 && <li>… and {excludedTxns.length - 200} more</li>}
+              </ul>
+              <p className="mt-1 text-xs">
+                Fix these rows in the file and re-import it — already-posted transactions are
+                skipped as duplicates (as long as they weren't edited in QuickBooks since the
+                last import; an edited transaction posts again as a new entry).
+              </p>
+            </div>
+          )}
+
+          {committedTxns && (committedTxns.unlinkedPayees ?? []).length > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">
+                {(committedTxns.unlinkedPayees ?? []).length} payee(s) posted to the ledger only —
+                no vendor/customer payment record was written:
+              </p>
+              <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
+                {(committedTxns.unlinkedPayees ?? []).slice(0, 200).map((p, i) => (
+                  <li key={i}>
+                    <span className="font-medium">{p.name}</span> — {p.count} transaction
+                    {p.count === 1 ? '' : 's'} totaling {p.total}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs">
+                These names didn't match any vendor or customer (check spelling/punctuation, QuickBooks
+                “Other Names”, or employees). Their amounts won't appear in 1099 totals, payroll
+                registers, or statements until matching payment records exist. To fix: create the
+                missing vendor/customer (or correct its spelling) and re-import this file — the
+                transactions are skipped as duplicates and their payment records are backfilled
+                automatically.
+              </p>
             </div>
           )}
 
@@ -780,9 +1082,26 @@ function stripUndef<T extends object>(obj: T): Partial<T> {
 
 function formatError(err: unknown): string {
   if (err instanceof ApiError) {
-    const body = err.body as { error?: string; message?: string } | null;
+    const body = err.body as {
+      error?: string;
+      message?: string;
+      details?: { path?: (string | number)[]; message?: string }[];
+    } | null;
     if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
-    if (body?.error) return body.error;
+    if (body?.error) {
+      // Zod issues carry the offending row in `path` (e.g. customers.1.email).
+      // Surface the first few so the user can find the bad row instead of
+      // staring at a bare "validation_failed".
+      if (Array.isArray(body.details) && body.details.length > 0) {
+        const shown = body.details
+          .slice(0, 3)
+          .map((d) => `${(d.path ?? []).join('.') || 'request'}: ${d.message ?? 'invalid'}`)
+          .join('; ');
+        const more = body.details.length > 3 ? ` (+${body.details.length - 3} more)` : '';
+        return `${body.error} — ${shown}${more}`;
+      }
+      return body.error;
+    }
   }
   return err instanceof Error ? err.message : 'Operation failed.';
 }
