@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 /**
- * One-command production deploy: `pnpm deploy` (or `node scripts/deploy.mjs`).
+ * One-command production deploy: `pnpm ship` (or `node scripts/deploy.mjs`).
+ *
+ * NOT named "deploy": `pnpm deploy` is a pnpm BUILT-IN (workspace package
+ * deployment) and built-ins shadow package.json scripts — running it yields
+ * pnpm's own "No project was selected for deployment" error, not this script.
  *
  *   1. Build every workspace package (fails fast on typecheck/build errors).
  *   2. API: `gcloud builds submit` with cloudbuild.api.yaml — the pipeline
