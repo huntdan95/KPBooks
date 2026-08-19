@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -46,16 +47,14 @@ function formatTotal(s: string): string {
  * are the only differences.
  */
 export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(todayIso);
 
   const path = mode === 'ar' ? '/ledger/reports/ar-aging' : '/ledger/reports/ap-aging';
   const queryKey = mode === 'ar' ? 'ar-aging' : 'ap-aging';
-  const counterpartyLabel = mode === 'ar' ? 'Customer' : 'Vendor';
-  const emptyMsg =
-    mode === 'ar'
-      ? 'No open receivables as of this date.'
-      : 'No open payables as of this date.';
+  const counterpartyLabel = t(`aging.${mode}.counterparty`);
+  const emptyMsg = t(`aging.${mode}.empty`);
 
   const query = useQuery({
     queryKey: [queryKey, companyId, asOf],
@@ -68,7 +67,7 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
   return (
     <div className="space-y-4">
       <div className="flex items-end gap-3">
-        <Field label="As of">
+        <Field label={t('common:asOf')}>
           <input
             type="date"
             value={asOf}
@@ -78,10 +77,10 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
         </Field>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load aging report.'}
+          {query.error instanceof Error ? query.error.message : t('aging.loadError')}
         </p>
       )}
 
@@ -95,12 +94,12 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
             <thead className="text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-2 text-left font-medium">{counterpartyLabel}</th>
-                <th className="px-4 py-2 text-right font-medium">Current</th>
+                <th className="px-4 py-2 text-right font-medium">{t('aging.current')}</th>
                 <th className="px-4 py-2 text-right font-medium">1–30</th>
                 <th className="px-4 py-2 text-right font-medium">31–60</th>
                 <th className="px-4 py-2 text-right font-medium">61–90</th>
                 <th className="px-4 py-2 text-right font-medium">90+</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:total')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -145,7 +144,7 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
             </tbody>
             <tfoot className="bg-slate-100 text-sm font-semibold">
               <tr>
-                <td className="px-4 py-2 text-right text-slate-900">Totals</td>
+                <td className="px-4 py-2 text-right text-slate-900">{t('totals')}</td>
                 <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.current)}</td>
                 <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days1to30)}</td>
                 <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days31to60)}</td>

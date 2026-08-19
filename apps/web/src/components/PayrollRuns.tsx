@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -83,6 +84,7 @@ const STATUS_TONE: Record<RunStatus, string> = {
 };
 
 export function PayrollRuns() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
@@ -103,20 +105,17 @@ export function PayrollRuns() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Pay runs</h2>
-          <p className="text-sm text-slate-500">
-            Batch entry for paychecks. Pick a period, fill in gross / withholdings / net per
-            worker, then post once. Each line writes a real bill + payment via the same A/P pipeline
-            you use elsewhere — KPBooks doesn't compute taxes; deductions are display-only on the
-            pay-stub PDF.
-          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('payRuns.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('payRuns.blurb')}</p>
         </div>
         <button
           type="button"
           onClick={() => setShowWizard((v) => !v)}
           className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          {showWizard ? 'Cancel' : '+ New pay run'}
+          {showWizard ? t('common:cancel') : t('payRuns.newRunAction')}
         </button>
       </div>
 
@@ -129,15 +128,15 @@ export function PayrollRuns() {
         />
       )}
 
-      {runsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {runsQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {runsQ.isError && (
         <p className="text-sm text-rose-600">
-          {runsQ.error instanceof Error ? runsQ.error.message : 'Failed to load.'}
+          {runsQ.error instanceof Error ? runsQ.error.message : t('failedToLoad')}
         </p>
       )}
       {!runsQ.isLoading && runs.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No pay runs yet. Click "+ New pay run" above to start one.
+          {t('payRuns.empty', { action: t('payRuns.newRunAction') })}
         </p>
       )}
 
@@ -146,12 +145,20 @@ export function PayrollRuns() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Pay date</th>
-                <th className="px-4 py-2 text-left font-medium">Period</th>
-                <th className="px-4 py-2 text-left font-medium">Filter</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Gross</th>
-                <th className="px-4 py-2 text-right font-medium">Net</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('payRuns.columns.payDate')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('payRuns.columns.period')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('payRuns.columns.filter')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:status')}</th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('payRuns.columns.gross')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">{t('payRuns.columns.net')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -166,9 +173,14 @@ export function PayrollRuns() {
                     {r.periodStart} → {r.periodEnd}
                   </td>
                   <td className="px-4 py-2 text-xs text-slate-600">
-                    {r.workerTypeFilter ?? 'All workers'}
+                    {r.workerTypeFilter
+                      ? t(`payRuns.workerType.${r.workerTypeFilter}`)
+                      : t('payRuns.allWorkers')}
                     {r.paySchedule && (
-                      <span className="text-slate-400"> · {r.paySchedule}</span>
+                      <span className="text-slate-400">
+                        {' '}
+                        · {t(`payRuns.schedule.${r.paySchedule}`)}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-2">
@@ -178,7 +190,7 @@ export function PayrollRuns() {
                         STATUS_TONE[r.status]
                       }
                     >
-                      {r.status}
+                      {t(`payRuns.status.${r.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
@@ -223,6 +235,7 @@ const emptyWizardDraft = (): WizardDraft => {
 };
 
 function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState<WizardDraft>(emptyWizardDraft);
 
@@ -262,9 +275,9 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
       onSubmit={onSubmit}
       className="space-y-3 rounded-md border border-slate-200 bg-white p-4"
     >
-      <h3 className="text-sm font-medium text-slate-700">New pay run</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('payRuns.newRun')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Pay date" required>
+        <Field label={t('payRuns.fields.payDate')} required>
           <input
             type="date"
             value={draft.payDate}
@@ -273,7 +286,7 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Period start" required>
+        <Field label={t('payRuns.fields.periodStart')} required>
           <input
             type="date"
             value={draft.periodStart}
@@ -282,7 +295,7 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Period end" required>
+        <Field label={t('payRuns.fields.periodEnd')} required>
           <input
             type="date"
             value={draft.periodEnd}
@@ -291,7 +304,7 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Worker classification">
+        <Field label={t('payRuns.fields.workerClassification')}>
           <select
             value={draft.workerTypeFilter}
             onChange={(e) =>
@@ -299,13 +312,13 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
             }
             className={inputClass}
           >
-            <option value="">All</option>
-            <option value="employee">W-2 Employees</option>
-            <option value="contractor">1099 Contractors</option>
-            <option value="subcontractor">1099 Subcontractors</option>
+            <option value="">{t('payRuns.filter.all')}</option>
+            <option value="employee">{t('payRuns.filter.employees')}</option>
+            <option value="contractor">{t('payRuns.filter.contractors')}</option>
+            <option value="subcontractor">{t('payRuns.filter.subcontractors')}</option>
           </select>
         </Field>
-        <Field label="Pay schedule">
+        <Field label={t('payRuns.fields.paySchedule')}>
           <select
             value={draft.paySchedule}
             onChange={(e) =>
@@ -313,20 +326,20 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
             }
             className={inputClass}
           >
-            <option value="">Any</option>
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Biweekly</option>
-            <option value="semimonthly">Semi-monthly</option>
-            <option value="monthly">Monthly</option>
+            <option value="">{t('payRuns.schedule.any')}</option>
+            <option value="weekly">{t('payRuns.schedule.weekly')}</option>
+            <option value="biweekly">{t('payRuns.schedule.biweekly')}</option>
+            <option value="semimonthly">{t('payRuns.schedule.semimonthly')}</option>
+            <option value="monthly">{t('payRuns.schedule.monthly')}</option>
           </select>
         </Field>
-        <Field label="Bank / cash account (for posting)">
+        <Field label={t('payRuns.fields.bankAccountForPosting')}>
           <select
             value={draft.bankAccountId}
             onChange={(e) => setDraft({ ...draft, bankAccountId: e.target.value })}
             className={inputClass}
           >
-            <option value="">Pick later</option>
+            <option value="">{t('payRuns.pickLater')}</option>
             {bankAccounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -335,13 +348,13 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
           </select>
         </Field>
       </div>
-      <Field label="Memo">
+      <Field label={t('common:memo')}>
         <input
           type="text"
           value={draft.memo}
           onChange={(e) => setDraft({ ...draft, memo: e.target.value })}
           maxLength={500}
-          placeholder="Bi-weekly payroll April 16–30"
+          placeholder={t('payRuns.placeholders.memo')}
           className={inputClass}
         />
       </Field>
@@ -352,16 +365,14 @@ function NewRunWizard({ onCreated }: { onCreated: (id: string) => void }) {
           disabled={mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Creating…' : 'Create draft'}
+          {mutation.isPending ? t('payRuns.creating') : t('payRuns.createDraft')}
         </button>
-        <p className="text-xs text-slate-500">
-          You'll fill in line amounts on the next screen. Bank account can also be picked later.
-        </p>
+        <p className="text-xs text-slate-500">{t('payRuns.wizardHint')}</p>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -377,6 +388,7 @@ function PayrollRunDetailView({
   runId: string;
   onBack: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
 
@@ -473,38 +485,38 @@ function PayrollRunDetailView({
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back to pay runs
+          {t('payRuns.backToList')}
         </button>
         {data && isPosted && (
           <button
             type="button"
             onClick={() => {
-              if (confirm('Void this run? Voids every linked payment + bill.')) {
+              if (confirm(t('payRuns.confirmVoid'))) {
                 voidMutation.mutate();
               }
             }}
             className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50"
           >
-            Void run
+            {t('payRuns.voidRun')}
           </button>
         )}
         {data && isDraft && (data.lines.length === 0 || true) && (
           <button
             type="button"
             onClick={() => {
-              if (confirm('Delete this draft run?')) deleteMutation.mutate();
+              if (confirm(t('payRuns.confirmDeleteDraft'))) deleteMutation.mutate();
             }}
             className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50"
           >
-            Delete draft
+            {t('payRuns.deleteDraft')}
           </button>
         )}
       </div>
 
-      {detailQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {detailQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {detailQ.isError && (
         <p className="text-sm text-rose-600">
-          {detailQ.error instanceof Error ? detailQ.error.message : 'Failed to load.'}
+          {detailQ.error instanceof Error ? detailQ.error.message : t('failedToLoad')}
         </p>
       )}
 
@@ -515,7 +527,7 @@ function PayrollRunDetailView({
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-                    Pay run · {data.payDate}
+                    {t('payRuns.detailTitle', { date: data.payDate })}
                   </h2>
                   <span
                     className={
@@ -523,25 +535,30 @@ function PayrollRunDetailView({
                       STATUS_TONE[data.status]
                     }
                   >
-                    {data.status}
+                    {t(`payRuns.status.${data.status}`)}
                   </span>
                 </div>
                 <div className="text-xs text-slate-500">
-                  Period {data.periodStart} → {data.periodEnd}
-                  {data.workerTypeFilter && ` · ${data.workerTypeFilter}`}
-                  {data.paySchedule && ` · ${data.paySchedule}`}
+                  {t('payRuns.periodRange', { from: data.periodStart, to: data.periodEnd })}
+                  {data.workerTypeFilter &&
+                    ` · ${t(`payRuns.workerType.${data.workerTypeFilter}`)}`}
+                  {data.paySchedule && ` · ${t(`payRuns.schedule.${data.paySchedule}`)}`}
                 </div>
                 {data.memo && <div className="mt-1 text-sm italic text-slate-600">"{data.memo}"</div>}
               </div>
               <div className="grid grid-cols-2 gap-3 text-right">
                 <div>
-                  <div className="text-xs uppercase text-slate-500">Gross</div>
+                  <div className="text-xs uppercase text-slate-500">
+                    {t('payRuns.columns.gross')}
+                  </div>
                   <div className="font-mono text-lg text-slate-700">
                     {formatUsd(data.totalGross)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs uppercase text-slate-500">Net</div>
+                  <div className="text-xs uppercase text-slate-500">
+                    {t('payRuns.columns.net')}
+                  </div>
                   <div className="font-mono text-lg font-semibold text-slate-900">
                     {formatUsd(data.totalNet)}
                   </div>
@@ -551,7 +568,7 @@ function PayrollRunDetailView({
 
             {isDraft && (
               <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-2">
-                <Field label="Bank / cash account">
+                <Field label={t('payRuns.fields.bankAccount')}>
                   <select
                     value={data.bankAccountId ?? ''}
                     onChange={(e) =>
@@ -561,7 +578,7 @@ function PayrollRunDetailView({
                     }
                     className={inputClass}
                   >
-                    <option value="">Required for posting</option>
+                    <option value="">{t('payRuns.requiredForPosting')}</option>
                     {bankAccounts.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.code} — {a.name}
@@ -578,16 +595,36 @@ function PayrollRunDetailView({
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Worker</th>
-                    <th className="px-3 py-2 text-right font-medium">Hrs</th>
-                    <th className="px-3 py-2 text-right font-medium">Rate</th>
-                    <th className="px-3 py-2 text-right font-medium">Gross</th>
-                    <th className="px-3 py-2 text-right font-medium">FIT</th>
-                    <th className="px-3 py-2 text-right font-medium">SS</th>
-                    <th className="px-3 py-2 text-right font-medium">Med</th>
-                    <th className="px-3 py-2 text-right font-medium">SIT</th>
-                    <th className="px-3 py-2 text-right font-medium">Other</th>
-                    <th className="px-3 py-2 text-right font-medium">Net</th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('payRuns.columns.worker')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.hrs')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.rate')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.gross')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.fit')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.ss')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.med')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.sit')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.other')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('payRuns.columns.net')}
+                    </th>
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
@@ -618,23 +655,15 @@ function PayrollRunDetailView({
           {isDraft && (
             <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
               {data.lines.length === 0 && (
-                <p className="mr-auto text-xs text-slate-500">
-                  Add at least one line below before posting.
-                </p>
+                <p className="mr-auto text-xs text-slate-500">{t('payRuns.needLine')}</p>
               )}
               {data.lines.length > 0 && !data.bankAccountId && (
-                <p className="mr-auto text-xs text-rose-600">
-                  Pick a bank account above before posting.
-                </p>
+                <p className="mr-auto text-xs text-rose-600">{t('payRuns.needBankAccount')}</p>
               )}
               <button
                 type="button"
                 onClick={() => {
-                  if (
-                    confirm(
-                      `Post this run? ${data.lines.length} payments will be recorded. This locks every line.`,
-                    )
-                  ) {
+                  if (confirm(t('payRuns.confirmPost', { count: data.lines.length }))) {
                     postMutation.mutate();
                   }
                 }}
@@ -646,15 +675,18 @@ function PayrollRunDetailView({
                 className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
               >
                 {postMutation.isPending
-                  ? 'Posting…'
-                  : `Post run (${data.lines.length} line${data.lines.length === 1 ? '' : 's'})`}
+                  ? t('payRuns.posting')
+                  : t('payRuns.postRun', { count: data.lines.length })}
               </button>
             </div>
           )}
 
           {(postMutation.isError || voidMutation.isError) && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(postMutation.error ?? voidMutation.error)}
+              {formatError(postMutation.error ?? voidMutation.error, {
+                error: t('shell:errors.label'),
+                fallback: t('failed'),
+              })}
             </div>
           )}
         </>
@@ -676,6 +708,7 @@ function LineRow({
   onDelete: () => void;
   runId: string;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState({
     hours: line.hours ?? '',
@@ -732,7 +765,7 @@ function LineRow({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Stub download failed.');
+      alert(err instanceof Error ? err.message : t('payRuns.stubDownloadFailed'));
     }
   }
   void runId;
@@ -773,7 +806,7 @@ function LineRow({
               onClick={downloadStub}
               className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
             >
-              Stub
+              {t('payRuns.stub')}
             </button>
           )}
         </td>
@@ -855,11 +888,11 @@ function LineRow({
         <button
           type="button"
           onClick={() => {
-            if (confirm('Remove this line?')) onDelete();
+            if (confirm(t('payRuns.confirmRemoveLine'))) onDelete();
           }}
           className="text-xs text-rose-600 hover:underline"
         >
-          Remove
+          {t('payRuns.remove')}
         </button>
       </td>
     </tr>
@@ -903,6 +936,7 @@ function AddLinePanel({
   onAdd: (body: Record<string, unknown>) => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const [vendorId, setVendorId] = useState('');
   const [hours, setHours] = useState('');
   const [rate, setRate] = useState('');
@@ -928,27 +962,27 @@ function AddLinePanel({
 
   return (
     <div className="flex flex-wrap items-end gap-2 rounded-md border border-slate-200 bg-slate-50 p-3">
-      <Field label="Add worker">
+      <Field label={t('payRuns.fields.addWorker')}>
         <select
           value={vendorId}
           onChange={(e) => setVendorId(e.target.value)}
           className={inputClass + ' min-w-[200px]'}
         >
-          <option value="">Pick…</option>
+          <option value="">{t('payRuns.pick')}</option>
           {workers.map((w) => (
             <option key={w.vendorId} value={w.vendorId}>
-              {w.displayName} ({w.workerType})
+              {w.displayName} ({t(`payRuns.workerType.${w.workerType}`)})
             </option>
           ))}
         </select>
       </Field>
-      <Field label="Hours">
+      <Field label={t('payRuns.fields.hours')}>
         <NumInput value={hours} onChange={setHours} onBlur={() => undefined} width="w-20" />
       </Field>
-      <Field label="Rate">
+      <Field label={t('payRuns.columns.rate')}>
         <NumInput value={rate} onChange={setRate} onBlur={() => undefined} width="w-24" />
       </Field>
-      <Field label="Gross" required>
+      <Field label={t('payRuns.columns.gross')} required>
         <NumInput value={gross} onChange={setGross} onBlur={() => undefined} width="w-28" />
       </Field>
       <button
@@ -957,24 +991,22 @@ function AddLinePanel({
         disabled={!vendorId || !gross || busy}
         className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        + Add line
+        {t('payRuns.addLine')}
       </button>
-      <p className="text-xs text-slate-500">
-        Withholdings can be filled in on each row after adding. Net auto-computes.
-      </p>
+      <p className="text-xs text-slate-500">{t('payRuns.addLineHint')}</p>
     </div>
   );
 }
 
 // --- Bits ------------------------------------------------------------------
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

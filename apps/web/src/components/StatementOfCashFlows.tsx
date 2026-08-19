@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -39,6 +40,7 @@ function formatUsd(s: string): string {
 }
 
 export function StatementOfCashFlows() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [start, setStart] = useState<string>(firstOfYear);
   const [end, setEnd] = useState<string>(todayIso);
@@ -58,7 +60,7 @@ export function StatementOfCashFlows() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={start}
@@ -66,7 +68,7 @@ export function StatementOfCashFlows() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={end}
@@ -76,17 +78,12 @@ export function StatementOfCashFlows() {
         </Field>
       </div>
 
-      <p className="text-xs text-slate-500">
-        Indirect method. Starts with net income for the period, then walks the change in every
-        non-cash balance sheet account (sourced from posted journal entries) to reconcile to the
-        actual change in cash. Bucketed by account subtype: working-capital changes flow to
-        operating; fixed/other assets to investing; long-term liabilities and equity to financing.
-      </p>
+      <p className="text-xs text-slate-500">{t('cashFlows.method')}</p>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load statement.'}
+          {query.error instanceof Error ? query.error.message : t('cashFlows.loadError')}
         </p>
       )}
 
@@ -94,23 +91,24 @@ export function StatementOfCashFlows() {
         <>
           {imbalanced && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Cash flow ({formatUsd(data.netChange)}) does not match the change in bank-account
-              balances ({formatUsd(data.endingCash)} − {formatUsd(data.beginningCash)} ={' '}
-              {formatUsd(
-                (Number(data.endingCash) - Number(data.beginningCash)).toFixed(4),
-              )}
-              ). Difference: {formatUsd(data.imbalance)}. This usually indicates direct journal
-              entries to retained earnings or other equity accounts that bypass the indirect-method
-              assumptions.
+              {t('cashFlows.imbalance', {
+                netChange: formatUsd(data.netChange),
+                endingCash: formatUsd(data.endingCash),
+                beginningCash: formatUsd(data.beginningCash),
+                delta: formatUsd(
+                  (Number(data.endingCash) - Number(data.beginningCash)).toFixed(4),
+                ),
+                difference: formatUsd(data.imbalance),
+              })}
             </div>
           )}
 
           <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <tbody className="divide-y divide-slate-200">
-                <SectionHeader>Operating activities</SectionHeader>
+                <SectionHeader>{t('cashFlows.operating')}</SectionHeader>
                 <tr>
-                  <td className="px-4 py-2 text-slate-700">Net income</td>
+                  <td className="px-4 py-2 text-slate-700">{t('cashFlows.netIncome')}</td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.netIncome)}
                   </td>
@@ -118,47 +116,51 @@ export function StatementOfCashFlows() {
                 {data.operatingAdjustments.length === 0 ? (
                   <tr>
                     <td colSpan={2} className="px-4 py-2 text-slate-500">
-                      No working-capital adjustments.
+                      {t('cashFlows.noOperating')}
                     </td>
                   </tr>
                 ) : (
                   data.operatingAdjustments.map((l) => <Row key={l.accountId} line={l} />)
                 )}
-                <SubTotal label="Net cash from operating activities" amount={data.totalOperating} />
+                <SubTotal label={t('cashFlows.totalOperating')} amount={data.totalOperating} />
 
-                <SectionHeader>Investing activities</SectionHeader>
+                <SectionHeader>{t('cashFlows.investing')}</SectionHeader>
                 {data.investing.length === 0 ? (
                   <tr>
                     <td colSpan={2} className="px-4 py-2 text-slate-500">
-                      No investing activity.
+                      {t('cashFlows.noInvesting')}
                     </td>
                   </tr>
                 ) : (
                   data.investing.map((l) => <Row key={l.accountId} line={l} />)
                 )}
-                <SubTotal label="Net cash from investing activities" amount={data.totalInvesting} />
+                <SubTotal label={t('cashFlows.totalInvesting')} amount={data.totalInvesting} />
 
-                <SectionHeader>Financing activities</SectionHeader>
+                <SectionHeader>{t('cashFlows.financing')}</SectionHeader>
                 {data.financing.length === 0 ? (
                   <tr>
                     <td colSpan={2} className="px-4 py-2 text-slate-500">
-                      No financing activity.
+                      {t('cashFlows.noFinancing')}
                     </td>
                   </tr>
                 ) : (
                   data.financing.map((l) => <Row key={l.accountId} line={l} />)
                 )}
-                <SubTotal label="Net cash from financing activities" amount={data.totalFinancing} />
+                <SubTotal label={t('cashFlows.totalFinancing')} amount={data.totalFinancing} />
               </tbody>
               <tfoot className="bg-slate-100 text-sm">
                 <tr>
-                  <td className="px-4 py-2 text-right text-slate-700">Cash at start of period</td>
+                  <td className="px-4 py-2 text-right text-slate-700">
+                    {t('cashFlows.beginningCash')}
+                  </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.beginningCash)}
                   </td>
                 </tr>
                 <tr className="font-semibold">
-                  <td className="px-4 py-2 text-right text-slate-900">Net change in cash</td>
+                  <td className="px-4 py-2 text-right text-slate-900">
+                    {t('cashFlows.netChange')}
+                  </td>
                   <td
                     className={
                       'px-4 py-2 text-right font-mono ' +
@@ -169,7 +171,9 @@ export function StatementOfCashFlows() {
                   </td>
                 </tr>
                 <tr className="font-semibold">
-                  <td className="px-4 py-3 text-right text-slate-900">Cash at end of period</td>
+                  <td className="px-4 py-3 text-right text-slate-900">
+                    {t('cashFlows.endingCash')}
+                  </td>
                   <td className="px-4 py-3 text-right font-mono text-slate-900">
                     {formatUsd(data.endingCash)}
                   </td>

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -95,6 +96,7 @@ function classForBalance(s: string): string {
 type Tab = 'summary' | 'ar' | 'ap' | 'recurring';
 
 export function CashFlowForecast() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(todayIso);
   const [horizonDays, setHorizonDays] = useState<number>(90);
@@ -123,19 +125,13 @@ export function CashFlowForecast() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-          Cash flow forecast
+          {t('forecast.title')}
         </h2>
-        <p className="text-sm text-slate-500">
-          Projects cash position forward from today using current bank balances + open A/R due
-          + open A/P due + active recurring templates. Tax on recurring is approximated as
-          subtotal-only (line totals × quantity); the actual JE on fire will include tax.
-          Forecast is an estimate — payments may land early/late, and unforecast cash events
-          (one-off bills, payroll runs, deposits) aren't modeled.
-        </p>
+        <p className="text-sm text-slate-500">{t('forecast.description')}</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="As of">
+        <Field label={t('common:asOf')}>
           <input
             type="date"
             value={asOf}
@@ -143,25 +139,25 @@ export function CashFlowForecast() {
             className={inputClass}
           />
         </Field>
-        <Field label="Horizon">
+        <Field label={t('forecast.horizon')}>
           <select
             value={horizonDays}
             onChange={(e) => setHorizonDays(Number(e.target.value))}
             className={inputClass}
           >
-            <option value={30}>30 days</option>
-            <option value={60}>60 days</option>
-            <option value={90}>90 days</option>
-            <option value={180}>180 days</option>
-            <option value={365}>365 days</option>
+            {[30, 60, 90, 180, 365].map((days) => (
+              <option key={days} value={days}>
+                {t('forecast.horizonOption', { days })}
+              </option>
+            ))}
           </select>
         </Field>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load.'}
+          {query.error instanceof Error ? query.error.message : t('forecast.loadError')}
         </p>
       )}
 
@@ -169,27 +165,36 @@ export function CashFlowForecast() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Tile
-              label="Starting balance"
+              label={t('forecast.tiles.starting')}
               value={formatUsd(data.startingBalance)}
-              hint={`${data.cashAccounts.length} cash account(s)`}
+              hint={t('forecast.tiles.startingHint', { count: data.cashAccounts.length })}
               tone="slate"
             />
             <Tile
-              label={`Net change (${horizonDays}d)`}
+              label={t('forecast.tiles.netChange', { days: horizonDays })}
               value={formatUsd(data.totals.netChange)}
-              hint={`+${formatUsd(data.totals.inflows)} / -${formatUsd(data.totals.outflows)}`}
+              hint={t('forecast.tiles.netChangeHint', {
+                inflows: formatUsd(data.totals.inflows),
+                outflows: formatUsd(data.totals.outflows),
+              })}
               tone={Number(data.totals.netChange) >= 0 ? 'emerald' : 'rose'}
             />
             <Tile
-              label={`Projected ending`}
+              label={t('forecast.tiles.ending')}
               value={formatUsd(data.totals.endingBalance)}
-              hint={`as of ${data.weeks[data.weeks.length - 1]?.weekEnd ?? data.asOf}`}
+              hint={t('forecast.tiles.endingHint', {
+                date: data.weeks[data.weeks.length - 1]?.weekEnd ?? data.asOf,
+              })}
               tone={Number(data.totals.endingBalance) >= 0 ? 'slate' : 'rose'}
             />
             <Tile
-              label="Lowest projected"
+              label={t('forecast.tiles.lowest')}
               value={formatUsd(lowestBalance)}
-              hint={lowestNum < 0 ? 'cash deficit ahead' : 'minimum during window'}
+              hint={
+                lowestNum < 0
+                  ? t('forecast.tiles.lowestDeficit')
+                  : t('forecast.tiles.lowestMin')
+              }
               tone={lowestNum < 0 ? 'rose' : 'slate'}
             />
           </div>
@@ -198,12 +203,14 @@ export function CashFlowForecast() {
           <div className="flex gap-1 border-b border-slate-200">
             {(
               [
-                ['summary', 'Weekly summary'],
-                ['ar', `A/R due (${data.arDue.length})`],
-                ['ap', `A/P due (${data.apDue.length})`],
+                ['summary', t('forecast.tabs.summary')],
+                ['ar', t('forecast.tabs.ar', { count: data.arDue.length })],
+                ['ap', t('forecast.tabs.ap', { count: data.apDue.length })],
                 [
                   'recurring',
-                  `Recurring (${data.recurringInvoices.length + data.recurringBills.length})`,
+                  t('forecast.tabs.recurring', {
+                    count: data.recurringInvoices.length + data.recurringBills.length,
+                  }),
                 ],
               ] as Array<[Tab, string]>
             ).map(([id, label]) => {
@@ -241,16 +248,19 @@ export function CashFlowForecast() {
           {/* Cash account breakdown */}
           <details className="rounded-md border border-slate-200 bg-white">
             <summary className="cursor-pointer border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
-              Starting balance breakdown ({data.cashAccounts.length} account
-              {data.cashAccounts.length === 1 ? '' : 's'})
+              {t('forecast.breakdown', { count: data.cashAccounts.length })}
             </summary>
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium">Code</th>
-                  <th className="px-4 py-2 text-left font-medium">Name</th>
-                  <th className="px-4 py-2 text-left font-medium">Type</th>
-                  <th className="px-4 py-2 text-right font-medium">Balance as of {data.asOf}</th>
+                  <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
+                  <th className="px-4 py-2 text-left font-medium">{t('common:name')}</th>
+                  <th className="px-4 py-2 text-left font-medium">
+                    {t('forecast.breakdownColumns.type')}
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('forecast.breakdownColumns.balanceAsOf', { date: data.asOf })}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -258,7 +268,9 @@ export function CashFlowForecast() {
                   <tr key={a.accountId}>
                     <td className="px-4 py-2 font-mono text-xs text-slate-700">{a.code}</td>
                     <td className="px-4 py-2 text-slate-900">{a.name}</td>
-                    <td className="px-4 py-2 text-xs text-slate-600">{a.subtype}</td>
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {t(`subtypes.${a.subtype}`)}
+                    </td>
                     <td className={'px-4 py-2 text-right font-mono ' + classForBalance(a.balance)}>
                       {formatUsd(a.balance)}
                     </td>
@@ -280,26 +292,31 @@ function WeeklyTable({
   weeks: ForecastWeek[];
   totals: CashFlowForecastResp['totals'];
 }) {
+  const { t } = useTranslation('reports');
   return (
     <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Week</th>
-            <th className="px-3 py-2 text-right font-medium">Opening</th>
-            <th className="px-3 py-2 text-right font-medium">A/R due</th>
-            <th className="px-3 py-2 text-right font-medium">Recurring in</th>
-            <th className="px-3 py-2 text-right font-medium">A/P due</th>
-            <th className="px-3 py-2 text-right font-medium">Recurring out</th>
-            <th className="px-3 py-2 text-right font-medium">Net</th>
-            <th className="px-3 py-2 text-right font-medium">Closing</th>
+            <th className="px-3 py-2 text-left font-medium">{t('forecast.weekly.week')}</th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.opening')}</th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.arDue')}</th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.recurringIn')}</th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.apDue')}</th>
+            <th className="px-3 py-2 text-right font-medium">
+              {t('forecast.weekly.recurringOut')}
+            </th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.net')}</th>
+            <th className="px-3 py-2 text-right font-medium">{t('forecast.weekly.closing')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
           {weeks.map((w, i) => (
             <tr key={i}>
               <td className="px-3 py-2 text-xs text-slate-700">
-                <div className="font-medium text-slate-900">Week {i + 1}</div>
+                <div className="font-medium text-slate-900">
+                  {t('forecast.weekly.weekN', { n: i + 1 })}
+                </div>
                 <div className="font-mono text-[10px] text-slate-500">
                   {w.weekStart} → {w.weekEnd}
                 </div>
@@ -334,8 +351,10 @@ function WeeklyTable({
         </tbody>
         <tfoot className="bg-slate-100 text-sm font-semibold">
           <tr>
-            <td className="px-3 py-3 text-slate-900">Totals</td>
-            <td className="px-3 py-3 text-right text-slate-400 italic text-xs">↑ start</td>
+            <td className="px-3 py-3 text-slate-900">{t('totals')}</td>
+            <td className="px-3 py-3 text-right text-slate-400 italic text-xs">
+              {t('forecast.weekly.start')}
+            </td>
             <td className="px-3 py-3 text-right font-mono text-emerald-700">
               {formatUsd(totals.arDue)}
             </td>
@@ -362,10 +381,11 @@ function WeeklyTable({
 }
 
 function ArDueTable({ rows, total }: { rows: ArDueItem[]; total: string }) {
+  const { t } = useTranslation(['reports', 'common']);
   if (rows.length === 0) {
     return (
       <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-        No open A/R due in this window.
+        {t('forecast.ar.empty')}
       </p>
     );
   }
@@ -374,11 +394,11 @@ function ArDueTable({ rows, total }: { rows: ArDueItem[]; total: string }) {
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th className="px-4 py-2 text-left font-medium">Due</th>
-            <th className="px-4 py-2 text-left font-medium">Customer</th>
-            <th className="px-4 py-2 text-left font-medium">Invoice #</th>
-            <th className="px-4 py-2 text-left font-medium">Invoice date</th>
-            <th className="px-4 py-2 text-right font-medium">Balance due</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ar.due')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ar.customer')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ar.invoiceNumber')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ar.invoiceDate')}</th>
+            <th className="px-4 py-2 text-right font-medium">{t('forecast.ar.balanceDue')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
@@ -397,7 +417,7 @@ function ArDueTable({ rows, total }: { rows: ArDueItem[]; total: string }) {
         <tfoot className="bg-slate-100 text-sm font-semibold">
           <tr>
             <td colSpan={4} className="px-4 py-3 text-right text-slate-900">
-              Total
+              {t('common:total')}
             </td>
             <td className="px-4 py-3 text-right font-mono text-emerald-700">{formatUsd(total)}</td>
           </tr>
@@ -408,10 +428,11 @@ function ArDueTable({ rows, total }: { rows: ArDueItem[]; total: string }) {
 }
 
 function ApDueTable({ rows, total }: { rows: ApDueItem[]; total: string }) {
+  const { t } = useTranslation(['reports', 'common']);
   if (rows.length === 0) {
     return (
       <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-        No open A/P due in this window.
+        {t('forecast.ap.empty')}
       </p>
     );
   }
@@ -420,11 +441,11 @@ function ApDueTable({ rows, total }: { rows: ApDueItem[]; total: string }) {
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th className="px-4 py-2 text-left font-medium">Due</th>
-            <th className="px-4 py-2 text-left font-medium">Vendor</th>
-            <th className="px-4 py-2 text-left font-medium">Bill #</th>
-            <th className="px-4 py-2 text-left font-medium">Bill date</th>
-            <th className="px-4 py-2 text-right font-medium">Balance due</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ap.due')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ap.vendor')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ap.billNumber')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.ap.billDate')}</th>
+            <th className="px-4 py-2 text-right font-medium">{t('forecast.ap.balanceDue')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
@@ -443,7 +464,7 @@ function ApDueTable({ rows, total }: { rows: ApDueItem[]; total: string }) {
         <tfoot className="bg-slate-100 text-sm font-semibold">
           <tr>
             <td colSpan={4} className="px-4 py-3 text-right text-slate-900">
-              Total
+              {t('common:total')}
             </td>
             <td className="px-4 py-3 text-right font-mono text-rose-700">{formatUsd(total)}</td>
           </tr>
@@ -464,6 +485,7 @@ function RecurringTable({
   totalIn: string;
   totalOut: string;
 }) {
+  const { t } = useTranslation(['reports', 'common']);
   const all = [
     ...invoices.map((o) => ({ ...o, kind: 'invoice' as const })),
     ...bills.map((o) => ({ ...o, kind: 'bill' as const })),
@@ -472,7 +494,7 @@ function RecurringTable({
   if (all.length === 0) {
     return (
       <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-        No active recurring templates fire in this window.
+        {t('forecast.recurring.empty')}
       </p>
     );
   }
@@ -481,12 +503,14 @@ function RecurringTable({
       <table className="w-full text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
           <tr>
-            <th className="px-4 py-2 text-left font-medium">Date</th>
-            <th className="px-4 py-2 text-left font-medium">Type</th>
-            <th className="px-4 py-2 text-left font-medium">Template</th>
-            <th className="px-4 py-2 text-left font-medium">Counterparty</th>
-            <th className="px-4 py-2 text-left font-medium">Frequency</th>
-            <th className="px-4 py-2 text-right font-medium">Amount</th>
+            <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.recurring.type')}</th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.recurring.template')}</th>
+            <th className="px-4 py-2 text-left font-medium">
+              {t('forecast.recurring.counterparty')}
+            </th>
+            <th className="px-4 py-2 text-left font-medium">{t('forecast.recurring.frequency')}</th>
+            <th className="px-4 py-2 text-right font-medium">{t('common:amount')}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200">
@@ -502,12 +526,16 @@ function RecurringTable({
                       : 'bg-rose-50 text-rose-700 ring-rose-600/20')
                   }
                 >
-                  {o.kind === 'invoice' ? 'inflow' : 'outflow'}
+                  {o.kind === 'invoice'
+                    ? t('forecast.recurring.inflow')
+                    : t('forecast.recurring.outflow')}
                 </span>
               </td>
               <td className="px-4 py-2 text-slate-900">{o.templateName}</td>
               <td className="px-4 py-2 text-xs text-slate-600">{o.counterpartyName}</td>
-              <td className="px-4 py-2 text-xs text-slate-600">{o.frequency}</td>
+              <td className="px-4 py-2 text-xs text-slate-600">
+                {t(`frequencies.${o.frequency}`)}
+              </td>
               <td
                 className={
                   'px-4 py-2 text-right font-mono ' +
@@ -522,7 +550,7 @@ function RecurringTable({
         <tfoot className="bg-slate-100 text-sm font-semibold">
           <tr>
             <td colSpan={5} className="px-4 py-3 text-right text-slate-900">
-              Totals
+              {t('totals')}
             </td>
             <td className="px-4 py-3 text-right text-xs">
               <span className="text-emerald-700">+{formatUsd(totalIn)}</span>{' '}

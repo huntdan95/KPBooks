@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { EmptyState } from './ui/EmptyState';
@@ -109,6 +110,7 @@ function formatUsd(s: string): string {
 }
 
 export function BillsList() {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'new'>('list');
@@ -127,12 +129,12 @@ export function BillsList() {
   async function handleReceiptFile(file: File) {
     setOcrError(null);
     if (file.size > 7_000_000) {
-      setOcrError(`Image is ${(file.size / 1e6).toFixed(1)} MB; resize below ~5 MB.`);
+      setOcrError(t('bills.ocr.tooLarge', { size: (file.size / 1e6).toFixed(1) }));
       return;
     }
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowed.includes(file.type)) {
-      setOcrError(`Unsupported file type ${file.type}; use jpg / png / gif / webp.`);
+      setOcrError(t('bills.ocr.unsupportedType', { type: file.type }));
       return;
     }
     setOcrPending(true);
@@ -157,7 +159,9 @@ export function BillsList() {
       });
       if (result.notAReceipt) {
         setOcrError(
-          `Claude doesn't think that's a receipt${result.notes ? ` (${result.notes})` : ''}.`,
+          result.notes
+            ? t('bills.ocr.notAReceiptWithNotes', { notes: result.notes })
+            : t('bills.ocr.notAReceipt'),
         );
         return;
       }
@@ -170,7 +174,9 @@ export function BillsList() {
       });
       setMode('new');
     } catch (err) {
-      setOcrError(formatError(err));
+      setOcrError(
+        formatError(err, { error: t('errors.label'), fallback: t('errors.operationFailed') }),
+      );
     } finally {
       setOcrPending(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -221,8 +227,10 @@ export function BillsList() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Bills</h2>
-          <p className="text-sm text-slate-500">{list.length} on file</p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('bills.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('onFile', { count: list.length })}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -241,9 +249,9 @@ export function BillsList() {
               onClick={() => fileInputRef.current?.click()}
               disabled={ocrPending}
               className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm text-violet-700 hover:bg-violet-100 disabled:opacity-50"
-              title="Drop a receipt photo and Claude prefills the bill form"
+              title={t('bills.fromReceiptTitle')}
             >
-              {ocrPending ? 'Reading receipt…' : '📷 From receipt'}
+              {ocrPending ? t('bills.readingReceipt') : t('bills.fromReceipt')}
             </button>
           )}
           <button
@@ -254,7 +262,7 @@ export function BillsList() {
             }}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            + New bill
+            {t('bills.newBillCta')}
           </button>
         </div>
       </div>
@@ -264,19 +272,19 @@ export function BillsList() {
         </div>
       )}
 
-      {billsQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {billsQuery.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {billsQuery.isError && (
         <p className="text-sm text-rose-600">
-          {billsQuery.error instanceof Error ? billsQuery.error.message : 'Failed to load bills.'}
+          {billsQuery.error instanceof Error ? billsQuery.error.message : t('bills.loadFailed')}
         </p>
       )}
 
       {!billsQuery.isLoading && list.length === 0 && (
         <EmptyState
           icon="receipt"
-          title="No bills yet"
-          description="Record a vendor bill to track A/P. Posting writes a balanced JE (DR Expense, CR A/P) and the bill stays open until applied payments zero its balance."
-          action={{ label: 'New bill', onClick: () => setMode('new') }}
+          title={t('bills.empty.title')}
+          description={t('bills.empty.description')}
+          action={{ label: t('bills.empty.action'), onClick: () => setMode('new') }}
         />
       )}
 
@@ -285,13 +293,13 @@ export function BillsList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Number</th>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Due</th>
-                <th className="px-4 py-2 text-left font-medium">Vendor</th>
-                <th className="px-4 py-2 text-center font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">Balance</th>
+                <th className="px-4 py-2 text-left font-medium">{t('bills.table.number')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('bills.table.date')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('bills.table.due')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('bills.table.vendor')}</th>
+                <th className="px-4 py-2 text-center font-medium">{t('bills.table.status')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('bills.table.total')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('bills.table.balance')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -306,7 +314,7 @@ export function BillsList() {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_COLOR[b.status]}`}
                     >
-                      {b.status}
+                      {t(`bills.status.${b.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(b.total)}</td>
@@ -318,16 +326,14 @@ export function BillsList() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (
-                            confirm(`Void bill ${b.billNumber}? A reversing journal entry will be posted.`)
-                          ) {
+                          if (confirm(t('bills.voidConfirm', { number: b.billNumber }))) {
                             voidMutation.mutate(b.id);
                           }
                         }}
                         disabled={voidMutation.isPending}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                       >
-                        Void
+                        {t('common:void')}
                       </button>
                     )}
                   </td>
@@ -340,7 +346,10 @@ export function BillsList() {
 
       {voidMutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(voidMutation.error)}
+          {formatError(voidMutation.error, {
+            error: t('errors.label'),
+            fallback: t('errors.operationFailed'),
+          })}
         </div>
       )}
     </div>
@@ -358,6 +367,7 @@ function NewBill({
   billCount: number;
   prefill: ReceiptPrefill | null;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
 
   const vendorsQuery = useQuery({
@@ -401,13 +411,14 @@ function NewBill({
       return [
         {
           accountId: '',
-          description: prefill.vendorDisplayName ?? 'Receipt',
+          description: prefill.vendorDisplayName ?? t('bills.new.receiptLineDefault'),
           quantity: '1',
           unitPrice: prefill.total,
         },
       ];
     }
     return [blankLine()];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefill]);
 
   // Try to match the OCR'd vendor name against an existing vendor (case-
@@ -436,7 +447,7 @@ function NewBill({
     billNumber: `BILL-${1001 + billCount}`,
     billDate: prefill?.date ?? today(),
     dueDate: '',
-    memo: prefill?.notes ? `From receipt: ${prefill.notes}` : '',
+    memo: prefill?.notes ? t('bills.new.memoFromReceipt', { notes: prefill.notes }) : '',
     lines: initialLines,
   }));
 
@@ -522,20 +533,20 @@ function NewBill({
   }
 
   if (vendorsQuery.isLoading || accountsQuery.isLoading) {
-    return <p className="text-sm text-slate-500">Loading…</p>;
+    return <p className="text-sm text-slate-500">{t('common:loading')}</p>;
   }
   if (vendors.length === 0) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">New Bill</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('bills.new.title')}
+          </h2>
           <button type="button" onClick={onCancel} className="text-sm text-slate-600 hover:text-slate-900">
-            Cancel
+            {t('common:cancel')}
           </button>
         </div>
-        <p className="text-sm text-slate-500">
-          You need at least one active vendor before creating a bill. Add one in the Vendors tab.
-        </p>
+        <p className="text-sm text-slate-500">{t('bills.new.noVendors')}</p>
       </div>
     );
   }
@@ -543,21 +554,23 @@ function NewBill({
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">New Bill</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('bills.new.title')}
+        </h2>
         <button type="button" onClick={onCancel} className="text-sm text-slate-600 hover:text-slate-900">
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       {prefill && (
         <div className="rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
-          <p className="font-medium">📷 Prefilled from receipt by Claude.</p>
+          <p className="font-medium">{t('bills.new.prefillTitle')}</p>
           <p className="mt-0.5 text-xs">
-            Review the vendor + line accounts before saving (Claude doesn't pick GL accounts).
+            {t('bills.new.prefillHint')}
             {prefill.notes && (
               <>
                 {' '}
-                Note: <span className="italic">{prefill.notes}</span>
+                {t('bills.new.prefillNoteLabel')} <span className="italic">{prefill.notes}</span>
               </>
             )}
           </p>
@@ -565,14 +578,14 @@ function NewBill({
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label="Vendor" required>
+        <Field label={t('bills.new.vendor')} required>
           <select
             value={draft.vendorId}
             onChange={(e) => setDraft({ ...draft, vendorId: e.target.value })}
             required
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
           >
-            <option value="">— select vendor —</option>
+            <option value="">{t('bills.new.selectVendor')}</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.displayName}
@@ -580,7 +593,7 @@ function NewBill({
             ))}
           </select>
         </Field>
-        <Field label="Bill #" required>
+        <Field label={t('bills.new.billNumber')} required>
           <input
             type="text"
             value={draft.billNumber}
@@ -590,7 +603,7 @@ function NewBill({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </Field>
-        <Field label="Date" required>
+        <Field label={t('bills.new.date')} required>
           <input
             type="date"
             value={draft.billDate}
@@ -599,7 +612,7 @@ function NewBill({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </Field>
-        <Field label="Due date">
+        <Field label={t('bills.new.dueDate')}>
           <input
             type="date"
             value={draft.dueDate}
@@ -608,10 +621,12 @@ function NewBill({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
           {!draft.dueDate && computedDueDate !== draft.billDate && (
-            <p className="text-xs text-slate-500">Defaulting to {computedDueDate} (vendor's terms).</p>
+            <p className="text-xs text-slate-500">
+              {t('bills.new.dueDefault', { date: computedDueDate })}
+            </p>
           )}
         </Field>
-        <Field label="Memo">
+        <Field label={t('bills.new.memo')}>
           <input
             type="text"
             value={draft.memo}
@@ -624,24 +639,32 @@ function NewBill({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-slate-700">Lines</h3>
+          <h3 className="text-sm font-medium text-slate-700">{t('bills.new.lines')}</h3>
           <button
             type="button"
             onClick={addLine}
             className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
           >
-            + Add line
+            {t('bills.new.addLine')}
           </button>
         </div>
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Description</th>
-                <th className="px-3 py-2 text-left font-medium">Account</th>
-                <th className="px-3 py-2 text-right font-medium">Qty</th>
-                <th className="px-3 py-2 text-right font-medium">Unit price</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="px-3 py-2 text-left font-medium">
+                  {t('bills.new.lineTable.description')}
+                </th>
+                <th className="px-3 py-2 text-left font-medium">
+                  {t('bills.new.lineTable.account')}
+                </th>
+                <th className="px-3 py-2 text-right font-medium">{t('bills.new.lineTable.qty')}</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {t('bills.new.lineTable.unitPrice')}
+                </th>
+                <th className="px-3 py-2 text-right font-medium">
+                  {t('bills.new.lineTable.amount')}
+                </th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -654,7 +677,7 @@ function NewBill({
                       value={line.description}
                       onChange={(e) => updateLine(idx, { description: e.target.value })}
                       maxLength={500}
-                      placeholder="Office supplies"
+                      placeholder={t('bills.new.descriptionPlaceholder')}
                       className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     />
                   </td>
@@ -665,7 +688,7 @@ function NewBill({
                       required
                       className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     >
-                      <option value="">— account —</option>
+                      <option value="">{t('bills.new.selectAccount')}</option>
                       {lineAccounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.code} — {a.name}
@@ -701,7 +724,7 @@ function NewBill({
                       onClick={() => removeLine(idx)}
                       disabled={draft.lines.length <= 1}
                       className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Remove line"
+                      aria-label={t('bills.new.removeLine')}
                     >
                       ✕
                     </button>
@@ -712,14 +735,14 @@ function NewBill({
             <tfoot className="bg-slate-50 text-sm font-medium">
               <tr>
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-600">
-                  Subtotal
+                  {t('bills.new.subtotal')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(subtotal)}</td>
                 <td></td>
               </tr>
               <tr>
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-700">
-                  Total
+                  {t('bills.new.total')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(subtotal)}</td>
                 <td></td>
@@ -735,20 +758,23 @@ function NewBill({
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mutation.isPending ? 'Posting…' : 'Save & post bill'}
+          {mutation.isPending ? t('bills.new.posting') : t('bills.new.savePost')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, {
+            error: t('errors.label'),
+            fallback: t('errors.operationFailed'),
+          })}
         </div>
       )}
     </form>
@@ -775,11 +801,11 @@ function Field({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Operation failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

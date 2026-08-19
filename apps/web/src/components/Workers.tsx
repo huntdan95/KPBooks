@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { Generate1099Modal } from './Generate1099Modal';
@@ -150,15 +151,15 @@ interface WorkerDetail {
   year: number;
 }
 
-const DOCUMENT_TYPE_LABEL: Record<DocumentType, string> = {
-  w9: 'Form W-9',
-  w4: 'Form W-4',
-  i9: 'Form I-9',
-  contract: 'Contract',
-  insurance: 'Insurance certificate',
-  workers_comp: 'Workers comp',
-  direct_deposit_auth: 'Direct-deposit auth',
-  other: 'Other document',
+const DOCUMENT_TYPE_LABEL_KEY: Record<DocumentType, string> = {
+  w9: 'workers.docType.w9',
+  w4: 'workers.docType.w4',
+  i9: 'workers.docType.i9',
+  contract: 'workers.docType.contract',
+  insurance: 'workers.docType.insurance',
+  workers_comp: 'workers.docType.workersComp',
+  direct_deposit_auth: 'workers.docType.directDepositAuth',
+  other: 'workers.docType.other',
 };
 
 const DOCUMENT_TYPE_ORDER: DocumentType[] = [
@@ -172,13 +173,13 @@ const DOCUMENT_TYPE_ORDER: DocumentType[] = [
   'other',
 ];
 
-const PAY_BASIS_LABEL: Record<PayBasis, string> = {
-  hourly: '/hr',
-  weekly: '/wk',
-  biweekly: '/2wk',
-  monthly: '/mo',
-  annually: '/yr',
-  project: '/project',
+const PAY_BASIS_LABEL_KEY: Record<PayBasis, string> = {
+  hourly: 'workers.payBasis.hourly',
+  weekly: 'workers.payBasis.weekly',
+  biweekly: 'workers.payBasis.biweekly',
+  monthly: 'workers.payBasis.monthly',
+  annually: 'workers.payBasis.annually',
+  project: 'workers.payBasis.project',
 };
 
 function formatUsd(s: string | null | undefined): string {
@@ -208,6 +209,7 @@ function formatAddress(a: MailingAddress | null): string {
 }
 
 export function Workers() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [tab, setTab] = useState<'all' | 'contractor' | 'subcontractor' | 'employee'>('all');
   const [activeOnly, setActiveOnly] = useState(true);
@@ -247,19 +249,17 @@ export function Workers() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Workers</h2>
-          <p className="text-sm text-slate-500">
-            Contractors and employees, with HR documents (W-9 / W-4 / I-9 / contracts) and a live
-            link to 1099 prep. Workers are stored as vendors under the hood, so payments you record
-            against a worker flow into A/P, the 1099 summary, and year-end reports automatically.
-          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('workers.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('workers.blurb')}</p>
         </div>
         <button
           type="button"
           onClick={() => setShowAddForm((v) => !v)}
           className="shrink-0 whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          {showAddForm ? 'Cancel' : '+ Add worker'}
+          {showAddForm ? t('common:cancel') : t('workers.addWorkerAction')}
         </button>
       </div>
 
@@ -276,18 +276,22 @@ export function Workers() {
         <div className="flex gap-1">
           {(
             [
-              { id: 'all', label: 'All workers', count: counts.all },
-              { id: 'contractor', label: '1099 Contractors', count: counts.contractor },
-              { id: 'subcontractor', label: '1099 Subs', count: counts.subcontractor },
-              { id: 'employee', label: 'Employees', count: counts.employee },
+              { id: 'all', labelKey: 'workers.tabs.all', count: counts.all },
+              { id: 'contractor', labelKey: 'workers.tabs.contractors', count: counts.contractor },
+              {
+                id: 'subcontractor',
+                labelKey: 'workers.tabs.subs',
+                count: counts.subcontractor,
+              },
+              { id: 'employee', labelKey: 'workers.tabs.employees', count: counts.employee },
             ] as const
-          ).map((t) => {
-            const active = tab === t.id;
+          ).map((tabDef) => {
+            const active = tab === tabDef.id;
             return (
               <button
-                key={t.id}
+                key={tabDef.id}
                 type="button"
-                onClick={() => setTab(t.id)}
+                onClick={() => setTab(tabDef.id)}
                 className={
                   'border-b-2 px-3 py-2 text-sm transition-colors -mb-px ' +
                   (active
@@ -295,9 +299,9 @@ export function Workers() {
                     : 'border-transparent text-slate-500 hover:text-slate-800')
                 }
               >
-                {t.label}
+                {t(tabDef.labelKey)}
                 <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">
-                  {t.count}
+                  {tabDef.count}
                 </span>
               </button>
             );
@@ -310,20 +314,25 @@ export function Workers() {
             onChange={(e) => setActiveOnly(e.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Active only
+          {t('workers.activeOnly')}
         </label>
       </div>
 
-      {workersQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {workersQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {workersQ.isError && (
         <p className="text-sm text-rose-600">
-          {workersQ.error instanceof Error ? workersQ.error.message : 'Failed to load workers.'}
+          {workersQ.error instanceof Error
+            ? workersQ.error.message
+            : t('workers.failedToLoadWorkers')}
         </p>
       )}
 
       {!workersQ.isLoading && workers.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No {tab === 'all' ? 'workers' : `${tab}s`} yet. Click "+ Add worker" above.
+          {t('workers.empty', {
+            kind: t(`workers.kind.${tab}`),
+            action: t('workers.addWorkerAction'),
+          })}
         </p>
       )}
 
@@ -332,13 +341,23 @@ export function Workers() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-left font-medium">Type</th>
-                <th className="px-4 py-2 text-left font-medium">Tax ID</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:name')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('workers.columns.type')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('workers.columns.taxId')}
+                </th>
                 <th className="px-4 py-2 text-left font-medium">W-9</th>
-                <th className="px-4 py-2 text-right font-medium">Paid {year}</th>
-                <th className="px-4 py-2 text-right font-medium">Lifetime</th>
-                <th className="px-4 py-2 text-left font-medium">Hired</th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('workers.columns.paidYear', { year })}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('workers.columns.lifetime')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('workers.columns.hired')}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -360,15 +379,26 @@ export function Workers() {
                       <div className="font-medium">
                         {w.displayName}
                         {!w.isActive && (
-                          <span className="ml-2 text-xs text-slate-500">(inactive)</span>
+                          <span className="ml-2 text-xs text-slate-500">
+                            {t('workers.inactiveSuffix')}
+                          </span>
                         )}
                       </div>
                       {w.title && <div className="text-xs text-slate-500">{w.title}</div>}
                       {w.workerType === 'subcontractor' && (
                         <div className="mt-1 flex flex-wrap gap-1">
-                          <CompliancePill label="License" expiration={w.licenseExpiration} />
-                          <CompliancePill label="GL" expiration={w.insuranceGeneralLiabilityExpiration} />
-                          <CompliancePill label="WC" expiration={w.insuranceWorkersCompExpiration} />
+                          <CompliancePill
+                            label={t('workers.compliance.license')}
+                            expiration={w.licenseExpiration}
+                          />
+                          <CompliancePill
+                            label={t('workers.compliance.gl')}
+                            expiration={w.insuranceGeneralLiabilityExpiration}
+                          />
+                          <CompliancePill
+                            label={t('workers.compliance.wc')}
+                            expiration={w.insuranceWorkersCompExpiration}
+                          />
                         </div>
                       )}
                     </td>
@@ -380,7 +410,7 @@ export function Workers() {
                         <span className="text-slate-700">{maskTaxId(w.taxId)}</span>
                       ) : w.workerType === 'contractor' || w.workerType === 'subcontractor' ? (
                         <span className="rounded-md bg-rose-50 px-2 py-0.5 text-rose-700 ring-1 ring-rose-200">
-                          missing
+                          {t('workers.missing')}
                         </span>
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -389,11 +419,11 @@ export function Workers() {
                     <td className="px-4 py-2">
                       {w.hasW9 ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20">
-                          ✓ on file
+                          {t('workers.onFile')}
                         </span>
                       ) : w.workerType === 'contractor' || w.workerType === 'subcontractor' ? (
                         <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">
-                          missing
+                          {t('workers.missing')}
                         </span>
                       ) : (
                         <span className="text-xs text-slate-400">—</span>
@@ -403,7 +433,7 @@ export function Workers() {
                       <div className="flex items-center justify-end gap-1.5">
                         {meets1099 && (
                           <span
-                            title="Crosses $600 1099-NEC threshold"
+                            title={t('workers.threshold1099')}
                             className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 ring-1 ring-amber-600/20"
                           >
                             1099
@@ -445,30 +475,33 @@ function maskTaxId(s: string): string {
 }
 
 function WorkerTypeBadge({ type, is1099 }: { type: WorkerType; is1099: boolean }) {
+  const { t } = useTranslation('payroll');
   if (type === 'contractor') {
     return (
       <span className="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-600/20">
-        Contractor{is1099 ? ' · 1099' : ''}
+        {t('workers.badge.contractor')}
+        {is1099 ? ' · 1099' : ''}
       </span>
     );
   }
   if (type === 'subcontractor') {
     return (
       <span className="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-600/20">
-        Subcontractor{is1099 ? ' · 1099' : ''}
+        {t('workers.badge.subcontractor')}
+        {is1099 ? ' · 1099' : ''}
       </span>
     );
   }
   if (type === 'employee') {
     return (
       <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700 ring-1 ring-sky-600/20">
-        Employee
+        {t('workers.badge.employee')}
       </span>
     );
   }
   return (
     <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-      Vendor
+      {t('workers.badge.vendor')}
     </span>
   );
 }
@@ -485,10 +518,11 @@ function CompliancePill({
   label: string;
   expiration: string | null;
 }) {
+  const { t } = useTranslation('payroll');
   if (!expiration) {
     return (
       <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
-        {label} missing
+        {t('workers.compliance.missingPill', { label })}
       </span>
     );
   }
@@ -499,14 +533,14 @@ function CompliancePill({
   if (daysUntil < 0) {
     return (
       <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-rose-700 ring-1 ring-rose-200">
-        {label} expired
+        {t('workers.compliance.expiredPill', { label })}
       </span>
     );
   }
   if (daysUntil <= 30) {
     return (
       <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-amber-800 ring-1 ring-amber-600/20">
-        {label} {daysUntil}d
+        {t('workers.compliance.expiringPill', { label, days: daysUntil })}
       </span>
     );
   }
@@ -588,6 +622,7 @@ const emptyAddDraft = (): AddDraft => ({
 });
 
 function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AddDraft>(emptyAddDraft);
@@ -672,10 +707,10 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
       onSubmit={onSubmit}
       className="space-y-4 rounded-md border border-slate-200 bg-white p-4"
     >
-      <h3 className="text-sm font-medium text-slate-700">Add worker</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('workers.addWorker')}</h3>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Type" required>
+        <Field label={t('workers.columns.type')} required>
           <select
             value={draft.workerType}
             onChange={(e) =>
@@ -686,34 +721,34 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             }
             className={inputClass}
           >
-            <option value="contractor">1099 Contractor (individual)</option>
-            <option value="subcontractor">1099 Subcontractor (company)</option>
-            <option value="employee">Employee (W-2)</option>
+            <option value="contractor">{t('workers.typeOption.contractor')}</option>
+            <option value="subcontractor">{t('workers.typeOption.subcontractor')}</option>
+            <option value="employee">{t('workers.typeOption.employee')}</option>
           </select>
         </Field>
-        <Field label="Display name" required>
+        <Field label={t('workers.fields.displayName')} required>
           <input
             type="text"
             value={draft.displayName}
             onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
-            placeholder="John Smith"
+            placeholder={t('workers.placeholders.displayName')}
             maxLength={200}
             required
             autoFocus
             className={inputClass}
           />
         </Field>
-        <Field label="Title / role">
+        <Field label={t('workers.fields.title')}>
           <input
             type="text"
             value={draft.title}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-            placeholder="Lead carpenter"
+            placeholder={t('workers.placeholders.title')}
             maxLength={120}
             className={inputClass}
           />
         </Field>
-        <Field label="Business name (DBA)">
+        <Field label={t('workers.fields.businessName')}>
           <input
             type="text"
             value={draft.companyName}
@@ -725,8 +760,8 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
         <Field
           label={
             draft.workerType === 'contractor' || draft.workerType === 'subcontractor'
-              ? 'Tax ID (SSN/EIN) *'
-              : 'Tax ID (SSN/EIN)'
+              ? `${t('workers.fields.taxId')} *`
+              : t('workers.fields.taxId')
           }
           required={draft.workerType === 'contractor' || draft.workerType === 'subcontractor'}
         >
@@ -734,13 +769,13 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             type="text"
             value={draft.taxId}
             onChange={(e) => setDraft({ ...draft, taxId: e.target.value })}
-            placeholder="123-45-6789 or 12-3456789"
+            placeholder={t('workers.placeholders.taxId')}
             maxLength={40}
             required={draft.workerType === 'contractor' || draft.workerType === 'subcontractor'}
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Hire / start date">
+        <Field label={t('workers.fields.hireStartDate')}>
           <input
             type="date"
             value={draft.hireDate}
@@ -748,7 +783,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="Email">
+        <Field label={t('workers.fields.email')}>
           <input
             type="email"
             value={draft.email}
@@ -757,7 +792,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="Phone">
+        <Field label={t('workers.fields.phone')}>
           <input
             type="tel"
             value={draft.phone}
@@ -766,13 +801,13 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="Default expense account">
+        <Field label={t('workers.fields.defaultExpenseAccount')}>
           <select
             value={draft.defaultExpenseAccountId}
             onChange={(e) => setDraft({ ...draft, defaultExpenseAccountId: e.target.value })}
             className={inputClass}
           >
-            <option value="">No default</option>
+            <option value="">{t('workers.noDefault')}</option>
             {expenseAccounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -780,7 +815,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             ))}
           </select>
         </Field>
-        <Field label="Pay rate (display only)">
+        <Field label={t('workers.fields.payRateDisplayOnly')}>
           <div className="flex gap-1">
             <input
               type="text"
@@ -797,22 +832,22 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
               }
               className={inputClass + ' w-32'}
             >
-              <option value="">basis…</option>
-              <option value="hourly">per hour</option>
-              <option value="weekly">per week</option>
-              <option value="biweekly">bi-weekly</option>
-              <option value="monthly">per month</option>
-              <option value="annually">per year</option>
-              <option value="project">per project</option>
+              <option value="">{t('workers.basisPlaceholder')}</option>
+              <option value="hourly">{t('workers.basisOption.hourly')}</option>
+              <option value="weekly">{t('workers.basisOption.weekly')}</option>
+              <option value="biweekly">{t('workers.basisOption.biweekly')}</option>
+              <option value="monthly">{t('workers.basisOption.monthly')}</option>
+              <option value="annually">{t('workers.basisOption.annually')}</option>
+              <option value="project">{t('workers.basisOption.project')}</option>
             </select>
           </div>
         </Field>
-        <Field label="Workers comp class">
+        <Field label={t('workers.fields.workersCompClass')}>
           <input
             type="text"
             value={draft.workersCompClass}
             onChange={(e) => setDraft({ ...draft, workersCompClass: e.target.value })}
-            placeholder="5403, 8810, etc."
+            placeholder={t('workers.placeholders.workersCompClass')}
             maxLength={60}
             className={inputClass}
           />
@@ -820,7 +855,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Mailing street">
+        <Field label={t('workers.fields.mailingStreet')}>
           <input
             type="text"
             value={draft.street1}
@@ -829,7 +864,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="City">
+        <Field label={t('workers.fields.city')}>
           <input
             type="text"
             value={draft.city}
@@ -838,7 +873,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="State">
+        <Field label={t('workers.fields.state')}>
           <input
             type="text"
             value={draft.state}
@@ -847,7 +882,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
             className={inputClass}
           />
         </Field>
-        <Field label="ZIP">
+        <Field label={t('workers.fields.zip')}>
           <input
             type="text"
             value={draft.postalCode}
@@ -861,10 +896,10 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
       {draft.workerType === 'employee' && (
         <fieldset className="space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3">
           <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-sky-800">
-            W-2 details (display only — KPBooks doesn't compute taxes)
+            {t('workers.w2LegendAdd')}
           </legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Filing status">
+            <Field label={t('workers.fields.filingStatus')}>
               <select
                 value={draft.w2FilingStatus}
                 onChange={(e) =>
@@ -873,14 +908,22 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               >
                 <option value="">—</option>
-                <option value="single">Single</option>
-                <option value="married_jointly">Married filing jointly</option>
-                <option value="married_separately">Married filing separately</option>
-                <option value="head_of_household">Head of household</option>
-                <option value="qualifying_widow">Qualifying widow(er)</option>
+                <option value="single">{t('workers.filingStatus.single')}</option>
+                <option value="married_jointly">
+                  {t('workers.filingStatus.marriedJointly')}
+                </option>
+                <option value="married_separately">
+                  {t('workers.filingStatus.marriedSeparately')}
+                </option>
+                <option value="head_of_household">
+                  {t('workers.filingStatus.headOfHousehold')}
+                </option>
+                <option value="qualifying_widow">
+                  {t('workers.filingStatus.qualifyingWidow')}
+                </option>
               </select>
             </Field>
-            <Field label="Allowances (legacy W-4)">
+            <Field label={t('workers.fields.allowancesLegacy')}>
               <input
                 type="number"
                 min={0}
@@ -890,7 +933,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="Extra withholding ($/check)">
+            <Field label={t('workers.fields.extraWithholding')}>
               <input
                 type="text"
                 inputMode="decimal"
@@ -898,21 +941,21 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 onChange={(e) =>
                   setDraft({ ...draft, w2AdditionalWithholding: e.target.value })
                 }
-                placeholder="0.00"
+                placeholder={t('workers.placeholders.amount')}
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="State (for SIT)">
+            <Field label={t('workers.fields.stateForSit')}>
               <input
                 type="text"
                 value={draft.w2State}
                 onChange={(e) => setDraft({ ...draft, w2State: e.target.value })}
                 maxLength={60}
-                placeholder="TX"
+                placeholder={t('workers.placeholders.state')}
                 className={inputClass}
               />
             </Field>
-            <Field label="Pay schedule">
+            <Field label={t('workers.fields.paySchedule')}>
               <select
                 value={draft.paySchedule}
                 onChange={(e) =>
@@ -921,10 +964,10 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               >
                 <option value="">—</option>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Biweekly</option>
-                <option value="semimonthly">Semi-monthly</option>
-                <option value="monthly">Monthly</option>
+                <option value="weekly">{t('workers.schedule.weekly')}</option>
+                <option value="biweekly">{t('workers.schedule.biweekly')}</option>
+                <option value="semimonthly">{t('workers.schedule.semimonthly')}</option>
+                <option value="monthly">{t('workers.schedule.monthly')}</option>
               </select>
             </Field>
           </div>
@@ -934,10 +977,10 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
       {draft.workerType === 'subcontractor' && (
         <fieldset className="space-y-3 rounded-md border border-amber-200 bg-amber-50/40 p-3">
           <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-amber-800">
-            Subcontractor compliance
+            {t('workers.subCompliance')}
           </legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="License number">
+            <Field label={t('workers.fields.licenseNumber')}>
               <input
                 type="text"
                 value={draft.licenseNumber}
@@ -946,17 +989,17 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="License state">
+            <Field label={t('workers.fields.licenseState')}>
               <input
                 type="text"
                 value={draft.licenseState}
                 onChange={(e) => setDraft({ ...draft, licenseState: e.target.value })}
                 maxLength={60}
-                placeholder="TX"
+                placeholder={t('workers.placeholders.state')}
                 className={inputClass}
               />
             </Field>
-            <Field label="License expiration">
+            <Field label={t('workers.fields.licenseExpiration')}>
               <input
                 type="date"
                 value={draft.licenseExpiration}
@@ -964,7 +1007,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               />
             </Field>
-            <Field label="GL insurance carrier">
+            <Field label={t('workers.fields.glCarrier')}>
               <input
                 type="text"
                 value={draft.insuranceGeneralLiabilityCarrier}
@@ -975,7 +1018,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               />
             </Field>
-            <Field label="GL policy number">
+            <Field label={t('workers.fields.glPolicyNumber')}>
               <input
                 type="text"
                 value={draft.insuranceGeneralLiabilityPolicyNumber}
@@ -986,7 +1029,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="GL expiration">
+            <Field label={t('workers.fields.glExpiration')}>
               <input
                 type="date"
                 value={draft.insuranceGeneralLiabilityExpiration}
@@ -996,7 +1039,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               />
             </Field>
-            <Field label="WC insurance carrier">
+            <Field label={t('workers.fields.wcCarrier')}>
               <input
                 type="text"
                 value={draft.insuranceWorkersCompCarrier}
@@ -1007,7 +1050,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass}
               />
             </Field>
-            <Field label="WC policy number">
+            <Field label={t('workers.fields.wcPolicyNumber')}>
               <input
                 type="text"
                 value={draft.insuranceWorkersCompPolicyNumber}
@@ -1018,7 +1061,7 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="WC expiration">
+            <Field label={t('workers.fields.wcExpiration')}>
               <input
                 type="date"
                 value={draft.insuranceWorkersCompExpiration}
@@ -1036,12 +1079,12 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
               onChange={(e) => setDraft({ ...draft, lienWaiverRequired: e.target.checked })}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Require lien waiver on every payment to this sub
+            {t('workers.lienWaiverRequired')}
           </label>
         </fieldset>
       )}
 
-      <Field label="Notes">
+      <Field label={t('common:notes')}>
         <textarea
           value={draft.notes}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
@@ -1057,17 +1100,14 @@ function AddWorkerForm({ onCreated }: { onCreated: (vendorId: string) => void })
           disabled={!draft.displayName.trim() || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Adding…' : 'Add worker'}
+          {mutation.isPending ? t('workers.adding') : t('workers.addWorker')}
         </button>
-        <p className="text-xs text-slate-500">
-          1099 contractors and subcontractors are auto-flagged for year-end 1099 prep. SSN / EIN
-          required for both so the form can be filed.
-        </p>
+        <p className="text-xs text-slate-500">{t('workers.addFormHint')}</p>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -1083,6 +1123,7 @@ function WorkerDetailView({
   vendorId: string;
   onBack: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -1117,13 +1158,15 @@ function WorkerDetailView({
         onClick={onBack}
         className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
       >
-        ← Back to workers
+        {t('workers.backToList')}
       </button>
 
-      {detailQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {detailQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {detailQ.isError && (
         <p className="text-sm text-rose-600">
-          {detailQ.error instanceof Error ? detailQ.error.message : 'Failed to load worker.'}
+          {detailQ.error instanceof Error
+            ? detailQ.error.message
+            : t('workers.failedToLoadWorker')}
         </p>
       )}
 
@@ -1140,18 +1183,21 @@ function WorkerDetailView({
                   <WorkerTypeBadge type={data.workerType} is1099={data.is1099Vendor} />
                   {!data.isActive && (
                     <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                      Inactive
+                      {t('workers.inactive')}
                     </span>
                   )}
                   {data.workerType === 'subcontractor' && (
                     <>
-                      <CompliancePill label="License" expiration={data.licenseExpiration} />
                       <CompliancePill
-                        label="GL"
+                        label={t('workers.compliance.license')}
+                        expiration={data.licenseExpiration}
+                      />
+                      <CompliancePill
+                        label={t('workers.compliance.gl')}
                         expiration={data.insuranceGeneralLiabilityExpiration}
                       />
                       <CompliancePill
-                        label="WC"
+                        label={t('workers.compliance.wc')}
                         expiration={data.insuranceWorkersCompExpiration}
                       />
                     </>
@@ -1159,22 +1205,30 @@ function WorkerDetailView({
                 </div>
                 {data.title && <div className="text-sm text-slate-600">{data.title}</div>}
                 {data.companyName && (
-                  <div className="text-xs text-slate-500">DBA: {data.companyName}</div>
+                  <div className="text-xs text-slate-500">
+                    {t('workers.dba', { name: data.companyName })}
+                  </div>
                 )}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 text-xs text-slate-600">
                   {data.email && <span>📧 {data.email}</span>}
                   {data.phone && <span>📞 {data.phone}</span>}
                   {data.taxId && (
-                    <span className="font-mono">TIN {maskTaxId(data.taxId)}</span>
+                    <span className="font-mono">
+                      {t('workers.tin', { value: maskTaxId(data.taxId) })}
+                    </span>
                   )}
-                  {data.hireDate && <span>Hired {data.hireDate}</span>}
+                  {data.hireDate && (
+                    <span>{t('workers.hiredOn', { date: data.hireDate })}</span>
+                  )}
                   {data.terminationDate && (
-                    <span className="text-rose-600">Terminated {data.terminationDate}</span>
+                    <span className="text-rose-600">
+                      {t('workers.terminatedOn', { date: data.terminationDate })}
+                    </span>
                   )}
                   {data.payRate && (
                     <span>
                       {formatUsd(data.payRate)}
-                      {data.payRateBasis && PAY_BASIS_LABEL[data.payRateBasis]}
+                      {data.payRateBasis && t(PAY_BASIS_LABEL_KEY[data.payRateBasis])}
                     </span>
                   )}
                 </div>
@@ -1189,7 +1243,7 @@ function WorkerDetailView({
                 onClick={() => setEditing((v) => !v)}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
               >
-                {editing ? 'Cancel' : 'Edit'}
+                {editing ? t('common:cancel') : t('common:edit')}
               </button>
             </div>
           </div>
@@ -1207,33 +1261,31 @@ function WorkerDetailView({
           {/* KPI tiles */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Stat
-              label={`Paid in ${data.year}`}
+              label={t('workers.stats.paidIn', { year: data.year })}
               value={formatUsd(data.yearTotalPaid)}
               tone={meets1099 ? 'amber' : 'slate'}
               hint={
                 meets1099
-                  ? '1099-NEC required at year-end'
-                  : data.workerType === 'contractor'
-                    ? `${data.yearPaymentCount} payment(s)`
-                    : `${data.yearPaymentCount} payment(s)`
+                  ? t('workers.stats.needs1099')
+                  : t('workers.stats.payments', { count: data.yearPaymentCount })
               }
             />
             <Stat
-              label="Lifetime payments"
+              label={t('workers.stats.lifetimePayments')}
               value={String(data.recentPayments.length === 50 ? '50+' : data.recentPayments.length)}
               tone="slate"
             />
             <Stat
-              label="Open A/P"
+              label={t('workers.stats.openAp')}
               value={formatUsd(
                 data.openBills.reduce((acc, b) => acc + Number(b.balanceDue), 0).toFixed(4),
               )}
               tone={data.openBills.length > 0 ? 'rose' : 'emerald'}
-              hint={`${data.openBills.length} open bill(s)`}
+              hint={t('workers.stats.openBills', { count: data.openBills.length })}
             />
             <Stat
-              label="W-9 status"
-              value={has1099 ? '✓ on file' : 'missing'}
+              label={t('workers.stats.w9Status')}
+              value={has1099 ? t('workers.onFile') : t('workers.missing')}
               tone={has1099 ? 'emerald' : data.workerType === 'contractor' ? 'rose' : 'slate'}
             />
           </div>
@@ -1241,7 +1293,7 @@ function WorkerDetailView({
           {data.workerType === 'contractor' && (
             <div className="flex items-center justify-between gap-3 rounded-md border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-900">
               <div>
-                💡 1099 connection: this contractor is included in the year-end{' '}
+                {t('workers.link1099Before')}{' '}
                 <a
                   href="#"
                   onClick={(e) => {
@@ -1252,16 +1304,16 @@ function WorkerDetailView({
                   }}
                   className="font-medium underline hover:text-violet-700"
                 >
-                  1099 prep summary
+                  {t('workers.link1099Text')}
                 </a>
-                . Generate the printable form here.
+                {t('workers.link1099After')}
               </div>
               <button
                 type="button"
                 onClick={() => setShow1099Modal(true)}
                 className="shrink-0 rounded-md border border-violet-300 bg-white px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100"
               >
-                Generate 1099-NEC
+                {t('workers.generate1099')}
               </button>
             </div>
           )}
@@ -1274,9 +1326,9 @@ function WorkerDetailView({
           <section className="rounded-md border border-slate-200 bg-white">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
               <h3 className="text-sm font-semibold text-slate-900">
-                Documents
+                {t('workers.documents')}
                 <span className="ml-2 text-xs font-normal text-slate-500">
-                  {data.documents.length} on file
+                  {t('workers.docsOnFile', { count: data.documents.length })}
                 </span>
               </h3>
               <div className="flex items-center gap-2">
@@ -1285,9 +1337,9 @@ function WorkerDetailView({
                     type="button"
                     onClick={() => setShowW9Request(true)}
                     className="rounded-md border border-violet-300 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800 hover:bg-violet-100"
-                    title="Generate a single-use upload link for the contractor (no login)"
+                    title={t('workers.requestW9Title')}
                   >
-                    Request W-9 from contractor
+                    {t('workers.requestW9')}
                   </button>
                 )}
                 <button
@@ -1295,7 +1347,7 @@ function WorkerDetailView({
                   onClick={() => setShowUpload((v) => !v)}
                   className="rounded-md border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-100"
                 >
-                  {showUpload ? 'Cancel' : '+ Upload'}
+                  {showUpload ? t('common:cancel') : t('workers.uploadAction')}
                 </button>
               </div>
             </div>
@@ -1321,16 +1373,24 @@ function WorkerDetailView({
             )}
             {data.documents.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-slate-500">
-                No documents yet. Upload a W-9 above.
+                {t('workers.noDocuments')}
               </p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Type</th>
-                    <th className="px-4 py-2 text-left font-medium">File</th>
-                    <th className="px-4 py-2 text-right font-medium">Size</th>
-                    <th className="px-4 py-2 text-left font-medium">Uploaded</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.type')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.file')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('workers.columns.size')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.uploaded')}
+                    </th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -1358,17 +1418,21 @@ function WorkerDetailView({
           {data.openBills.length > 0 && (
             <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
               <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-900">
-                Open bills
+                {t('workers.openBills')}
               </h3>
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Bill #</th>
-                    <th className="px-4 py-2 text-left font-medium">Date</th>
-                    <th className="px-4 py-2 text-left font-medium">Due</th>
-                    <th className="px-4 py-2 text-left font-medium">Status</th>
-                    <th className="px-4 py-2 text-right font-medium">Total</th>
-                    <th className="px-4 py-2 text-right font-medium">Balance</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.billNumber')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.due')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">{t('common:status')}</th>
+                    <th className="px-4 py-2 text-right font-medium">{t('common:total')}</th>
+                    <th className="px-4 py-2 text-right font-medium">{t('common:balance')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1394,24 +1458,28 @@ function WorkerDetailView({
           {/* Recent payments */}
           <section className="overflow-hidden rounded-md border border-slate-200 bg-white">
             <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-900">
-              Recent payments
+              {t('workers.recentPayments')}
               <span className="ml-2 text-xs font-normal text-slate-500">
-                {data.recentPayments.length === 50 ? 'most recent 50' : data.recentPayments.length}
+                {data.recentPayments.length === 50
+                  ? t('workers.mostRecent50')
+                  : data.recentPayments.length}
               </span>
             </h3>
             {data.recentPayments.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-slate-500">
-                No payments recorded for this worker yet.
+                {t('workers.noPayments')}
               </p>
             ) : (
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Date</th>
-                    <th className="px-4 py-2 text-left font-medium">Reference</th>
-                    <th className="px-4 py-2 text-left font-medium">Method</th>
-                    <th className="px-4 py-2 text-left font-medium">Memo</th>
-                    <th className="px-4 py-2 text-right font-medium">Amount</th>
+                    <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+                    <th className="px-4 py-2 text-left font-medium">{t('common:reference')}</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workers.columns.method')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">{t('common:memo')}</th>
+                    <th className="px-4 py-2 text-right font-medium">{t('common:amount')}</th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -1451,6 +1519,7 @@ function UploadDocumentForm({
   vendorId: string;
   onUploaded: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [documentType, setDocumentType] = useState<DocumentType>('w9');
   const [file, setFile] = useState<File | null>(null);
@@ -1461,21 +1530,21 @@ function UploadDocumentForm({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) {
-      setError('Pick a file first.');
+      setError(t('workers.errors.pickFile'));
       return;
     }
     if (file.size === 0) {
-      setError('File is empty.');
+      setError(t('workers.errors.emptyFile'));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setError(`File too large (max 10 MB, got ${formatBytes(file.size)}).`);
+      setError(t('workers.errors.tooLarge', { size: formatBytes(file.size) }));
       return;
     }
     setError(null);
     setUploading(true);
     try {
-      const fileBase64 = await fileToBase64(file);
+      const fileBase64 = await fileToBase64(file, t('workers.errors.readFailed'));
       const body: Record<string, unknown> = {
         documentType,
         fileName: file.name,
@@ -1490,7 +1559,7 @@ function UploadDocumentForm({
       });
       onUploaded();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed.');
+      setError(err instanceof Error ? err.message : t('workers.errors.uploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -1499,20 +1568,20 @@ function UploadDocumentForm({
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Document type" required>
+        <Field label={t('workers.fields.documentType')} required>
           <select
             value={documentType}
             onChange={(e) => setDocumentType(e.target.value as DocumentType)}
             className={inputClass}
           >
-            {DOCUMENT_TYPE_ORDER.map((t) => (
-              <option key={t} value={t}>
-                {DOCUMENT_TYPE_LABEL[t]}
+            {DOCUMENT_TYPE_ORDER.map((docType) => (
+              <option key={docType} value={docType}>
+                {t(DOCUMENT_TYPE_LABEL_KEY[docType])}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="File (PDF, image, max 10 MB)" required>
+        <Field label={t('workers.fields.file')} required>
           <input
             type="file"
             accept="application/pdf,image/*"
@@ -1521,13 +1590,13 @@ function UploadDocumentForm({
           />
         </Field>
       </div>
-      <Field label="Notes (optional)">
+      <Field label={t('workers.fields.notesOptional')}>
         <input
           type="text"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           maxLength={500}
-          placeholder="Signed 2026-01-15 etc."
+          placeholder={t('workers.placeholders.docNotes')}
           className={inputClass}
         />
       </Field>
@@ -1537,7 +1606,7 @@ function UploadDocumentForm({
           disabled={!file || uploading}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {uploading ? 'Uploading…' : 'Upload'}
+          {uploading ? t('workers.uploading') : t('common:upload')}
         </button>
         {file && (
           <span className="text-xs text-slate-500">
@@ -1554,20 +1623,20 @@ function UploadDocumentForm({
   );
 }
 
-function fileToBase64(file: File): Promise<string> {
+function fileToBase64(file: File, readError: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error('Failed to read file'));
+        reject(new Error(readError));
         return;
       }
       // dataURL = "data:<mime>;base64,<payload>"
       const idx = result.indexOf(',');
       resolve(idx >= 0 ? result.slice(idx + 1) : result);
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error(readError));
     reader.readAsDataURL(file);
   });
 }
@@ -1586,6 +1655,7 @@ function PayStubLink({
   payDate: string;
   workerName: string;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [busy, setBusy] = useState(false);
 
@@ -1617,7 +1687,7 @@ function PayStubLink({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed.');
+      alert(err instanceof Error ? err.message : t('downloadFailed'));
     } finally {
       setBusy(false);
     }
@@ -1629,9 +1699,9 @@ function PayStubLink({
       onClick={downloadStub}
       disabled={busy}
       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
-      title="Download a printable pay stub for this payment"
+      title={t('workers.payStubTitle')}
     >
-      {busy ? '…' : 'Stub'}
+      {busy ? '…' : t('workers.stub')}
     </button>
   );
 }
@@ -1645,6 +1715,7 @@ function DocumentRowView({
   doc: DocumentRow;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [busy, setBusy] = useState(false);
 
@@ -1661,7 +1732,7 @@ function DocumentRowView({
           },
         },
       );
-      if (!res.ok) throw new Error(`download failed: ${res.status}`);
+      if (!res.ok) throw new Error(t('shell:errors.downloadFailedStatus', { status: res.status }));
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1672,14 +1743,14 @@ function DocumentRowView({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed.');
+      alert(err instanceof Error ? err.message : t('downloadFailed'));
     } finally {
       setBusy(false);
     }
   }
 
   async function del() {
-    if (!confirm(`Delete ${doc.fileName}?`)) return;
+    if (!confirm(t('workers.confirmDeleteDoc', { name: doc.fileName }))) return;
     setBusy(true);
     try {
       await api(`/workers/${vendorId}/documents/${doc.id}`, {
@@ -1688,7 +1759,7 @@ function DocumentRowView({
       });
       onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Delete failed.');
+      alert(err instanceof Error ? err.message : t('workers.deleteFailed'));
     } finally {
       setBusy(false);
     }
@@ -1707,7 +1778,7 @@ function DocumentRowView({
                 : 'bg-slate-100 text-slate-700 ring-slate-300')
           }
         >
-          {DOCUMENT_TYPE_LABEL[doc.documentType]}
+          {t(DOCUMENT_TYPE_LABEL_KEY[doc.documentType])}
         </span>
       </td>
       <td className="px-4 py-2 text-slate-900">
@@ -1728,7 +1799,7 @@ function DocumentRowView({
             disabled={busy}
             className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
           >
-            Download
+            {t('common:download')}
           </button>
           <button
             type="button"
@@ -1736,7 +1807,7 @@ function DocumentRowView({
             disabled={busy}
             className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"
           >
-            Delete
+            {t('common:delete')}
           </button>
         </div>
       </td>
@@ -1753,6 +1824,7 @@ function EditWorkerForm({
   data: WorkerDetail;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState(() => ({
     displayName: data.displayName,
@@ -1862,10 +1934,10 @@ function EditWorkerForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">Edit worker</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('workers.editWorker')}</h3>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Display name" required>
+        <Field label={t('workers.fields.displayName')} required>
           <input
             type="text"
             value={draft.displayName}
@@ -1875,19 +1947,19 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Type">
+        <Field label={t('workers.columns.type')}>
           <select
             value={draft.workerType}
             onChange={(e) => setDraft({ ...draft, workerType: e.target.value as WorkerType })}
             className={inputClass}
           >
-            <option value="contractor">1099 Contractor (individual)</option>
-            <option value="subcontractor">1099 Subcontractor (company)</option>
-            <option value="employee">Employee (W-2)</option>
-            <option value="not_a_worker">Not a worker (regular vendor)</option>
+            <option value="contractor">{t('workers.typeOption.contractor')}</option>
+            <option value="subcontractor">{t('workers.typeOption.subcontractor')}</option>
+            <option value="employee">{t('workers.typeOption.employee')}</option>
+            <option value="not_a_worker">{t('workers.typeOption.notAWorker')}</option>
           </select>
         </Field>
-        <Field label="Title / role">
+        <Field label={t('workers.fields.title')}>
           <input
             type="text"
             value={draft.title}
@@ -1896,7 +1968,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Business name (DBA)">
+        <Field label={t('workers.fields.businessName')}>
           <input
             type="text"
             value={draft.companyName}
@@ -1905,7 +1977,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Tax ID (SSN/EIN)">
+        <Field label={t('workers.fields.taxId')}>
           <input
             type="text"
             value={draft.taxId}
@@ -1914,7 +1986,7 @@ function EditWorkerForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Email">
+        <Field label={t('workers.fields.email')}>
           <input
             type="email"
             value={draft.email}
@@ -1923,7 +1995,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Phone">
+        <Field label={t('workers.fields.phone')}>
           <input
             type="tel"
             value={draft.phone}
@@ -1932,7 +2004,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Hire date">
+        <Field label={t('workers.fields.hireDate')}>
           <input
             type="date"
             value={draft.hireDate}
@@ -1940,7 +2012,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Termination date">
+        <Field label={t('workers.fields.terminationDate')}>
           <input
             type="date"
             value={draft.terminationDate}
@@ -1948,13 +2020,13 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Default expense account">
+        <Field label={t('workers.fields.defaultExpenseAccount')}>
           <select
             value={draft.defaultExpenseAccountId}
             onChange={(e) => setDraft({ ...draft, defaultExpenseAccountId: e.target.value })}
             className={inputClass}
           >
-            <option value="">No default</option>
+            <option value="">{t('workers.noDefault')}</option>
             {expenseAccounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -1962,7 +2034,7 @@ function EditWorkerForm({
             ))}
           </select>
         </Field>
-        <Field label="Pay rate">
+        <Field label={t('workers.fields.payRate')}>
           <div className="flex gap-1">
             <input
               type="text"
@@ -1978,17 +2050,17 @@ function EditWorkerForm({
               }
               className={inputClass + ' w-32'}
             >
-              <option value="">basis…</option>
-              <option value="hourly">per hour</option>
-              <option value="weekly">per week</option>
-              <option value="biweekly">bi-weekly</option>
-              <option value="monthly">per month</option>
-              <option value="annually">per year</option>
-              <option value="project">per project</option>
+              <option value="">{t('workers.basisPlaceholder')}</option>
+              <option value="hourly">{t('workers.basisOption.hourly')}</option>
+              <option value="weekly">{t('workers.basisOption.weekly')}</option>
+              <option value="biweekly">{t('workers.basisOption.biweekly')}</option>
+              <option value="monthly">{t('workers.basisOption.monthly')}</option>
+              <option value="annually">{t('workers.basisOption.annually')}</option>
+              <option value="project">{t('workers.basisOption.project')}</option>
             </select>
           </div>
         </Field>
-        <Field label="Workers comp class">
+        <Field label={t('workers.fields.workersCompClass')}>
           <input
             type="text"
             value={draft.workersCompClass}
@@ -2000,7 +2072,7 @@ function EditWorkerForm({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="Street">
+        <Field label={t('workers.fields.street')}>
           <input
             type="text"
             value={draft.street1}
@@ -2009,7 +2081,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Street 2">
+        <Field label={t('workers.fields.street2')}>
           <input
             type="text"
             value={draft.street2}
@@ -2018,7 +2090,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="City">
+        <Field label={t('workers.fields.city')}>
           <input
             type="text"
             value={draft.city}
@@ -2027,7 +2099,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="State">
+        <Field label={t('workers.fields.state')}>
           <input
             type="text"
             value={draft.state}
@@ -2036,7 +2108,7 @@ function EditWorkerForm({
             className={inputClass}
           />
         </Field>
-        <Field label="ZIP">
+        <Field label={t('workers.fields.zip')}>
           <input
             type="text"
             value={draft.postalCode}
@@ -2055,7 +2127,7 @@ function EditWorkerForm({
             onChange={(e) => setDraft({ ...draft, is1099Vendor: e.target.checked })}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Issue 1099-NEC at year-end
+          {t('workers.issue1099')}
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
@@ -2064,17 +2136,17 @@ function EditWorkerForm({
             onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Active
+          {t('workers.active')}
         </label>
       </div>
 
       {draft.workerType === 'employee' && (
         <fieldset className="space-y-3 rounded-md border border-sky-200 bg-sky-50/40 p-3">
           <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-sky-800">
-            W-2 details (display only)
+            {t('workers.w2LegendEdit')}
           </legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Filing status">
+            <Field label={t('workers.fields.filingStatus')}>
               <select
                 value={draft.w2FilingStatus}
                 onChange={(e) =>
@@ -2083,14 +2155,22 @@ function EditWorkerForm({
                 className={inputClass}
               >
                 <option value="">—</option>
-                <option value="single">Single</option>
-                <option value="married_jointly">MFJ</option>
-                <option value="married_separately">MFS</option>
-                <option value="head_of_household">HoH</option>
-                <option value="qualifying_widow">QW</option>
+                <option value="single">{t('workers.filingStatusShort.single')}</option>
+                <option value="married_jointly">
+                  {t('workers.filingStatusShort.marriedJointly')}
+                </option>
+                <option value="married_separately">
+                  {t('workers.filingStatusShort.marriedSeparately')}
+                </option>
+                <option value="head_of_household">
+                  {t('workers.filingStatusShort.headOfHousehold')}
+                </option>
+                <option value="qualifying_widow">
+                  {t('workers.filingStatusShort.qualifyingWidow')}
+                </option>
               </select>
             </Field>
-            <Field label="Allowances">
+            <Field label={t('workers.fields.allowances')}>
               <input
                 type="number"
                 min={0}
@@ -2100,7 +2180,7 @@ function EditWorkerForm({
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="Extra withholding ($/check)">
+            <Field label={t('workers.fields.extraWithholding')}>
               <input
                 type="text"
                 inputMode="decimal"
@@ -2111,7 +2191,7 @@ function EditWorkerForm({
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="State">
+            <Field label={t('workers.fields.state')}>
               <input
                 type="text"
                 value={draft.w2State}
@@ -2120,7 +2200,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="Pay schedule">
+            <Field label={t('workers.fields.paySchedule')}>
               <select
                 value={draft.paySchedule}
                 onChange={(e) =>
@@ -2129,10 +2209,10 @@ function EditWorkerForm({
                 className={inputClass}
               >
                 <option value="">—</option>
-                <option value="weekly">Weekly</option>
-                <option value="biweekly">Biweekly</option>
-                <option value="semimonthly">Semi-monthly</option>
-                <option value="monthly">Monthly</option>
+                <option value="weekly">{t('workers.schedule.weekly')}</option>
+                <option value="biweekly">{t('workers.schedule.biweekly')}</option>
+                <option value="semimonthly">{t('workers.schedule.semimonthly')}</option>
+                <option value="monthly">{t('workers.schedule.monthly')}</option>
               </select>
             </Field>
           </div>
@@ -2142,10 +2222,10 @@ function EditWorkerForm({
       {draft.workerType === 'subcontractor' && (
         <fieldset className="space-y-3 rounded-md border border-amber-200 bg-amber-50/40 p-3">
           <legend className="px-1.5 text-xs font-semibold uppercase tracking-wider text-amber-800">
-            Subcontractor compliance
+            {t('workers.subCompliance')}
           </legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="License number">
+            <Field label={t('workers.fields.licenseNumber')}>
               <input
                 type="text"
                 value={draft.licenseNumber}
@@ -2154,7 +2234,7 @@ function EditWorkerForm({
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="License state">
+            <Field label={t('workers.fields.licenseState')}>
               <input
                 type="text"
                 value={draft.licenseState}
@@ -2163,7 +2243,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="License expiration">
+            <Field label={t('workers.fields.licenseExpiration')}>
               <input
                 type="date"
                 value={draft.licenseExpiration}
@@ -2171,7 +2251,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="GL insurance carrier">
+            <Field label={t('workers.fields.glCarrier')}>
               <input
                 type="text"
                 value={draft.insuranceGeneralLiabilityCarrier}
@@ -2182,7 +2262,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="GL policy number">
+            <Field label={t('workers.fields.glPolicyNumber')}>
               <input
                 type="text"
                 value={draft.insuranceGeneralLiabilityPolicyNumber}
@@ -2196,7 +2276,7 @@ function EditWorkerForm({
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="GL expiration">
+            <Field label={t('workers.fields.glExpiration')}>
               <input
                 type="date"
                 value={draft.insuranceGeneralLiabilityExpiration}
@@ -2209,7 +2289,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="WC insurance carrier">
+            <Field label={t('workers.fields.wcCarrier')}>
               <input
                 type="text"
                 value={draft.insuranceWorkersCompCarrier}
@@ -2220,7 +2300,7 @@ function EditWorkerForm({
                 className={inputClass}
               />
             </Field>
-            <Field label="WC policy number">
+            <Field label={t('workers.fields.wcPolicyNumber')}>
               <input
                 type="text"
                 value={draft.insuranceWorkersCompPolicyNumber}
@@ -2231,7 +2311,7 @@ function EditWorkerForm({
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="WC expiration">
+            <Field label={t('workers.fields.wcExpiration')}>
               <input
                 type="date"
                 value={draft.insuranceWorkersCompExpiration}
@@ -2249,12 +2329,12 @@ function EditWorkerForm({
               onChange={(e) => setDraft({ ...draft, lienWaiverRequired: e.target.checked })}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Require lien waiver on every payment to this sub
+            {t('workers.lienWaiverRequired')}
           </label>
         </fieldset>
       )}
 
-      <Field label="Notes">
+      <Field label={t('common:notes')}>
         <textarea
           value={draft.notes}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
@@ -2270,13 +2350,13 @@ function EditWorkerForm({
           disabled={!draft.displayName.trim() || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Saving…' : 'Save changes'}
+          {mutation.isPending ? t('workers.saving') : t('workers.saveChanges')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -2311,13 +2391,13 @@ function Stat({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

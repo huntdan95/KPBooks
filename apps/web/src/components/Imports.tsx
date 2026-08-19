@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { decodeIifBuffer } from '../lib/decode-iif';
@@ -11,6 +13,8 @@ import {
   mergeTransactionCommitResults,
 } from '../lib/iif-commit';
 import { mapsToLabel } from '../lib/iif-preview';
+
+type Translate = TFunction<readonly ['banking', 'common']>;
 
 type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
 type AccountSubtype =
@@ -148,6 +152,7 @@ interface TransactionCommitResult {
 type Stage = 'upload' | 'preview' | 'committed';
 
 export function Imports() {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -201,7 +206,7 @@ export function Imports() {
       setStage('preview');
     },
     onError: (err) => {
-      setParseError(formatError(err));
+      setParseError(formatError(err, t));
     },
   });
 
@@ -386,17 +391,11 @@ export function Imports() {
     }
     const text = decoded.text;
     if (!text.trim()) {
-      setParseError('File is empty.');
+      setParseError(t('imports.fileEmpty'));
       return;
     }
     if (text.length > 12_000_000) {
-      setParseError(
-        `File is ${(text.length / 1e6).toFixed(1)} MB. The import accepts up to 12 MB — export ` +
-          'from QuickBooks in date-range chunks (File > Utilities > Export) and import each one. ' +
-          'Re-importing overlapping ranges is safe for unchanged transactions: already-posted ' +
-          'transactions are skipped as duplicates. (A transaction edited in QuickBooks since an ' +
-          'earlier import posts again — the import warns when it detects that.)',
-      );
+      setParseError(t('imports.fileTooLarge', { size: (text.length / 1e6).toFixed(1) }));
       return;
     }
     previewMutation.mutate({ text, companyId });
@@ -410,14 +409,10 @@ export function Imports() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">Import from QuickBooks</h2>
-        <p className="text-sm text-slate-500">
-          Upload an .iif export to bring over your chart of accounts, customers, vendors, and
-          historical transactions. Transactions post to the ledger as journal entries by default —
-          do NOT also post an opening journal entry, or every balance will be double-counted. To
-          bring over lists only, untick “Import transactions” in the preview and post an opening
-          journal entry instead.
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('imports.title')}
+        </h2>
+        <p className="text-sm text-slate-500">{t('imports.subtitle')}</p>
       </div>
 
       {stage === 'upload' && (
@@ -451,14 +446,14 @@ export function Imports() {
             }}
           />
           <div className="flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-slate-600">Drop a .iif file or click below to choose one.</p>
+            <p className="text-sm text-slate-600">{t('imports.dropHint')}</p>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={previewMutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {previewMutation.isPending ? 'Parsing…' : 'Choose file'}
+              {previewMutation.isPending ? t('imports.parsing') : t('imports.chooseFile')}
             </button>
             {fileName && <p className="text-xs text-slate-500">{fileName}</p>}
             {parseError && <p className="text-sm text-rose-600">{parseError}</p>}
@@ -469,42 +464,50 @@ export function Imports() {
       {stage === 'preview' && preview && (
         <div className="space-y-6">
           <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm">
-            <p className="font-medium text-slate-900">Preview from {fileName}</p>
+            <p className="font-medium text-slate-900">
+              {t('imports.previewFrom', { fileName })}
+            </p>
             <p className="text-slate-600">
-              {preview.accounts.length} accounts · {preview.customers.length} customers ·{' '}
-              {preview.vendors.length} vendors · {preview.transactions.length} postable transactions
+              {t('imports.counts', {
+                accounts: preview.accounts.length,
+                customers: preview.customers.length,
+                vendors: preview.vendors.length,
+                transactions: preview.transactions.length,
+              })}
               {preview.nonPostingSkipped > 0 && (
-                <> · {preview.nonPostingSkipped} non-posting (estimates / orders)</>
+                <>{t('imports.nonPosting', { n: preview.nonPostingSkipped })}</>
               )}
               {excludedTxns.length > 0 && (
                 <>
                   {' '}
                   ·{' '}
                   <span className="font-medium text-rose-700">
-                    {excludedTxns.length} excluded (data errors — see warnings)
+                    {t('imports.excludedCount', { n: excludedTxns.length })}
                   </span>
                 </>
               )}
               {missingDraft.length > 0 && (
-                <> · {missingDraft.length} missing accounts to auto-create</>
+                <>{t('imports.missingToCreate', { n: missingDraft.length })}</>
               )}
             </p>
             {preview.unrecognizedSections.length > 0 && (
               <p className="mt-1 text-xs text-amber-700">
-                Skipped (not yet supported): {preview.unrecognizedSections.join(', ')}
+                {t('imports.unrecognized', {
+                  sections: preview.unrecognizedSections.join(', '),
+                })}
               </p>
             )}
             {preview.warnings.length > 0 && (
               <details className="mt-2">
                 <summary className="cursor-pointer text-xs text-slate-700">
-                  {preview.warnings.length} parser warning(s)
+                  {t('imports.parserWarnings', { count: preview.warnings.length })}
                 </summary>
                 <ul className="mt-1 max-h-40 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs text-slate-600">
                   {preview.warnings.slice(0, 100).map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
                   {preview.warnings.length > 100 && (
-                    <li>… and {preview.warnings.length - 100} more</li>
+                    <li>{t('imports.andMore', { n: preview.warnings.length - 100 })}</li>
                   )}
                 </ul>
               </details>
@@ -513,7 +516,7 @@ export function Imports() {
 
           {preview.accounts.length > 0 && (
             <PreviewSection
-              title="Chart of Accounts"
+              title={t('imports.sections.accounts')}
               count={preview.accounts.length}
               includeStates={accountInclude}
               setIncludeStates={setAccountInclude}
@@ -522,10 +525,12 @@ export function Imports() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="w-10 px-3 py-2"></th>
-                    <th className="px-3 py-2 text-left font-medium">Code</th>
-                    <th className="px-3 py-2 text-left font-medium">Name</th>
-                    <th className="px-3 py-2 text-left font-medium">Type</th>
-                    <th className="px-3 py-2 text-left font-medium">QB type</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('imports.columns.code')}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('common:name')}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('imports.columns.type')}</th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.qbType')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -554,11 +559,16 @@ export function Imports() {
                       <td className="px-3 py-2 text-slate-900">
                         {a.name}
                         {a.isActive === false && (
-                          <span className="ml-2 text-xs text-slate-400">inactive in QuickBooks</span>
+                          <span className="ml-2 text-xs text-slate-400">
+                            {t('imports.inactiveInQuickBooks')}
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-slate-700">
-                        {a.type} · {a.subtype.replace(/_/g, ' ')}
+                        {t(`accountType.${a.type}`, { defaultValue: a.type })} ·{' '}
+                        {t(`accountSubtype.${a.subtype}`, {
+                          defaultValue: a.subtype.replace(/_/g, ' '),
+                        })}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-slate-500">{a.qbType}</td>
                     </tr>
@@ -570,7 +580,7 @@ export function Imports() {
 
           {preview.customers.length > 0 && (
             <PreviewSection
-              title="Customers"
+              title={t('imports.sections.customers')}
               count={preview.customers.length}
               includeStates={customerInclude}
               setIncludeStates={setCustomerInclude}
@@ -579,10 +589,18 @@ export function Imports() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="w-10 px-3 py-2"></th>
-                    <th className="px-3 py-2 text-left font-medium">Display name</th>
-                    <th className="px-3 py-2 text-left font-medium">Email</th>
-                    <th className="px-3 py-2 text-left font-medium">Phone</th>
-                    <th className="px-3 py-2 text-right font-medium">Terms</th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.displayName')}
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.email')}
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.phone')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('imports.columns.terms')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -600,7 +618,7 @@ export function Imports() {
                           {c.displayName}
                           {c.isActive === false && (
                             <span className="ml-2 text-xs font-normal text-slate-400">
-                              inactive in QuickBooks
+                              {t('imports.inactiveInQuickBooks')}
                             </span>
                           )}
                         </div>
@@ -609,7 +627,9 @@ export function Imports() {
                       <td className="px-3 py-2 text-slate-700">{c.email ?? '—'}</td>
                       <td className="px-3 py-2 text-slate-700">{c.phone ?? '—'}</td>
                       <td className="px-3 py-2 text-right text-slate-700">
-                        {c.defaultTermsDays === undefined ? '—' : `Net ${c.defaultTermsDays}`}
+                        {c.defaultTermsDays === undefined
+                          ? '—'
+                          : t('imports.netTerms', { days: c.defaultTermsDays })}
                       </td>
                     </tr>
                   ))}
@@ -620,7 +640,7 @@ export function Imports() {
 
           {preview.vendors.length > 0 && (
             <PreviewSection
-              title="Vendors"
+              title={t('imports.sections.vendors')}
               count={preview.vendors.length}
               includeStates={vendorInclude}
               setIncludeStates={setVendorInclude}
@@ -629,10 +649,18 @@ export function Imports() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
                     <th className="w-10 px-3 py-2"></th>
-                    <th className="px-3 py-2 text-left font-medium">Display name</th>
-                    <th className="px-3 py-2 text-left font-medium">Email</th>
-                    <th className="px-3 py-2 text-left font-medium">Phone</th>
-                    <th className="px-3 py-2 text-right font-medium">Terms</th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.displayName')}
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.email')}
+                    </th>
+                    <th className="px-3 py-2 text-left font-medium">
+                      {t('imports.columns.phone')}
+                    </th>
+                    <th className="px-3 py-2 text-right font-medium">
+                      {t('imports.columns.terms')}
+                    </th>
                     <th className="px-3 py-2 text-center font-medium">1099</th>
                   </tr>
                 </thead>
@@ -651,7 +679,7 @@ export function Imports() {
                           {v.displayName}
                           {v.isActive === false && (
                             <span className="ml-2 text-xs font-normal text-slate-400">
-                              inactive in QuickBooks
+                              {t('imports.inactiveInQuickBooks')}
                             </span>
                           )}
                         </div>
@@ -660,7 +688,9 @@ export function Imports() {
                       <td className="px-3 py-2 text-slate-700">{v.email ?? '—'}</td>
                       <td className="px-3 py-2 text-slate-700">{v.phone ?? '—'}</td>
                       <td className="px-3 py-2 text-right text-slate-700">
-                        {v.defaultTermsDays === undefined ? '—' : `Net ${v.defaultTermsDays}`}
+                        {v.defaultTermsDays === undefined
+                          ? '—'
+                          : t('imports.netTerms', { days: v.defaultTermsDays })}
                       </td>
                       <td className="px-3 py-2 text-center text-slate-700">
                         {v.is1099Vendor ? '✓' : '—'}
@@ -676,7 +706,7 @@ export function Imports() {
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-slate-700">
-                  Missing accounts referenced by transactions{' '}
+                  {t('imports.missing.title')}{' '}
                   <span className="text-slate-500">({missingDraft.length})</span>
                 </h3>
                 <button
@@ -689,25 +719,26 @@ export function Imports() {
                   }
                   className="text-xs text-slate-600 underline hover:text-slate-900"
                 >
-                  {missingDraft.every((m) => m.include) ? 'Deselect all' : 'Select all'}
+                  {missingDraft.every((m) => m.include)
+                    ? t('imports.deselectAll')
+                    : t('imports.selectAll')}
                 </button>
               </div>
-              <p className="text-xs text-slate-500">
-                These account names appear in the file's transactions but aren't in your chart of
-                accounts and aren't being created from this file's account section. We've guessed a
-                type/subtype from each name — review and edit, then confirm. Auto-created accounts
-                are committed before transactions post, so the JEs land cleanly.
-              </p>
+              <p className="text-xs text-slate-500">{t('imports.missing.hint')}</p>
               <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <tr>
                       <th className="w-10 px-3 py-2"></th>
-                      <th className="px-3 py-2 text-left font-medium">Code</th>
-                      <th className="px-3 py-2 text-left font-medium">Name</th>
-                      <th className="px-3 py-2 text-left font-medium">Type</th>
-                      <th className="px-3 py-2 text-left font-medium">Subtype</th>
-                      <th className="px-3 py-2 text-right font-medium">Used in</th>
+                      <th className="px-3 py-2 text-left font-medium">{t('imports.columns.code')}</th>
+                      <th className="px-3 py-2 text-left font-medium">{t('common:name')}</th>
+                      <th className="px-3 py-2 text-left font-medium">{t('imports.columns.type')}</th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        {t('imports.columns.subtype')}
+                      </th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        {t('imports.columns.usedIn')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -738,11 +769,11 @@ export function Imports() {
                             }
                             className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-slate-900 focus:outline-none"
                           >
-                            <option value="asset">asset</option>
-                            <option value="liability">liability</option>
-                            <option value="equity">equity</option>
-                            <option value="revenue">revenue</option>
-                            <option value="expense">expense</option>
+                            <option value="asset">{t('accountType.asset')}</option>
+                            <option value="liability">{t('accountType.liability')}</option>
+                            <option value="equity">{t('accountType.equity')}</option>
+                            <option value="revenue">{t('accountType.revenue')}</option>
+                            <option value="expense">{t('accountType.expense')}</option>
                           </select>
                         </td>
                         <td className="px-3 py-2">
@@ -757,13 +788,13 @@ export function Imports() {
                           >
                             {SUBTYPES_BY_TYPE[m.suggestedType].map((s) => (
                               <option key={s} value={s}>
-                                {s.replace(/_/g, ' ')}
+                                {t(`accountSubtype.${s}`, { defaultValue: s.replace(/_/g, ' ') })}
                               </option>
                             ))}
                           </select>
                         </td>
                         <td className="px-3 py-2 text-right text-slate-600">
-                          {m.occurrences} txn{m.occurrences === 1 ? '' : 's'}
+                          {t('imports.missing.occurrences', { count: m.occurrences })}
                         </td>
                       </tr>
                     ))}
@@ -777,8 +808,12 @@ export function Imports() {
             <section className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-slate-700">
-                  Transactions{' '}
-                  <span className="text-slate-500">({preview.transactions.length} postable)</span>
+                  {t('imports.transactions.title')}{' '}
+                  <span className="text-slate-500">
+                    {t('imports.transactions.postableCount', {
+                      n: preview.transactions.length,
+                    })}
+                  </span>
                 </h3>
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
@@ -787,7 +822,7 @@ export function Imports() {
                     onChange={(e) => setIncludeTransactions(e.target.checked)}
                     className="h-4 w-4 rounded border-slate-300"
                   />
-                  Import transactions
+                  {t('imports.transactions.include')}
                 </label>
               </div>
 
@@ -795,9 +830,15 @@ export function Imports() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <tr>
-                      <th className="px-4 py-2 text-left font-medium">QB type</th>
-                      <th className="px-4 py-2 text-left font-medium">Maps to</th>
-                      <th className="px-4 py-2 text-right font-medium">Count</th>
+                      <th className="px-4 py-2 text-left font-medium">
+                        {t('imports.columns.qbType')}
+                      </th>
+                      <th className="px-4 py-2 text-left font-medium">
+                        {t('imports.columns.mapsTo')}
+                      </th>
+                      <th className="px-4 py-2 text-right font-medium">
+                        {t('imports.columns.count')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
@@ -809,14 +850,17 @@ export function Imports() {
                         // non-posting OR excluded for data errors -- the two
                         // must not read the same (an excluded CHECK is not an
                         // intentionally skipped document class).
-                        const sample = preview.transactions.find((t) => t.qbType === qbType);
+                        const sample = preview.transactions.find((tx) => tx.qbType === qbType);
                         const excludedOfType = excludedTxns.filter(
                           (e) => e.qbType === qbType,
                         ).length;
                         const mapsTo = mapsToLabel(sample, excludedOfType);
                         const suffix =
                           sample && excludedOfType > 0
-                            ? ` — ${excludedOfType} of ${count} excluded (data error; see warnings)`
+                            ? t('imports.transactions.excludedSuffix', {
+                                excluded: excludedOfType,
+                                total: count,
+                              })
                             : '';
                         return (
                           <tr key={qbType}>
@@ -833,11 +877,7 @@ export function Imports() {
                 </table>
               </div>
 
-              <p className="text-xs text-slate-500">
-                Each posting transaction becomes one journal_entry. Sign rule: positive amount = debit,
-                negative = credit. Transactions whose accounts aren't in the chart of accounts after the
-                lists step are skipped and reported.
-              </p>
+              <p className="text-xs text-slate-500">{t('imports.transactions.hint')}</p>
             </section>
           )}
 
@@ -848,20 +888,20 @@ export function Imports() {
               disabled={commitMutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {commitMutation.isPending ? 'Importing…' : 'Confirm import'}
+              {commitMutation.isPending ? t('imports.importing') : t('imports.confirmImport')}
             </button>
             <button
               type="button"
               onClick={reset}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
           </div>
 
           {commitMutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-              {formatError(commitMutation.error)}
+              {formatError(commitMutation.error, t)}
             </div>
           )}
         </div>
@@ -870,35 +910,45 @@ export function Imports() {
       {stage === 'committed' && committed && (
         <div className="space-y-4">
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            <p className="font-medium">Import complete.</p>
+            <p className="font-medium">{t('imports.done.title')}</p>
             <ul className="mt-1 list-disc pl-5">
               <li>
-                {committed.accountsCreated} accounts created
-                {committed.accountsSkipped > 0 ? `, ${committed.accountsSkipped} skipped` : ''}
+                {t('imports.done.accountsCreated', { n: committed.accountsCreated })}
+                {committed.accountsSkipped > 0
+                  ? t('imports.done.skippedSuffix', { n: committed.accountsSkipped })
+                  : ''}
               </li>
               <li>
-                {committed.customersCreated} customers created
-                {committed.customersSkipped > 0 ? `, ${committed.customersSkipped} skipped` : ''}
+                {t('imports.done.customersCreated', { n: committed.customersCreated })}
+                {committed.customersSkipped > 0
+                  ? t('imports.done.skippedSuffix', { n: committed.customersSkipped })
+                  : ''}
               </li>
               <li>
-                {committed.vendorsCreated} vendors created
-                {committed.vendorsSkipped > 0 ? `, ${committed.vendorsSkipped} skipped` : ''}
+                {t('imports.done.vendorsCreated', { n: committed.vendorsCreated })}
+                {committed.vendorsSkipped > 0
+                  ? t('imports.done.skippedSuffix', { n: committed.vendorsSkipped })
+                  : ''}
               </li>
               {committedTxns && (
                 <li>
-                  {committedTxns.posted} transactions posted
+                  {t('imports.done.transactionsPosted', { n: committedTxns.posted })}
                   {committedTxns.paymentsLinked > 0
-                    ? `, ${committedTxns.paymentsLinked} linked to vendor/customer payment records (1099s, statements)`
+                    ? t('imports.done.paymentsLinked', { n: committedTxns.paymentsLinked })
                     : ''}
-                  {committedTxns.skipped > 0 ? `, ${committedTxns.skipped} skipped` : ''}
+                  {committedTxns.skipped > 0
+                    ? t('imports.done.skippedSuffix', { n: committedTxns.skipped })
+                    : ''}
                   {committedTxns.duplicates > 0
-                    ? `, ${committedTxns.duplicates} already imported (duplicates skipped)`
+                    ? t('imports.done.duplicatesSkipped', { n: committedTxns.duplicates })
                     : ''}
                   {committedTxns.paymentsBackfilled > 0
-                    ? `, ${committedTxns.paymentsBackfilled} payment record(s) backfilled for previously imported transactions`
+                    ? t('imports.done.paymentsBackfilled', {
+                        n: committedTxns.paymentsBackfilled,
+                      })
                     : ''}
                   {committedTxns.voided > 0
-                    ? `, ${committedTxns.voided} voided (0.00 — nothing to post)`
+                    ? t('imports.done.voided', { n: committedTxns.voided })
                     : ''}
                 </li>
               )}
@@ -907,7 +957,9 @@ export function Imports() {
 
           {committed.warnings.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <p className="font-medium">{committed.warnings.length} import note(s):</p>
+              <p className="font-medium">
+                {t('imports.notes.importNotes', { count: committed.warnings.length })}
+              </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {committed.warnings.map((w, i) => (
                   <li key={i}>{w}</li>
@@ -918,11 +970,14 @@ export function Imports() {
 
           {committed.conflicts.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <p className="font-medium">{committed.conflicts.length} list rows skipped:</p>
+              <p className="font-medium">
+                {t('imports.notes.listRowsSkipped', { count: committed.conflicts.length })}
+              </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {committed.conflicts.map((c, i) => (
                   <li key={i}>
-                    <span className="font-medium">{c.kind}</span>: {c.identifier} — {c.reason}
+                    <span className="font-medium">{t(`imports.conflictKind.${c.kind}`)}</span>:{' '}
+                    {c.identifier} — {c.reason}
                   </li>
                 ))}
               </ul>
@@ -932,16 +987,17 @@ export function Imports() {
           {committedTxns && committedTxns.errors.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <p className="font-medium">
-                {committedTxns.errors.length} transaction(s) skipped:
+                {t('imports.notes.transactionsSkipped', { count: committedTxns.errors.length })}
               </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {committedTxns.errors.slice(0, 200).map((e, i) => (
                   <li key={i}>
-                    <span className="font-mono">{e.qbType}</span> at row {e.rowNumber} — {e.reason}
+                    <span className="font-mono">{e.qbType}</span>{' '}
+                    {t('imports.atRow', { row: e.rowNumber })} — {e.reason}
                   </li>
                 ))}
                 {committedTxns.errors.length > 200 && (
-                  <li>… and {committedTxns.errors.length - 200} more</li>
+                  <li>{t('imports.andMore', { n: committedTxns.errors.length - 200 })}</li>
                 )}
               </ul>
             </div>
@@ -950,14 +1006,18 @@ export function Imports() {
           {committedTxns && (committedTxns.warnings ?? []).length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <p className="font-medium">
-                {(committedTxns.warnings ?? []).length} transaction note(s):
+                {t('imports.notes.transactionNotes', {
+                  count: (committedTxns.warnings ?? []).length,
+                })}
               </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {(committedTxns.warnings ?? []).slice(0, 200).map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
                 {(committedTxns.warnings ?? []).length > 200 && (
-                  <li>… and {(committedTxns.warnings ?? []).length - 200} more</li>
+                  <li>
+                    {t('imports.andMore', { n: (committedTxns.warnings ?? []).length - 200 })}
+                  </li>
                 )}
               </ul>
             </div>
@@ -970,47 +1030,39 @@ export function Imports() {
           {includeTransactions && excludedTxns.length > 0 && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
               <p className="font-medium">
-                {excludedTxns.length} transaction block(s) from the file were NOT imported (data
-                errors found before posting):
+                {t('imports.excluded.title', { count: excludedTxns.length })}
               </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {excludedTxns.slice(0, 200).map((e, i) => (
                   <li key={i}>
-                    <span className="font-mono">{e.qbType}</span> at row {e.rowNumber} — {e.reason}
+                    <span className="font-mono">{e.qbType}</span>{' '}
+                    {t('imports.atRow', { row: e.rowNumber })} — {e.reason}
                   </li>
                 ))}
-                {excludedTxns.length > 200 && <li>… and {excludedTxns.length - 200} more</li>}
+                {excludedTxns.length > 200 && (
+                  <li>{t('imports.andMore', { n: excludedTxns.length - 200 })}</li>
+                )}
               </ul>
-              <p className="mt-1 text-xs">
-                Fix these rows in the file and re-import it — already-posted transactions are
-                skipped as duplicates (as long as they weren't edited in QuickBooks since the
-                last import; an edited transaction posts again as a new entry).
-              </p>
+              <p className="mt-1 text-xs">{t('imports.excluded.hint')}</p>
             </div>
           )}
 
           {committedTxns && (committedTxns.unlinkedPayees ?? []).length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               <p className="font-medium">
-                {(committedTxns.unlinkedPayees ?? []).length} payee(s) posted to the ledger only —
-                no vendor/customer payment record was written:
+                {t('imports.unlinked.title', {
+                  count: (committedTxns.unlinkedPayees ?? []).length,
+                })}
               </p>
               <ul className="mt-1 max-h-60 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs">
                 {(committedTxns.unlinkedPayees ?? []).slice(0, 200).map((p, i) => (
                   <li key={i}>
-                    <span className="font-medium">{p.name}</span> — {p.count} transaction
-                    {p.count === 1 ? '' : 's'} totaling {p.total}
+                    <span className="font-medium">{p.name}</span> —{' '}
+                    {t('imports.unlinked.row', { count: p.count, total: p.total })}
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-xs">
-                These names didn't match any vendor or customer (check spelling/punctuation, QuickBooks
-                “Other Names”, or employees). Their amounts won't appear in 1099 totals, payroll
-                registers, or statements until matching payment records exist. To fix: create the
-                missing vendor/customer (or correct its spelling) and re-import this file — the
-                transactions are skipped as duplicates and their payment records are backfilled
-                automatically.
-              </p>
+              <p className="mt-1 text-xs">{t('imports.unlinked.hint')}</p>
             </div>
           )}
 
@@ -1019,7 +1071,7 @@ export function Imports() {
             onClick={reset}
             className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
           >
-            Import another file
+            {t('imports.importAnother')}
           </button>
         </div>
       )}
@@ -1040,6 +1092,7 @@ function PreviewSection({
   setIncludeStates: (v: boolean[]) => void;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation(['banking', 'common']);
   const includedCount = includeStates.filter(Boolean).length;
   const allOn = includedCount === count;
   return (
@@ -1048,7 +1101,7 @@ function PreviewSection({
         <h3 className="text-sm font-medium text-slate-700">
           {title}{' '}
           <span className="text-slate-500">
-            ({includedCount} of {count} selected)
+            {t('imports.selectedOf', { included: includedCount, total: count })}
           </span>
         </h3>
         <button
@@ -1056,7 +1109,7 @@ function PreviewSection({
           onClick={() => setIncludeStates(Array(count).fill(!allOn))}
           className="text-xs text-slate-600 underline hover:text-slate-900"
         >
-          {allOn ? 'Deselect all' : 'Select all'}
+          {allOn ? t('imports.deselectAll') : t('imports.selectAll')}
         </button>
       </div>
       <div className="overflow-hidden rounded-md border border-slate-200 bg-white">{children}</div>
@@ -1080,14 +1133,14 @@ function stripUndef<T extends object>(obj: T): Partial<T> {
   return out as Partial<T>;
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     const body = err.body as {
       error?: string;
       message?: string;
       details?: { path?: (string | number)[]; message?: string }[];
     } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errors.label')}: ${body.message}`;
     if (body?.error) {
       // Zod issues carry the offending row in `path` (e.g. customers.1.email).
       // Surface the first few so the user can find the bad row instead of
@@ -1095,13 +1148,21 @@ function formatError(err: unknown): string {
       if (Array.isArray(body.details) && body.details.length > 0) {
         const shown = body.details
           .slice(0, 3)
-          .map((d) => `${(d.path ?? []).join('.') || 'request'}: ${d.message ?? 'invalid'}`)
+          .map(
+            (d) =>
+              `${(d.path ?? []).join('.') || t('imports.detailFallbackPath')}: ${
+                d.message ?? t('imports.detailFallbackMessage')
+              }`,
+          )
           .join('; ');
-        const more = body.details.length > 3 ? ` (+${body.details.length - 3} more)` : '';
+        const more =
+          body.details.length > 3
+            ? t('imports.andMoreDetails', { n: body.details.length - 3 })
+            : '';
         return `${body.error} — ${shown}${more}`;
       }
       return body.error;
     }
   }
-  return err instanceof Error ? err.message : 'Operation failed.';
+  return err instanceof Error ? err.message : t('errors.operationFailed');
 }

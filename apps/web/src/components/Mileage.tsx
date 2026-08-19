@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { EmptyState } from './ui/EmptyState';
 import { Icon } from './ui/Icon';
 
 type TripStatus = 'logged' | 'posted';
+type Translate = TFunction<readonly ['banking', 'common']>;
 
 interface TripRow {
   id: string;
@@ -62,6 +65,7 @@ const STATUS_TONE: Record<TripStatus, string> = {
 };
 
 export function Mileage() {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const [showWizard, setShowWizard] = useState(false);
   const [showPost, setShowPost] = useState(false);
@@ -80,23 +84,20 @@ export function Mileage() {
   });
 
   const trips = tripsQ.data?.trips ?? [];
-  const logged = trips.filter((t) => t.status === 'logged');
-  const posted = trips.filter((t) => t.status === 'posted');
-  const loggedTotalDeduction = logged.reduce((acc, t) => acc + Number(t.deduction), 0);
-  const loggedTotalMiles = logged.reduce((acc, t) => acc + Number(t.miles), 0);
-  const editingTrip = editingId ? trips.find((t) => t.id === editingId) ?? null : null;
+  const logged = trips.filter((trip) => trip.status === 'logged');
+  const posted = trips.filter((trip) => trip.status === 'posted');
+  const loggedTotalDeduction = logged.reduce((acc, trip) => acc + Number(trip.deduction), 0);
+  const loggedTotalMiles = logged.reduce((acc, trip) => acc + Number(trip.miles), 0);
+  const editingTrip = editingId ? trips.find((trip) => trip.id === editingId) ?? null : null;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Mileage</h2>
-          <p className="text-sm text-slate-500">
-            Log business trips with the IRS standard mileage rate, then batch-post a date range
-            to a journal entry (DR Vehicle/Mileage Expense, CR Owner Reimbursement). The rate at
-            log time is locked on the trip — IRS rate changes won't silently shift past
-            deductions.
-          </p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('mileage.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('mileage.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -105,11 +106,13 @@ export function Mileage() {
             disabled={logged.length === 0}
             className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             title={
-              logged.length === 0 ? 'No logged trips to post' : 'Post a date range to a JE'
+              logged.length === 0
+                ? t('mileage.postDisabledTitle')
+                : t('mileage.postEnabledTitle')
             }
           >
             <Icon name="upload-cloud" className="h-3.5 w-3.5" />
-            {showPost ? 'Cancel' : 'Post mileage…'}
+            {showPost ? t('common:cancel') : t('mileage.postMileage')}
           </button>
           <button
             type="button"
@@ -117,7 +120,7 @@ export function Mileage() {
             className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
             <Icon name="plus" className="h-3.5 w-3.5" strokeWidth={2.25} />
-            {showWizard ? 'Cancel' : 'New trip'}
+            {showWizard ? t('common:cancel') : t('mileage.newTrip')}
           </button>
         </div>
       </div>
@@ -126,21 +129,21 @@ export function Mileage() {
       {logged.length > 0 && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Tile
-            label="Logged trips"
+            label={t('mileage.tiles.loggedTrips')}
             value={String(logged.length)}
-            hint="ready to post"
+            hint={t('mileage.tiles.loggedTripsHint')}
             tone="amber"
           />
           <Tile
-            label="Total miles (logged)"
+            label={t('mileage.tiles.totalMiles')}
             value={formatMiles(loggedTotalMiles)}
-            hint="across logged trips"
+            hint={t('mileage.tiles.totalMilesHint')}
             tone="slate"
           />
           <Tile
-            label="Total deduction"
+            label={t('mileage.tiles.totalDeduction')}
             value={formatUsd(loggedTotalDeduction)}
-            hint="at locked rates"
+            hint={t('mileage.tiles.totalDeductionHint')}
             tone="emerald"
           />
         </div>
@@ -164,31 +167,31 @@ export function Mileage() {
         <EditTripModal trip={editingTrip} onClose={() => setEditingId(null)} />
       )}
 
-      {tripsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {tripsQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {tripsQ.isError && (
         <p className="text-sm text-rose-600">
-          {tripsQ.error instanceof Error ? tripsQ.error.message : 'Failed to load.'}
+          {tripsQ.error instanceof Error ? tripsQ.error.message : t('mileage.loadFailed')}
         </p>
       )}
 
       {!tripsQ.isLoading && trips.length === 0 && (
         <EmptyState
           icon="car"
-          title="No trips logged yet"
-          description="Log your first business trip — the form pre-fills with the current IRS standard mileage rate. Posting batches all logged trips in a date range into one journal entry."
-          action={{ label: 'New trip', onClick: () => setShowWizard(true) }}
+          title={t('mileage.empty.title')}
+          description={t('mileage.empty.description')}
+          action={{ label: t('mileage.newTrip'), onClick: () => setShowWizard(true) }}
         />
       )}
 
       {logged.length > 0 && (
         <TripsTable
           rows={logged}
-          title="Logged"
+          title={t('mileage.tables.logged')}
           onEdit={(id) => setEditingId(id)}
         />
       )}
       {posted.length > 0 && (
-        <TripsTable rows={posted} title="Posted" onEdit={null} />
+        <TripsTable rows={posted} title={t('mileage.tables.posted')} onEdit={null} />
       )}
     </div>
   );
@@ -229,25 +232,28 @@ function TripsTable({
   title: string;
   onEdit: ((id: string) => void) | null;
 }) {
+  const { t } = useTranslation(['banking', 'common']);
   const totalMiles = rows.reduce((acc, r) => acc + Number(r.miles), 0);
   const totalDeduction = rows.reduce((acc, r) => acc + Number(r.deduction), 0);
   return (
     <div className="space-y-2">
       <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-        {title} ({rows.length})
+        {t('mileage.tables.heading', { title, n: rows.length })}
       </h3>
       <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="px-4 py-2 text-left font-medium">Date</th>
-              <th className="px-4 py-2 text-left font-medium">Vehicle</th>
-              <th className="px-4 py-2 text-left font-medium">Trip</th>
-              <th className="px-4 py-2 text-left font-medium">Purpose</th>
-              <th className="px-4 py-2 text-right font-medium">Miles</th>
-              <th className="px-4 py-2 text-right font-medium">Rate</th>
-              <th className="px-4 py-2 text-right font-medium">Deduction</th>
-              <th className="px-4 py-2 text-left font-medium">Status</th>
+              <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+              <th className="px-4 py-2 text-left font-medium">{t('mileage.columns.vehicle')}</th>
+              <th className="px-4 py-2 text-left font-medium">{t('mileage.columns.trip')}</th>
+              <th className="px-4 py-2 text-left font-medium">{t('mileage.columns.purpose')}</th>
+              <th className="px-4 py-2 text-right font-medium">{t('mileage.columns.miles')}</th>
+              <th className="px-4 py-2 text-right font-medium">{t('mileage.columns.rate')}</th>
+              <th className="px-4 py-2 text-right font-medium">
+                {t('mileage.columns.deduction')}
+              </th>
+              <th className="px-4 py-2 text-left font-medium">{t('common:status')}</th>
               {onEdit && <th className="px-4 py-2"></th>}
             </tr>
           </thead>
@@ -282,7 +288,7 @@ function TripsTable({
                       STATUS_TONE[r.status]
                     }
                   >
-                    {r.status}
+                    {t(`mileage.tripStatus.${r.status}`)}
                   </span>
                 </td>
                 {onEdit && (
@@ -292,7 +298,7 @@ function TripsTable({
                       onClick={() => onEdit(r.id)}
                       className="text-xs text-slate-600 hover:text-slate-900 hover:underline"
                     >
-                      Edit
+                      {t('common:edit')}
                     </button>
                   </td>
                 )}
@@ -302,7 +308,7 @@ function TripsTable({
           <tfoot className="bg-slate-100 text-sm font-semibold">
             <tr>
               <td colSpan={4} className="px-4 py-3 text-right text-slate-900">
-                Total
+                {t('common:total')}
               </td>
               <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
                 {formatMiles(totalMiles)}
@@ -355,6 +361,7 @@ function NewTripWizard({
   defaultRate: string;
   onCreated: () => void;
 }) {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<TripDraft>(() => emptyDraft(defaultRate));
@@ -407,9 +414,9 @@ function NewTripWizard({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">New trip</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('mileage.newTrip')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Trip date" required>
+        <Field label={t('mileage.fields.tripDate')} required>
           <input
             type="date"
             value={draft.tripDate}
@@ -418,7 +425,7 @@ function NewTripWizard({
             className={inputClass}
           />
         </Field>
-        <Field label="Vehicle">
+        <Field label={t('mileage.columns.vehicle')}>
           <input
             type="text"
             value={draft.vehicle}
@@ -428,7 +435,12 @@ function NewTripWizard({
             className={inputClass}
           />
         </Field>
-        <Field label={`Rate per mile (default ${Number(defaultRate).toFixed(4)})`} required>
+        <Field
+          label={t('mileage.fields.ratePerMileDefault', {
+            rate: Number(defaultRate).toFixed(4),
+          })}
+          required
+        >
           <input
             type="text"
             inputMode="decimal"
@@ -438,38 +450,38 @@ function NewTripWizard({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Start location">
+        <Field label={t('mileage.fields.startLocation')}>
           <input
             type="text"
             value={draft.startLocation}
             onChange={(e) => setDraft({ ...draft, startLocation: e.target.value })}
             maxLength={200}
-            placeholder="Office"
+            placeholder={t('mileage.placeholders.startLocation')}
             className={inputClass}
           />
         </Field>
-        <Field label="End location">
+        <Field label={t('mileage.fields.endLocation')}>
           <input
             type="text"
             value={draft.endLocation}
             onChange={(e) => setDraft({ ...draft, endLocation: e.target.value })}
             maxLength={200}
-            placeholder="Client site"
+            placeholder={t('mileage.placeholders.endLocation')}
             className={inputClass}
           />
         </Field>
-        <Field label="Purpose" required>
+        <Field label={t('mileage.fields.purpose')} required>
           <input
             type="text"
             value={draft.purpose}
             onChange={(e) => setDraft({ ...draft, purpose: e.target.value })}
             required
             maxLength={500}
-            placeholder="Q3 review meeting"
+            placeholder={t('mileage.placeholders.purpose')}
             className={inputClass}
           />
         </Field>
-        <Field label="Start odometer (optional)">
+        <Field label={t('mileage.fields.startOdometer')}>
           <input
             type="text"
             inputMode="decimal"
@@ -479,7 +491,7 @@ function NewTripWizard({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="End odometer (optional)">
+        <Field label={t('mileage.fields.endOdometer')}>
           <input
             type="text"
             inputMode="decimal"
@@ -489,7 +501,14 @@ function NewTripWizard({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label={odometerMiles ? `Miles (auto: ${odometerMiles})` : 'Miles'} required>
+        <Field
+          label={
+            odometerMiles
+              ? t('mileage.fields.milesAuto', { miles: odometerMiles })
+              : t('mileage.fields.miles')
+          }
+          required
+        >
           <input
             type="text"
             inputMode="decimal"
@@ -501,7 +520,7 @@ function NewTripWizard({
           />
         </Field>
       </div>
-      <Field label="Notes">
+      <Field label={t('common:notes')}>
         <textarea
           value={draft.notes}
           onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
@@ -515,11 +534,17 @@ function NewTripWizard({
         <div className="text-xs text-slate-500">
           {effectiveMiles && draft.ratePerMile ? (
             <>
-              Deduction: <strong className="font-mono text-slate-900">{formatUsd(computedDeduction)}</strong>{' '}
-              ({effectiveMiles} mi × {Number(draft.ratePerMile).toFixed(4)})
+              {t('mileage.preview.label')}{' '}
+              <strong className="font-mono text-slate-900">{formatUsd(computedDeduction)}</strong>{' '}
+              (
+              {t('mileage.preview.formula', {
+                miles: effectiveMiles,
+                rate: Number(draft.ratePerMile).toFixed(4),
+              })}
+              )
             </>
           ) : (
-            <span className="italic">Fill in miles + rate to preview the deduction.</span>
+            <span className="italic">{t('mileage.preview.empty')}</span>
           )}
         </div>
         <button
@@ -527,13 +552,13 @@ function NewTripWizard({
           disabled={mutation.isPending || !effectiveMiles || !draft.purpose.trim()}
           className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mutation.isPending ? 'Saving…' : 'Save trip'}
+          {mutation.isPending ? t('mileage.saving') : t('mileage.saveTrip')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, t)}
         </div>
       )}
     </form>
@@ -543,6 +568,7 @@ function NewTripWizard({
 // --- Edit trip modal -------------------------------------------------------
 
 function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }) {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState({
@@ -592,18 +618,18 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
     >
       <div className="kpb-pop-in my-8 w-full max-w-xl space-y-3 rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/10">
         <div className="flex items-start justify-between">
-          <h3 className="text-base font-semibold text-slate-900">Edit trip</h3>
+          <h3 className="text-base font-semibold text-slate-900">{t('mileage.edit.title')}</h3>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
           >
             ✕
           </button>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Trip date" required>
+          <Field label={t('mileage.fields.tripDate')} required>
             <input
               type="date"
               value={draft.tripDate}
@@ -612,7 +638,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               className={inputClass}
             />
           </Field>
-          <Field label="Vehicle">
+          <Field label={t('mileage.columns.vehicle')}>
             <input
               type="text"
               value={draft.vehicle}
@@ -621,7 +647,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               className={inputClass}
             />
           </Field>
-          <Field label="Miles" required>
+          <Field label={t('mileage.fields.miles')} required>
             <input
               type="text"
               inputMode="decimal"
@@ -631,7 +657,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               className={inputClass + ' font-mono'}
             />
           </Field>
-          <Field label="Rate per mile" required>
+          <Field label={t('mileage.fields.ratePerMile')} required>
             <input
               type="text"
               inputMode="decimal"
@@ -641,7 +667,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               className={inputClass + ' font-mono'}
             />
           </Field>
-          <Field label="Start location">
+          <Field label={t('mileage.fields.startLocation')}>
             <input
               type="text"
               value={draft.startLocation}
@@ -650,7 +676,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               className={inputClass}
             />
           </Field>
-          <Field label="End location">
+          <Field label={t('mileage.fields.endLocation')}>
             <input
               type="text"
               value={draft.endLocation}
@@ -660,7 +686,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
             />
           </Field>
         </div>
-        <Field label="Purpose" required>
+        <Field label={t('mileage.fields.purpose')} required>
           <input
             type="text"
             value={draft.purpose}
@@ -675,12 +701,12 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
           <button
             type="button"
             onClick={() => {
-              if (confirm('Delete this trip?')) deleteMut.mutate();
+              if (confirm(t('mileage.edit.deleteConfirm'))) deleteMut.mutate();
             }}
             disabled={deleteMut.isPending}
             className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
           >
-            {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+            {deleteMut.isPending ? t('mileage.edit.deleting') : t('common:delete')}
           </button>
           <div className="flex gap-2">
             <button
@@ -688,7 +714,7 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               onClick={onClose}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
             <button
               type="button"
@@ -696,13 +722,13 @@ function EditTripModal({ trip, onClose }: { trip: TripRow; onClose: () => void }
               disabled={updateMut.isPending || !draft.miles || !draft.purpose.trim()}
               className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {updateMut.isPending ? 'Saving…' : 'Save changes'}
+              {updateMut.isPending ? t('mileage.saving') : t('mileage.edit.saveChanges')}
             </button>
           </div>
         </div>
         {(updateMut.isError || deleteMut.isError) && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatError(updateMut.error ?? deleteMut.error)}
+            {formatError(updateMut.error ?? deleteMut.error, t)}
           </div>
         )}
       </div>
@@ -719,6 +745,7 @@ function PostMileagePanel({
   onDone: () => void;
   loggedCount: number;
 }) {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [fromDate, setFromDate] = useState<string>(firstOfMonth());
@@ -771,16 +798,24 @@ function PostMileagePanel({
 
   return (
     <div className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">Post mileage to GL</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('mileage.post.title')}</h3>
       <p className="text-xs text-slate-500">
-        Sums every <strong>logged</strong> trip in the date range and writes ONE journal entry:
-        DR {expenseAccts.find((a) => a.id === expenseAccountId)?.name ?? 'Vehicle/Mileage Expense'},
-        CR {creditAccts.find((a) => a.id === creditAccountId)?.name ?? 'Owner Reimbursement'}.
-        Each posted trip gets stamped with the JE id and locked from edits.{' '}
-        {loggedCount} trip(s) currently logged.
+        <Trans
+          i18nKey="banking:mileage.post.hint"
+          values={{
+            debit:
+              expenseAccts.find((a) => a.id === expenseAccountId)?.name ??
+              t('mileage.post.defaultExpenseAccount'),
+            credit:
+              creditAccts.find((a) => a.id === creditAccountId)?.name ??
+              t('mileage.post.defaultCreditAccount'),
+          }}
+          components={{ strong: <strong /> }}
+        />{' '}
+        {t('mileage.post.loggedCount', { count: loggedCount })}
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="From date" required>
+        <Field label={t('mileage.fields.fromDate')} required>
           <input
             type="date"
             value={fromDate}
@@ -789,7 +824,7 @@ function PostMileagePanel({
             className={inputClass}
           />
         </Field>
-        <Field label="To date" required>
+        <Field label={t('mileage.fields.toDate')} required>
           <input
             type="date"
             value={toDate}
@@ -798,14 +833,14 @@ function PostMileagePanel({
             className={inputClass}
           />
         </Field>
-        <Field label="Expense account (DR)" required>
+        <Field label={t('mileage.fields.expenseAccount')} required>
           <select
             value={expenseAccountId}
             onChange={(e) => setExpenseAccountId(e.target.value)}
             required
             className={inputClass}
           >
-            <option value="">Pick…</option>
+            <option value="">{t('mileage.post.pick')}</option>
             {expenseAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -813,37 +848,40 @@ function PostMileagePanel({
             ))}
           </select>
         </Field>
-        <Field label="Credit account (CR)" required>
+        <Field label={t('mileage.fields.creditAccount')} required>
           <select
             value={creditAccountId}
             onChange={(e) => setCreditAccountId(e.target.value)}
             required
             className={inputClass}
           >
-            <option value="">Pick…</option>
+            <option value="">{t('mileage.post.pick')}</option>
             {creditAccts.map((a) => (
               <option key={a.id} value={a.id}>
-                {a.code} — {a.name} ({a.type})
+                {a.code} — {a.name} ({t(`accountType.${a.type}`, { defaultValue: a.type })})
               </option>
             ))}
           </select>
         </Field>
       </div>
-      <Field label="Memo (optional)">
+      <Field label={t('mileage.fields.memoOptional')}>
         <input
           type="text"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
           maxLength={500}
-          placeholder={`Mileage reimbursement: ${fromDate} to ${toDate}`}
+          placeholder={t('mileage.placeholders.memo', { from: fromDate, to: toDate })}
           className={inputClass}
         />
       </Field>
 
       {mutation.isSuccess && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ✓ Posted {mutation.data.tripCount} trip(s): {formatMiles(mutation.data.totalMiles)} mi ={' '}
-          {formatUsd(mutation.data.totalDeduction)}.
+          {t('mileage.post.posted', {
+            count: mutation.data.tripCount,
+            miles: formatMiles(mutation.data.totalMiles),
+            amount: formatUsd(mutation.data.totalDeduction),
+          })}
         </div>
       )}
 
@@ -853,7 +891,7 @@ function PostMileagePanel({
           onClick={onDone}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          Close
+          {t('common:close')}
         </button>
         <button
           type="button"
@@ -861,13 +899,13 @@ function PostMileagePanel({
           disabled={!canPost || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mutation.isPending ? 'Posting…' : 'Post mileage'}
+          {mutation.isPending ? t('mileage.post.posting') : t('mileage.post.postButton')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, t)}
         </div>
       )}
     </div>
@@ -876,13 +914,13 @@ function PostMileagePanel({
 
 // --- Bits ------------------------------------------------------------------
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errors.label')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : t('errors.failed');
 }
 
 const inputClass =

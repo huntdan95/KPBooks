@@ -1,1 +1,312 @@
-{}
+{
+  "code": "Code",
+  "totals": "Totals",
+  "saving": "Saving…",
+  "errorLabel": "Error",
+  "tabs": {
+    "trialBalance": "Trial Balance",
+    "pnl": "Profit & Loss",
+    "balanceSheet": "Balance Sheet",
+    "cashFlows": "Cash Flows",
+    "cashFlowForecast": "Cash Flow Forecast",
+    "arAging": "A/R Aging",
+    "apAging": "A/P Aging",
+    "payrollRegister": "Payroll Register",
+    "workersComp": "Workers' Comp",
+    "salesTaxLiability": "Sales Tax Liability",
+    "periodClose": "Close Period",
+    "taxRates": "Tax Rates"
+  },
+  "accountTypes": {
+    "asset": "Asset",
+    "liability": "Liability",
+    "equity": "Equity",
+    "revenue": "Revenue",
+    "expense": "Expense"
+  },
+  "subtypes": {
+    "bank": "bank",
+    "accounts_receivable": "accounts receivable",
+    "other_current_asset": "other current asset",
+    "fixed_asset": "fixed asset",
+    "other_asset": "other asset",
+    "accounts_payable": "accounts payable",
+    "credit_card": "credit card",
+    "other_current_liability": "other current liability",
+    "long_term_liability": "long term liability",
+    "equity": "equity",
+    "retained_earnings": "retained earnings",
+    "income": "income",
+    "other_income": "other income",
+    "expense": "expense",
+    "cost_of_goods_sold": "cost of goods sold",
+    "other_expense": "other expense"
+  },
+  "frequencies": {
+    "weekly": "weekly",
+    "biweekly": "biweekly",
+    "monthly": "monthly",
+    "quarterly": "quarterly",
+    "annually": "annually"
+  },
+  "trialBalance": {
+    "title": "Trial Balance",
+    "loadError": "Failed to load trial balance.",
+    "empty": "No activity through {{asOf}}. Post a journal entry to see balances here.",
+    "balanced": "✓ balanced",
+    "unbalanced": "✗ unbalanced"
+  },
+  "pnl": {
+    "basis": "Basis",
+    "basisAccrual": "Accrual",
+    "basisCashSoon": "Cash (coming soon)",
+    "loadError": "Failed to load P&L.",
+    "revenue": "Revenue",
+    "expenses": "Expenses",
+    "noRevenue": "No revenue in this range.",
+    "noExpenses": "No expenses in this range.",
+    "totalRevenue": "Total revenue",
+    "totalExpenses": "Total expenses",
+    "netIncome": "Net income ({{basis}} basis)",
+    "basisName": {
+      "accrual": "accrual",
+      "cash": "cash"
+    }
+  },
+  "balanceSheet": {
+    "loadError": "Failed to load balance sheet.",
+    "sections": {
+      "assets": {
+        "label": "Assets",
+        "empty": "No asset balances as of this date.",
+        "total": "Total assets"
+      },
+      "liabilities": {
+        "label": "Liabilities",
+        "empty": "No liability balances as of this date.",
+        "total": "Total liabilities"
+      },
+      "equity": {
+        "label": "Equity",
+        "empty": "No equity balances as of this date.",
+        "total": "Total equity"
+      }
+    },
+    "liabilitiesPlusEquity": "Liabilities + Equity",
+    "imbalance": "Imbalance (assets − (liabilities + equity))",
+    "balanced": "✓ Balanced"
+  },
+  "cashFlows": {
+    "method": "Indirect method. Starts with net income for the period, then walks the change in every non-cash balance sheet account (sourced from posted journal entries) to reconcile to the actual change in cash. Bucketed by account subtype: working-capital changes flow to operating; fixed/other assets to investing; long-term liabilities and equity to financing.",
+    "loadError": "Failed to load statement.",
+    "imbalance": "Cash flow ({{netChange}}) does not match the change in bank-account balances ({{endingCash}} − {{beginningCash}} = {{delta}}). Difference: {{difference}}. This usually indicates direct journal entries to retained earnings or other equity accounts that bypass the indirect-method assumptions.",
+    "operating": "Operating activities",
+    "investing": "Investing activities",
+    "financing": "Financing activities",
+    "netIncome": "Net income",
+    "noOperating": "No working-capital adjustments.",
+    "noInvesting": "No investing activity.",
+    "noFinancing": "No financing activity.",
+    "totalOperating": "Net cash from operating activities",
+    "totalInvesting": "Net cash from investing activities",
+    "totalFinancing": "Net cash from financing activities",
+    "beginningCash": "Cash at start of period",
+    "netChange": "Net change in cash",
+    "endingCash": "Cash at end of period"
+  },
+  "aging": {
+    "loadError": "Failed to load aging report.",
+    "current": "Current",
+    "ar": {
+      "counterparty": "Customer",
+      "empty": "No open receivables as of this date."
+    },
+    "ap": {
+      "counterparty": "Vendor",
+      "empty": "No open payables as of this date."
+    }
+  },
+  "salesTax": {
+    "help": "What you owe each tax jurisdiction. <b>Collected</b> = sales tax credited to the “Sales Tax Payable” account on posted invoices. <b>Remitted</b> = debits to the same account (your remittance payments + adjustments). <b>Ending balance</b> = what's still owed as of the To date. Per-rate breakdown comes from non-void invoices billed in the period — fill the columns straight into the state/local remittance form.",
+    "loadError": "Failed to load.",
+    "noAccount": "No account named <code>Sales Tax Payable</code> exists yet. Create one in Chart of Accounts (liability / other_current_liability) before invoices with tax can post. Per-rate breakdown still works below.",
+    "tiles": {
+      "collected": "Collected (period)",
+      "remitted": "Remitted (period)",
+      "remittedHint": "DR to Sales Tax Payable",
+      "netChange": "Net change",
+      "liabilityGrew": "liability grew",
+      "liabilityShrank": "liability shrank",
+      "owed": "Owed as of {{date}}",
+      "owedHint": "cumulative GL balance"
+    },
+    "columns": {
+      "taxRate": "Tax rate",
+      "rate": "Rate",
+      "invoices": "Invoices",
+      "taxableSales": "Taxable sales",
+      "taxCollected": "Tax collected"
+    },
+    "noRates": "No active tax rates in this period.",
+    "inactive": "inactive",
+    "noRateLinked": "no rate linked",
+    "periodTotal": "Period total (invoices billed)",
+    "tip": "<b>Tip:</b> the period total of “Tax collected” should match the GL “Collected” tile above. If they diverge, look for manual journal entries that hit Sales Tax Payable directly — those bypass the per-rate breakdown."
+  },
+  "forecast": {
+    "title": "Cash flow forecast",
+    "description": "Projects cash position forward from today using current bank balances + open A/R due + open A/P due + active recurring templates. Tax on recurring is approximated as subtotal-only (line totals × quantity); the actual JE on fire will include tax. Forecast is an estimate — payments may land early/late, and unforecast cash events (one-off bills, payroll runs, deposits) aren't modeled.",
+    "horizon": "Horizon",
+    "horizonOption": "{{days}} days",
+    "loadError": "Failed to load.",
+    "tiles": {
+      "starting": "Starting balance",
+      "startingHint_one": "{{count}} cash account",
+      "startingHint_other": "{{count}} cash accounts",
+      "netChange": "Net change ({{days}}d)",
+      "netChangeHint": "+{{inflows}} / -{{outflows}}",
+      "ending": "Projected ending",
+      "endingHint": "as of {{date}}",
+      "lowest": "Lowest projected",
+      "lowestDeficit": "cash deficit ahead",
+      "lowestMin": "minimum during window"
+    },
+    "tabs": {
+      "summary": "Weekly summary",
+      "ar": "A/R due ({{count}})",
+      "ap": "A/P due ({{count}})",
+      "recurring": "Recurring ({{count}})"
+    },
+    "breakdown_one": "Starting balance breakdown ({{count}} account)",
+    "breakdown_other": "Starting balance breakdown ({{count}} accounts)",
+    "breakdownColumns": {
+      "type": "Type",
+      "balanceAsOf": "Balance as of {{date}}"
+    },
+    "weekly": {
+      "week": "Week",
+      "weekN": "Week {{n}}",
+      "opening": "Opening",
+      "arDue": "A/R due",
+      "recurringIn": "Recurring in",
+      "apDue": "A/P due",
+      "recurringOut": "Recurring out",
+      "net": "Net",
+      "closing": "Closing",
+      "start": "↑ start"
+    },
+    "ar": {
+      "empty": "No open A/R due in this window.",
+      "due": "Due",
+      "customer": "Customer",
+      "invoiceNumber": "Invoice #",
+      "invoiceDate": "Invoice date",
+      "balanceDue": "Balance due"
+    },
+    "ap": {
+      "empty": "No open A/P due in this window.",
+      "due": "Due",
+      "vendor": "Vendor",
+      "billNumber": "Bill #",
+      "billDate": "Bill date",
+      "balanceDue": "Balance due"
+    },
+    "recurring": {
+      "empty": "No active recurring templates fire in this window.",
+      "type": "Type",
+      "template": "Template",
+      "counterparty": "Counterparty",
+      "frequency": "Frequency",
+      "inflow": "inflow",
+      "outflow": "outflow"
+    }
+  },
+  "journalEntry": {
+    "title": "New Journal Entry",
+    "loadingAccounts": "Loading accounts…",
+    "noAccounts": "No active accounts to post against. Create accounts first.",
+    "referencePlaceholder": "Optional — invoice #, check #, etc.",
+    "lines": "Lines",
+    "addLine": "+ Add line",
+    "lineN": "Line {{n}}",
+    "removeLine": "Remove line",
+    "selectAccount": "— select account —",
+    "side": "Side",
+    "drCr": "Dr {{debit}} / Cr {{credit}}",
+    "balanced": "✓ balanced",
+    "offBy": "off by {{amount}}",
+    "posting": "Posting…",
+    "postEntry": "Post entry",
+    "reset": "Reset",
+    "mustBalance": "Debits must equal credits.",
+    "postError": "Failed to post entry.",
+    "postedEntry": "✓ Posted entry",
+    "postAnother": "Post another"
+  },
+  "accounts": {
+    "title": "Chart of Accounts",
+    "loading": "Loading accounts…",
+    "loadError": "Failed to load accounts.",
+    "count_one": "{{count}} account",
+    "count_other": "{{count}} accounts",
+    "showInactive_one": "show {{count}} inactive",
+    "showInactive_other": "show {{count}} inactive",
+    "hideInactive_one": "hide {{count}} inactive",
+    "hideInactive_other": "hide {{count}} inactive",
+    "newAccount": "+ New account",
+    "inactiveTag": "(inactive)",
+    "newAccountHeading": "New account",
+    "editAccountHeading": "Edit account",
+    "typeLocked": "Type/subtype locked: {{type}} / {{subtype}}",
+    "fields": {
+      "type": "Type",
+      "subtype": "Subtype",
+      "currency": "Currency",
+      "description": "Description"
+    },
+    "namePlaceholder": "Meals & Entertainment",
+    "saveAccount": "Save account",
+    "saveChanges": "Save changes",
+    "active": "Active",
+    "emptyNoAccounts": "No accounts yet. Try creating a new company.",
+    "emptyNoActive": "No active accounts. Toggle “show inactive” above.",
+    "saveError": "Failed to save."
+  },
+  "periodClose": {
+    "title": "Period close",
+    "description": "Lock the books through a specific date so accidental late entries can't disturb a finalised P&L. Posting to dates on or before the close date is rejected at the database layer (the same guard catches API attempts and direct SQL).",
+    "loadError": "Failed to load company.",
+    "currentState": "Current state",
+    "closedThrough": "Books closed through",
+    "booksOpen": "Books are open",
+    "noCloseDate": "— no close date set",
+    "reopen": "Reopen books",
+    "moveCloseDate": "Move close date",
+    "closeThrough": "Close the books through",
+    "updateCloseDate": "Update close date",
+    "closeBooks": "Close books",
+    "tip": "Typical month-end: pick the last day of the month after you've reviewed and reconciled. Reopening unlocks all closed periods at once; there's no per-month granularity in v1.",
+    "confirmClose": "Close the books through {{date}}? Entries on or before this date will be rejected.",
+    "confirmReopen": "Reopen the books? Anyone with permission will be able to post entries to previously-closed periods.",
+    "updateError": "Failed to update."
+  },
+  "activity": {
+    "title": "Activity log",
+    "description": "Append-only audit trail. Every posted journal entry (invoices, bills, payments, payroll, depreciation, disposals, manual entries) writes a row here. Newest first. Rows can never be edited or deleted — DB triggers enforce that.",
+    "action": "Action",
+    "actionPlaceholder": "e.g. posted_entry",
+    "entityType": "Entity type",
+    "entityTypePlaceholder": "e.g. journal_entry",
+    "loadError": "Failed to load.",
+    "empty": "No activity in this range.",
+    "columns": {
+      "when": "When",
+      "action": "Action",
+      "entity": "Entity",
+      "summary": "Summary",
+      "actor": "Actor"
+    },
+    "system": "system",
+    "limitNote": "Showing up to 100 rows per query. Tighten the date range or add an action filter to narrow further."
+  }
+}

@@ -1,1 +1,354 @@
-{}
+{
+  "list": {
+    "title": "Banking",
+    "subtitle": "Import a bank or credit-card CSV statement, categorize each line (Claude can suggest), then reconcile against the bank's monthly statement.",
+    "tabs": {
+      "transactions": "Transactions",
+      "reconcile": "Reconcile",
+      "rules": "Rules"
+    },
+    "bankAccount": "Bank account",
+    "selectPlaceholder": "— select —",
+    "pickBankAccountFirst": "Pick a bank account first.",
+    "importing": "Importing…",
+    "importCsv": "Import CSV",
+    "fileTooLarge": "File is {{size}} MB; limit is 2 MB.",
+    "imported_one": "Imported {{count}} new transaction.",
+    "imported_other": "Imported {{count}} new transactions.",
+    "skippedDuplicates_one": " Skipped {{count}} duplicate.",
+    "skippedDuplicates_other": " Skipped {{count}} duplicates.",
+    "preCategorized_one": " {{count}} pre-categorized by rules.",
+    "preCategorized_other": " {{count}} pre-categorized by rules.",
+    "parserWarnings_one": "{{count}} parser warning",
+    "parserWarnings_other": "{{count}} parser warnings",
+    "csvHint": "Most bank CSV exports work out of the box (Wells Fargo, Chase, BofA, Capital One). The parser auto-detects Date / Description / Amount or Debit+Credit columns.",
+    "statusAll": "All",
+    "askingClaude": "Asking Claude…",
+    "suggestSelected": "Suggest categories ({{n}} selected)",
+    "suggestNext": "Suggest categories for next {{n}} unmatched",
+    "aiUnavailable": "AI categorization requires the ANTHROPIC_API_KEY secret to be set in Cloud Run.",
+    "suggested": "✓ Suggested {{n}}",
+    "suggestFailed": "; failed {{n}}",
+    "suggestError": " ({{error}})",
+    "aiError": "AI: {{error}}",
+    "empty": "No transactions match this filter.",
+    "columns": {
+      "description": "Description",
+      "suggestedAccount": "Suggested account"
+    },
+    "selectAndPost": "— select & post —",
+    "post": "Post",
+    "ignore": "Ignore",
+    "postFailed": "Post failed: {{error}}",
+    "ignoreFailed": "Ignore failed: {{error}}"
+  },
+  "rules": {
+    "title": "Bank rules",
+    "subtitle": "Auto-categorize bank lines on import. The first matching rule (lowest priority number) wins; AI categorize only runs for lines no rule matched.",
+    "newRule": "+ New rule",
+    "formTitleCreate": "New rule",
+    "formTitleEdit": "Edit rule",
+    "fields": {
+      "priority": "Priority",
+      "matchType": "Match type",
+      "matchValue": "Match value",
+      "amountSign": "Amount sign",
+      "bankAccountScope": "Bank account scope",
+      "categorizeAs": "Categorize as",
+      "memoOverride": "Memo override (optional)"
+    },
+    "placeholders": {
+      "name": "Verizon -> Telephone",
+      "matchValue": "verizon",
+      "memoOverride": "Leave blank to keep CSV description"
+    },
+    "allBankAccounts": "All bank accounts",
+    "noEligibleAccounts": "No eligible accounts",
+    "saving": "Saving…",
+    "saveRule": "Save rule",
+    "loadFailed": "Failed to load rules.",
+    "empty": "No rules yet. Create one above; it will run on every CSV import going forward.",
+    "columns": {
+      "match": "Match",
+      "sign": "Sign",
+      "categorizeAs": "Categorize as",
+      "hits": "Hits",
+      "active": "Active"
+    },
+    "missingAccount": "missing account",
+    "deleteConfirm": "Delete rule \"{{name}}\"?"
+  },
+  "matchType": {
+    "contains": "Contains",
+    "starts_with": "Starts with",
+    "ends_with": "Ends with",
+    "exact": "Exact",
+    "regex": "Regex"
+  },
+  "amountSign": {
+    "any": "Any",
+    "positive": "Deposits only",
+    "negative": "Withdrawals only"
+  },
+  "reconcile": {
+    "title": "Reconcile",
+    "subtitle": "Match posted bank transactions against the bank's statement at month-end. When the cleared total equals statement balance minus beginning balance, finalise to lock in the snapshot.",
+    "bankAccount": "Bank account",
+    "selectPlaceholder": "— select —",
+    "inProgressLabel": "In-progress reconciliation:",
+    "startTitle": "Start reconciliation",
+    "statementDate": "Statement date",
+    "endingBalance": "Ending balance",
+    "starting": "Starting…",
+    "start": "Start",
+    "past_one": "Past reconciliation ({{count}})",
+    "past_other": "Past reconciliations ({{count}})",
+    "view": "View",
+    "completedTitle": "Completed reconciliation",
+    "inProgressTitle": "In progress",
+    "headerMeta": "{{date}} · ending {{balance}}",
+    "stats": {
+      "beginning": "Beginning",
+      "statement": "Statement",
+      "cleared": "Cleared",
+      "difference": "Difference"
+    },
+    "finalising": "Finalising…",
+    "finalise": "Finalise",
+    "offBy": "Off by {{amount}}",
+    "locked": "✓ Locked",
+    "reopenConfirm": "Reopen this reconciliation? Cleared rows will become editable again.",
+    "reopen": "Reopen",
+    "columnDescription": "Description",
+    "noPostedTransactions": "No posted transactions on or before {{date}}."
+  },
+  "imports": {
+    "title": "Import from QuickBooks",
+    "subtitle": "Upload an .iif export to bring over your chart of accounts, customers, vendors, and historical transactions. Transactions post to the ledger as journal entries by default — do NOT also post an opening journal entry, or every balance will be double-counted. To bring over lists only, untick “Import transactions” in the preview and post an opening journal entry instead.",
+    "fileEmpty": "File is empty.",
+    "fileTooLarge": "File is {{size}} MB. The import accepts up to 12 MB — export from QuickBooks in date-range chunks (File > Utilities > Export) and import each one. Re-importing overlapping ranges is safe for unchanged transactions: already-posted transactions are skipped as duplicates. (A transaction edited in QuickBooks since an earlier import posts again — the import warns when it detects that.)",
+    "dropHint": "Drop a .iif file or click below to choose one.",
+    "parsing": "Parsing…",
+    "chooseFile": "Choose file",
+    "previewFrom": "Preview from {{fileName}}",
+    "counts": "{{accounts}} accounts · {{customers}} customers · {{vendors}} vendors · {{transactions}} postable transactions",
+    "nonPosting": " · {{n}} non-posting (estimates / orders)",
+    "excludedCount": "{{n}} excluded (data errors — see warnings)",
+    "missingToCreate": " · {{n}} missing accounts to auto-create",
+    "unrecognized": "Skipped (not yet supported): {{sections}}",
+    "parserWarnings_one": "{{count}} parser warning",
+    "parserWarnings_other": "{{count}} parser warnings",
+    "andMore": "… and {{n}} more",
+    "sections": {
+      "accounts": "Chart of Accounts",
+      "customers": "Customers",
+      "vendors": "Vendors"
+    },
+    "selectedOf": "({{included}} of {{total}} selected)",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "columns": {
+      "code": "Code",
+      "type": "Type",
+      "qbType": "QB type",
+      "displayName": "Display name",
+      "email": "Email",
+      "phone": "Phone",
+      "terms": "Terms",
+      "subtype": "Subtype",
+      "usedIn": "Used in",
+      "mapsTo": "Maps to",
+      "count": "Count"
+    },
+    "inactiveInQuickBooks": "inactive in QuickBooks",
+    "netTerms": "Net {{days}}",
+    "missing": {
+      "title": "Missing accounts referenced by transactions",
+      "hint": "These account names appear in the file's transactions but aren't in your chart of accounts and aren't being created from this file's account section. We've guessed a type/subtype from each name — review and edit, then confirm. Auto-created accounts are committed before transactions post, so the JEs land cleanly.",
+      "occurrences_one": "{{count}} txn",
+      "occurrences_other": "{{count}} txns"
+    },
+    "transactions": {
+      "title": "Transactions",
+      "postableCount": "({{n}} postable)",
+      "include": "Import transactions",
+      "excludedSuffix": " — {{excluded}} of {{total}} excluded (data error; see warnings)",
+      "hint": "Each posting transaction becomes one journal_entry. Sign rule: positive amount = debit, negative = credit. Transactions whose accounts aren't in the chart of accounts after the lists step are skipped and reported."
+    },
+    "importing": "Importing…",
+    "confirmImport": "Confirm import",
+    "done": {
+      "title": "Import complete.",
+      "accountsCreated": "{{n}} accounts created",
+      "customersCreated": "{{n}} customers created",
+      "vendorsCreated": "{{n}} vendors created",
+      "skippedSuffix": ", {{n}} skipped",
+      "transactionsPosted": "{{n}} transactions posted",
+      "paymentsLinked": ", {{n}} linked to vendor/customer payment records (1099s, statements)",
+      "duplicatesSkipped": ", {{n}} already imported (duplicates skipped)",
+      "paymentsBackfilled": ", {{n}} payment record(s) backfilled for previously imported transactions",
+      "voided": ", {{n}} voided (0.00 — nothing to post)"
+    },
+    "notes": {
+      "importNotes_one": "{{count}} import note:",
+      "importNotes_other": "{{count}} import notes:",
+      "listRowsSkipped_one": "{{count}} list row skipped:",
+      "listRowsSkipped_other": "{{count}} list rows skipped:",
+      "transactionsSkipped_one": "{{count}} transaction skipped:",
+      "transactionsSkipped_other": "{{count}} transactions skipped:",
+      "transactionNotes_one": "{{count}} transaction note:",
+      "transactionNotes_other": "{{count}} transaction notes:"
+    },
+    "atRow": "at row {{row}}",
+    "conflictKind": {
+      "account": "account",
+      "customer": "customer",
+      "vendor": "vendor"
+    },
+    "excluded": {
+      "title_one": "{{count}} transaction block from the file was NOT imported (data errors found before posting):",
+      "title_other": "{{count}} transaction blocks from the file were NOT imported (data errors found before posting):",
+      "hint": "Fix these rows in the file and re-import it — already-posted transactions are skipped as duplicates (as long as they weren't edited in QuickBooks since the last import; an edited transaction posts again as a new entry)."
+    },
+    "unlinked": {
+      "title_one": "{{count}} payee posted to the ledger only — no vendor/customer payment record was written:",
+      "title_other": "{{count}} payees posted to the ledger only — no vendor/customer payment record was written:",
+      "row_one": "{{count}} transaction totaling {{total}}",
+      "row_other": "{{count}} transactions totaling {{total}}",
+      "hint": "These names didn't match any vendor or customer (check spelling/punctuation, QuickBooks “Other Names”, or employees). Their amounts won't appear in 1099 totals, payroll registers, or statements until matching payment records exist. To fix: create the missing vendor/customer (or correct its spelling) and re-import this file — the transactions are skipped as duplicates and their payment records are backfilled automatically."
+    },
+    "importAnother": "Import another file",
+    "detailFallbackPath": "request",
+    "detailFallbackMessage": "invalid",
+    "andMoreDetails": " (+{{n}} more)"
+  },
+  "mileage": {
+    "title": "Mileage",
+    "subtitle": "Log business trips with the IRS standard mileage rate, then batch-post a date range to a journal entry (DR Vehicle/Mileage Expense, CR Owner Reimbursement). The rate at log time is locked on the trip — IRS rate changes won't silently shift past deductions.",
+    "postDisabledTitle": "No logged trips to post",
+    "postEnabledTitle": "Post a date range to a JE",
+    "postMileage": "Post mileage…",
+    "newTrip": "New trip",
+    "tiles": {
+      "loggedTrips": "Logged trips",
+      "loggedTripsHint": "ready to post",
+      "totalMiles": "Total miles (logged)",
+      "totalMilesHint": "across logged trips",
+      "totalDeduction": "Total deduction",
+      "totalDeductionHint": "at locked rates"
+    },
+    "loadFailed": "Failed to load.",
+    "empty": {
+      "title": "No trips logged yet",
+      "description": "Log your first business trip — the form pre-fills with the current IRS standard mileage rate. Posting batches all logged trips in a date range into one journal entry."
+    },
+    "tables": {
+      "logged": "Logged",
+      "posted": "Posted",
+      "heading": "{{title}} ({{n}})"
+    },
+    "columns": {
+      "vehicle": "Vehicle",
+      "trip": "Trip",
+      "purpose": "Purpose",
+      "miles": "Miles",
+      "rate": "Rate",
+      "deduction": "Deduction"
+    },
+    "tripStatus": {
+      "logged": "logged",
+      "posted": "posted"
+    },
+    "fields": {
+      "tripDate": "Trip date",
+      "ratePerMileDefault": "Rate per mile (default {{rate}})",
+      "ratePerMile": "Rate per mile",
+      "startLocation": "Start location",
+      "endLocation": "End location",
+      "purpose": "Purpose",
+      "startOdometer": "Start odometer (optional)",
+      "endOdometer": "End odometer (optional)",
+      "milesAuto": "Miles (auto: {{miles}})",
+      "miles": "Miles",
+      "fromDate": "From date",
+      "toDate": "To date",
+      "expenseAccount": "Expense account (DR)",
+      "creditAccount": "Credit account (CR)",
+      "memoOptional": "Memo (optional)"
+    },
+    "placeholders": {
+      "startLocation": "Office",
+      "endLocation": "Client site",
+      "purpose": "Q3 review meeting",
+      "memo": "Mileage reimbursement: {{from}} to {{to}}"
+    },
+    "preview": {
+      "label": "Deduction:",
+      "formula": "{{miles}} mi × {{rate}}",
+      "empty": "Fill in miles + rate to preview the deduction."
+    },
+    "saving": "Saving…",
+    "saveTrip": "Save trip",
+    "edit": {
+      "title": "Edit trip",
+      "deleteConfirm": "Delete this trip?",
+      "deleting": "Deleting…",
+      "saveChanges": "Save changes"
+    },
+    "post": {
+      "title": "Post mileage to GL",
+      "hint": "Sums every <strong>logged</strong> trip in the date range and writes ONE journal entry: DR {{debit}}, CR {{credit}}. Each posted trip gets stamped with the JE id and locked from edits.",
+      "loggedCount_one": "{{count}} trip currently logged.",
+      "loggedCount_other": "{{count}} trips currently logged.",
+      "defaultExpenseAccount": "Vehicle/Mileage Expense",
+      "defaultCreditAccount": "Owner Reimbursement",
+      "pick": "Pick…",
+      "posted_one": "✓ Posted {{count}} trip: {{miles}} mi = {{amount}}.",
+      "posted_other": "✓ Posted {{count}} trips: {{miles}} mi = {{amount}}.",
+      "posting": "Posting…",
+      "postButton": "Post mileage"
+    }
+  },
+  "txnStatus": {
+    "unmatched": "Unmatched",
+    "suggested": "Suggested",
+    "posted": "Posted",
+    "ignored": "Ignored"
+  },
+  "confidence": {
+    "high": "high",
+    "medium": "medium",
+    "low": "low"
+  },
+  "accountType": {
+    "asset": "asset",
+    "liability": "liability",
+    "equity": "equity",
+    "revenue": "revenue",
+    "expense": "expense"
+  },
+  "accountSubtype": {
+    "bank": "bank",
+    "accounts_receivable": "accounts receivable",
+    "other_current_asset": "other current asset",
+    "fixed_asset": "fixed asset",
+    "other_asset": "other asset",
+    "accounts_payable": "accounts payable",
+    "credit_card": "credit card",
+    "other_current_liability": "other current liability",
+    "long_term_liability": "long term liability",
+    "equity": "equity",
+    "retained_earnings": "retained earnings",
+    "income": "income",
+    "other_income": "other income",
+    "expense": "expense",
+    "cost_of_goods_sold": "cost of goods sold",
+    "other_expense": "other expense"
+  },
+  "errors": {
+    "label": "Error",
+    "operationFailed": "Operation failed.",
+    "saveFailed": "Failed to save.",
+    "failed": "Failed."
+  }
+}

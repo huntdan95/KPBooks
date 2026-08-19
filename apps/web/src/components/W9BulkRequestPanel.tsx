@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -33,18 +34,9 @@ function buildUploadUrl(token: string): string {
   return `${window.location.origin}/w9-upload/${token}`;
 }
 
-function buildMailToHref(token: CreatedToken, companyName: string | null): string {
-  const url = buildUploadUrl(token.token);
-  const subject = encodeURIComponent(`W-9 needed for ${companyName ?? 'your work'}`);
-  const body = encodeURIComponent(
-    `Hi ${token.vendorName},\n\n` +
-      `For year-end 1099 reporting we need a current Form W-9 on file. ` +
-      `Please upload yours via the secure link below — no account needed:\n\n` +
-      `${url}\n\n` +
-      `Thanks!`,
-  );
+function buildMailToHref(token: CreatedToken, subject: string, body: string): string {
   const to = token.emailTo ? encodeURIComponent(token.emailTo) : '';
-  return `mailto:${to}?subject=${subject}&body=${body}`;
+  return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 export function W9BulkRequestPanel({
@@ -54,6 +46,7 @@ export function W9BulkRequestPanel({
   year: number;
   companyName: string | null;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -111,7 +104,7 @@ export function W9BulkRequestPanel({
         onClick={() => setOpen(true)}
         className="rounded-md border border-violet-300 bg-violet-50 px-3 py-1.5 text-sm font-medium text-violet-800 hover:bg-violet-100"
       >
-        Request W-9s in bulk
+        {t('w9Bulk.openCta')}
       </button>
     );
   }
@@ -120,14 +113,8 @@ export function W9BulkRequestPanel({
     <div className="rounded-md border border-violet-200 bg-violet-50/50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">
-            Bulk W-9 reminder for {year}
-          </h3>
-          <p className="text-xs text-slate-600">
-            Generates a single-use upload link for each contractor paid $600+ in {year} who has
-            no W-9 on file. The contractor opens the link in any browser, uploads their W-9, and
-            the document goes straight onto their Worker page. No login required for them.
-          </p>
+          <h3 className="text-sm font-semibold text-slate-900">{t('w9Bulk.title', { year })}</h3>
+          <p className="text-xs text-slate-600">{t('w9Bulk.description', { year })}</p>
         </div>
         <button
           type="button"
@@ -139,22 +126,22 @@ export function W9BulkRequestPanel({
           }}
           className="text-xs text-slate-500 underline hover:text-slate-700"
         >
-          close
+          {t('w9Bulk.close')}
         </button>
       </div>
 
       {eligibleQ.isLoading && (
-        <p className="mt-3 text-sm text-slate-500">Loading eligible contractors…</p>
+        <p className="mt-3 text-sm text-slate-500">{t('w9Bulk.loadingEligible')}</p>
       )}
       {eligibleQ.isError && (
         <p className="mt-3 text-sm text-rose-600">
-          {eligibleQ.error instanceof Error ? eligibleQ.error.message : 'Failed to load.'}
+          {eligibleQ.error instanceof Error ? eligibleQ.error.message : t('w9Bulk.loadFailed')}
         </p>
       )}
 
       {!eligibleQ.isLoading && eligible.length === 0 && (
         <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ✓ Every {year} 1099 contractor over $600 already has a W-9 on file. Nothing to do.
+          {t('w9Bulk.allCovered', { year })}
         </div>
       )}
 
@@ -172,10 +159,16 @@ export function W9BulkRequestPanel({
                       className="h-4 w-4 rounded border-slate-300"
                     />
                   </th>
-                  <th className="px-3 py-2 text-left font-medium">Contractor</th>
-                  <th className="px-3 py-2 text-left font-medium">Email on file</th>
-                  <th className="px-3 py-2 text-right font-medium">Paid {year}</th>
-                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('w9Bulk.table.contractor')}
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('w9Bulk.table.emailOnFile')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('w9Bulk.table.paid', { year })}
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">{t('w9Bulk.table.status')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -194,7 +187,7 @@ export function W9BulkRequestPanel({
                       <td className="px-3 py-2 text-slate-900">{e.displayName}</td>
                       <td className="px-3 py-2 text-xs text-slate-600">
                         {e.email ?? (
-                          <span className="text-rose-600">missing — add on Worker page</span>
+                          <span className="text-rose-600">{t('w9Bulk.emailMissingLong')}</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-slate-900">
@@ -203,10 +196,10 @@ export function W9BulkRequestPanel({
                       <td className="px-3 py-2 text-xs">
                         {e.hasActiveToken ? (
                           <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700 ring-1 ring-amber-600/20">
-                            existing link active
+                            {t('w9Bulk.linkActive')}
                           </span>
                         ) : (
-                          <span className="text-slate-500">no link yet</span>
+                          <span className="text-slate-500">{t('w9Bulk.noLinkYet')}</span>
                         )}
                       </td>
                     </tr>
@@ -224,24 +217,25 @@ export function W9BulkRequestPanel({
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               {generateMutation.isPending
-                ? 'Generating links…'
-                : `Generate ${selected.size === 0 ? 'all' : selected.size} link${
-                    selected.size === 1 ? '' : 's'
-                  }`}
+                ? t('w9Bulk.generatingLinks')
+                : selected.size === 0
+                  ? t('w9Bulk.generateAll')
+                  : t('w9Bulk.generateSelected', { count: selected.size })}
             </button>
             <p className="text-xs text-slate-500">
               {selected.size === 0
-                ? `Will mint links for all ${eligible.length} contractor${
-                    eligible.length === 1 ? '' : 's'
-                  }.`
-                : `Selected: ${selected.size} of ${eligible.length}.`}{' '}
-              Re-uses any active link rather than creating duplicates.
+                ? t('w9Bulk.willMintAll', { count: eligible.length })
+                : t('w9Bulk.selectedOf', { count: selected.size, total: eligible.length })}{' '}
+              {t('w9Bulk.reuseHint')}
             </p>
           </div>
 
           {generateMutation.isError && (
             <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(generateMutation.error)}
+              {formatError(generateMutation.error, {
+                error: t('errors.label'),
+                fallback: t('errors.failed'),
+              })}
             </div>
           )}
         </>
@@ -250,36 +244,46 @@ export function W9BulkRequestPanel({
       {generated && (
         <div className="mt-3 space-y-3">
           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-            ✓ Generated {generated.length} upload link{generated.length === 1 ? '' : 's'}. Click
-            <strong> Email </strong> on each row to compose a pre-filled message in your default
-            mail client.
+            <Trans
+              t={t}
+              i18nKey="w9Bulk.generatedBanner"
+              count={generated.length}
+              values={{ count: generated.length }}
+              components={{ strong: <strong /> }}
+            />
           </div>
 
           <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Contractor</th>
-                  <th className="px-3 py-2 text-left font-medium">Email</th>
-                  <th className="px-3 py-2 text-left font-medium">Upload URL</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('w9Bulk.table.contractor')}
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">{t('w9Bulk.table.email')}</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('w9Bulk.table.uploadUrl')}
+                  </th>
                   <th className="px-3 py-2 text-right font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {generated.map((t) => {
-                  const url = buildUploadUrl(t.token);
+                {generated.map((row) => {
+                  const url = buildUploadUrl(row.token);
                   return (
-                    <tr key={t.id}>
+                    <tr key={row.id}>
                       <td className="px-3 py-2 text-slate-900">
-                        {t.vendorName}
-                        {t.reused && (
+                        {row.vendorName}
+                        {row.reused && (
                           <span className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 ring-1 ring-amber-600/20">
-                            reused
+                            {t('w9Bulk.reusedBadge')}
                           </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-xs text-slate-600">
-                        {t.emailTo ?? <span className="text-rose-600">missing</span>}
+                        {row.emailTo ?? (
+                          <span className="text-rose-600">{t('w9Bulk.emailMissing')}</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 font-mono text-[11px]">
                         <span className="block truncate" title={url}>
@@ -293,13 +297,19 @@ export function W9BulkRequestPanel({
                             onClick={() => navigator.clipboard.writeText(url)}
                             className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                           >
-                            Copy
+                            {t('w9Bulk.copy')}
                           </button>
                           <a
-                            href={buildMailToHref(t, companyName)}
+                            href={buildMailToHref(
+                              row,
+                              t('w9Email.subject', {
+                                company: companyName ?? t('w9Email.fallbackCompany'),
+                              }),
+                              t('w9Email.bodyShort', { vendor: row.vendorName, url }),
+                            )}
                             className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800"
                           >
-                            Email
+                            {t('w9Bulk.emailCta')}
                           </a>
                         </div>
                       </td>
@@ -321,14 +331,14 @@ export function W9BulkRequestPanel({
               }}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
             >
-              Refresh eligibility
+              {t('w9Bulk.refreshEligibility')}
             </button>
             <button
               type="button"
               onClick={() => setOpen(false)}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
             >
-              Close
+              {t('common:close')}
             </button>
           </div>
         </div>
@@ -337,11 +347,11 @@ export function W9BulkRequestPanel({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

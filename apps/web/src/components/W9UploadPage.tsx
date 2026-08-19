@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { getApiBase } from '../lib/api';
 
 /**
@@ -25,36 +26,31 @@ interface TokenInfo {
   expiresAt?: string | null;
 }
 
-const REASON_MESSAGE: Record<NonNullable<TokenInfo['reason']>, string> = {
-  not_found: "This upload link doesn't look valid. Double-check the URL or ask whoever sent it for a fresh link.",
-  expired: "This upload link has expired. Ask whoever sent it for a fresh link — it'll arrive in your email shortly.",
-  already_used: 'This link has already been used to upload a W-9. If you need to update it, reach out for a new link.',
-};
-
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function fileToBase64(file: File): Promise<string> {
+function fileToBase64(file: File, readErrorMessage: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error('Failed to read file'));
+        reject(new Error(readErrorMessage));
         return;
       }
       const idx = result.indexOf(',');
       resolve(idx >= 0 ? result.slice(idx + 1) : result);
     };
-    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.onerror = () => reject(new Error(readErrorMessage));
     reader.readAsDataURL(file);
   });
 }
 
 export function W9UploadPage({ token }: { token: string }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const [info, setInfo] = useState<TokenInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -76,13 +72,15 @@ export function W9UploadPage({ token }: { token: string }) {
           if (body && typeof body === 'object' && 'reason' in body) {
             setInfo(body as TokenInfo);
           } else {
-            setLoadError(`Failed to load (HTTP ${res.status}).`);
+            setLoadError(t('w9Upload.loadFailedHttp', { status: res.status }));
           }
         } else {
           setInfo(body as TokenInfo);
         }
       } catch (err) {
-        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Network error.');
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : t('w9Upload.networkError'));
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -90,26 +88,27 @@ export function W9UploadPage({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) {
-      setUploadError('Pick a file first.');
+      setUploadError(t('w9Upload.pickFileFirst'));
       return;
     }
     if (file.size === 0) {
-      setUploadError('That file looks empty.');
+      setUploadError(t('w9Upload.emptyFile'));
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      setUploadError(`File is ${formatBytes(file.size)} — max is 10 MB.`);
+      setUploadError(t('w9Upload.tooLarge', { size: formatBytes(file.size) }));
       return;
     }
     setUploadError(null);
     setUploading(true);
     try {
-      const fileBase64 = await fileToBase64(file);
+      const fileBase64 = await fileToBase64(file, t('w9Upload.readFailed'));
       const res = await fetch(`${getApiBase()}/w9-upload/${token}/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -124,12 +123,12 @@ export function W9UploadPage({ token }: { token: string }) {
         const msg =
           (body && typeof body === 'object' && 'message' in body
             ? String((body as { message?: string }).message)
-            : '') || `Upload failed (HTTP ${res.status}).`;
+            : '') || t('w9Upload.uploadFailedHttp', { status: res.status });
         throw new Error(msg);
       }
       setDone(true);
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed.');
+      setUploadError(err instanceof Error ? err.message : t('w9Upload.uploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -140,12 +139,12 @@ export function W9UploadPage({ token }: { token: string }) {
       <div className="mx-auto max-w-xl space-y-6">
         <div className="text-center">
           <div className="text-2xl font-semibold tracking-tight text-slate-900">KPBooks</div>
-          <div className="text-sm text-slate-500">Secure W-9 upload</div>
+          <div className="text-sm text-slate-500">{t('w9Upload.header')}</div>
         </div>
 
         {loading && (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-            Loading…
+            {t('common:loading')}
           </div>
         )}
 
@@ -157,8 +156,8 @@ export function W9UploadPage({ token }: { token: string }) {
 
         {!loading && info && !info.valid && info.reason && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
-            <h2 className="text-base font-semibold">Link unavailable</h2>
-            <p className="mt-2">{REASON_MESSAGE[info.reason]}</p>
+            <h2 className="text-base font-semibold">{t('w9Upload.linkUnavailable')}</h2>
+            <p className="mt-2">{t(`w9Upload.reason.${info.reason}`)}</p>
           </div>
         )}
 
@@ -166,17 +165,24 @@ export function W9UploadPage({ token }: { token: string }) {
           <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
             <div>
               <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-                Upload your Form W-9
+                {t('w9Upload.title')}
               </h1>
               <p className="mt-1 text-sm text-slate-600">
-                For <strong>{info.vendorName}</strong>, working with{' '}
-                <strong>{info.companyName}</strong>. They need this on file for year-end 1099
-                reporting (IRS requirement for any contractor paid $600+/year).
+                <Trans
+                  t={t}
+                  i18nKey="w9Upload.intro"
+                  values={{ vendor: info.vendorName, company: info.companyName }}
+                  components={{ strong: <strong /> }}
+                />
               </p>
               {info.expiresAt && (
                 <p className="mt-2 text-xs text-slate-500">
-                  This link expires on{' '}
-                  <strong>{new Date(info.expiresAt).toLocaleDateString()}</strong>.
+                  <Trans
+                    t={t}
+                    i18nKey="w9Upload.expires"
+                    values={{ date: new Date(info.expiresAt).toLocaleDateString() }}
+                    components={{ strong: <strong /> }}
+                  />
                 </p>
               )}
             </div>
@@ -184,10 +190,10 @@ export function W9UploadPage({ token }: { token: string }) {
             <form onSubmit={onSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700">
-                  W-9 file (PDF or photo)
+                  {t('w9Upload.fileLabel')}
                 </label>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Don't have one yet? Download a blank Form W-9 from{' '}
+                  {t('w9Upload.blankFormPre')}{' '}
                   <a
                     href="https://www.irs.gov/pub/irs-pdf/fw9.pdf"
                     target="_blank"
@@ -196,7 +202,7 @@ export function W9UploadPage({ token }: { token: string }) {
                   >
                     irs.gov/pub/irs-pdf/fw9.pdf
                   </a>
-                  , fill it in, sign, then come back here.
+                  {t('w9Upload.blankFormPost')}
                 </p>
                 <input
                   type="file"
@@ -206,7 +212,12 @@ export function W9UploadPage({ token }: { token: string }) {
                 />
                 {file && (
                   <p className="mt-1 text-xs text-slate-500">
-                    Selected: <strong>{file.name}</strong> · {formatBytes(file.size)}
+                    <Trans
+                      t={t}
+                      i18nKey="w9Upload.selectedFile"
+                      values={{ name: file.name, size: formatBytes(file.size) }}
+                      components={{ strong: <strong /> }}
+                    />
                   </p>
                 )}
               </div>
@@ -216,7 +227,7 @@ export function W9UploadPage({ token }: { token: string }) {
                 disabled={!file || uploading}
                 className="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {uploading ? 'Uploading…' : 'Upload W-9'}
+                {uploading ? t('w9Upload.uploading') : t('w9Upload.uploadCta')}
               </button>
 
               {uploadError && (
@@ -226,9 +237,12 @@ export function W9UploadPage({ token }: { token: string }) {
               )}
 
               <p className="text-xs text-slate-500">
-                Your file is sent over an encrypted connection and stored only on{' '}
-                <strong>{info.companyName}</strong>'s account. This link is single-use — once you
-                upload, it can't be used again.
+                <Trans
+                  t={t}
+                  i18nKey="w9Upload.privacy"
+                  values={{ company: info.companyName }}
+                  components={{ strong: <strong /> }}
+                />
               </p>
             </form>
           </div>
@@ -236,16 +250,19 @@ export function W9UploadPage({ token }: { token: string }) {
 
         {!loading && info && info.valid && done && (
           <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-900">
-            <h2 className="text-base font-semibold">✓ Thanks — your W-9 is uploaded.</h2>
+            <h2 className="text-base font-semibold">{t('w9Upload.thanks')}</h2>
             <p>
-              <strong>{info.companyName}</strong> has it on file now. You can close this tab.
+              <Trans
+                t={t}
+                i18nKey="w9Upload.onFileNow"
+                values={{ company: info.companyName }}
+                components={{ strong: <strong /> }}
+              />
             </p>
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-400">
-          Powered by KPBooks · An accounting platform for accountants and small businesses
-        </p>
+        <p className="text-center text-xs text-slate-400">{t('w9Upload.poweredBy')}</p>
       </div>
     </div>
   );

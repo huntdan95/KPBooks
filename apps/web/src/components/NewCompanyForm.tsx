@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -25,6 +26,7 @@ export function NewCompanyForm({
   onCreated?: (id: string) => void;
   autoFocus?: boolean;
 }) {
+  const { t } = useTranslation('shell');
   const [name, setName] = useState('');
   const [legalName, setLegalName] = useState('');
   const [ein, setEin] = useState('');
@@ -57,12 +59,12 @@ export function NewCompanyForm({
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <label className="block space-y-1">
-        <span className="text-sm font-medium text-slate-700">Display name *</span>
+        <span className="text-sm font-medium text-slate-700">{t('companyForm.displayName')}</span>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Acme Bookkeeping LLC"
+          placeholder={t('companyForm.displayNamePlaceholder')}
           autoFocus={autoFocus}
           required
           maxLength={120}
@@ -70,31 +72,30 @@ export function NewCompanyForm({
         />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm font-medium text-slate-700">Legal name (optional)</span>
+        <span className="text-sm font-medium text-slate-700">{t('companyForm.legalName')}</span>
         <input
           type="text"
           value={legalName}
           onChange={(e) => setLegalName(e.target.value)}
-          placeholder="Acme Bookkeeping, LLC"
+          placeholder={t('companyForm.legalNamePlaceholder')}
           maxLength={160}
           className={inputClass}
         />
       </label>
       <label className="block space-y-1">
-        <span className="text-sm font-medium text-slate-700">EIN (optional)</span>
+        <span className="text-sm font-medium text-slate-700">{t('companyForm.ein')}</span>
         <input
           type="text"
           value={ein}
           onChange={(e) => setEin(e.target.value)}
-          placeholder="12-3456789"
+          placeholder={t('companyForm.einPlaceholder')}
           maxLength={20}
           className={inputClass + ' font-mono'}
         />
       </label>
 
       <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        We'll seed a default chart of accounts (26 accounts covering the common asset / liability /
-        equity / revenue / expense categories) you can edit anytime from the Chart of Accounts tab.
+        {t('companyForm.seedNote')}
       </div>
 
       <button
@@ -102,7 +103,7 @@ export function NewCompanyForm({
         disabled={mutation.isPending || !name.trim()}
         className="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
       >
-        {mutation.isPending ? 'Creating…' : 'Create client'}
+        {mutation.isPending ? t('companyForm.creating') : t('companyForm.submit')}
       </button>
 
       {mutation.isError && (
@@ -110,11 +111,11 @@ export function NewCompanyForm({
           {mutation.error instanceof ApiError
             ? (() => {
                 const body = mutation.error.body as { error?: string; message?: string } | null;
-                return body?.message ?? body?.error ?? 'Failed to create client.';
+                return body?.message ?? body?.error ?? t('companyForm.failed');
               })()
             : mutation.error instanceof Error
               ? mutation.error.message
-              : 'Failed to create client.'}
+              : t('companyForm.failed')}
         </p>
       )}
     </form>

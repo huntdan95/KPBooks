@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -13,14 +14,6 @@ interface TrialBalanceRow {
   credit: string;
   balance: string;
 }
-
-const TYPE_LABEL: Record<TrialBalanceRow['type'], string> = {
-  asset: 'Asset',
-  liability: 'Liability',
-  equity: 'Equity',
-  revenue: 'Revenue',
-  expense: 'Expense',
-};
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -51,6 +44,7 @@ function formatUsd(s: string): string {
 const ORDER: TrialBalanceRow['type'][] = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 
 export function TrialBalance() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(today);
 
@@ -92,9 +86,11 @@ export function TrialBalance() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">Trial Balance</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('trialBalance.title')}
+        </h2>
         <label className="flex items-center gap-2 text-sm text-slate-600">
-          As of
+          {t('common:asOf')}
           <input
             type="date"
             value={asOf}
@@ -104,17 +100,15 @@ export function TrialBalance() {
         </label>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load trial balance.'}
+          {query.error instanceof Error ? query.error.message : t('trialBalance.loadError')}
         </p>
       )}
 
       {query.data && rows.length === 0 && (
-        <p className="text-sm text-slate-500">
-          No activity through {asOf}. Post a journal entry to see balances here.
-        </p>
+        <p className="text-sm text-slate-500">{t('trialBalance.empty', { asOf })}</p>
       )}
 
       {rows.length > 0 && (
@@ -122,11 +116,11 @@ export function TrialBalance() {
           <table className="kpb-sticky-thead w-full text-sm">
             <thead className="text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Code</th>
-                <th className="px-4 py-2 text-left font-medium">Account</th>
-                <th className="px-4 py-2 text-right font-medium">Debit</th>
-                <th className="px-4 py-2 text-right font-medium">Credit</th>
-                <th className="px-4 py-2 text-right font-medium">Balance</th>
+                <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:debit')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:credit')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:balance')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -136,7 +130,7 @@ export function TrialBalance() {
                 return [
                   <tr key={`hdr-${type}`} className="bg-slate-50">
                     <td colSpan={5} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                      {TYPE_LABEL[type]}
+                      {t(`accountTypes.${type}`)}
                     </td>
                   </tr>,
                   ...group.map((r) => (
@@ -160,13 +154,13 @@ export function TrialBalance() {
             <tfoot className="bg-slate-50 text-sm font-medium">
               <tr>
                 <td colSpan={2} className="px-4 py-2 text-right text-slate-600">
-                  Totals
+                  {t('totals')}
                 </td>
                 <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.debit)}</td>
                 <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.credit)}</td>
                 <td className="px-4 py-2 text-right">
                   <span className={balanced ? 'text-emerald-600' : 'text-rose-600'}>
-                    {balanced ? '✓ balanced' : '✗ unbalanced'}
+                    {balanced ? t('trialBalance.balanced') : t('trialBalance.unbalanced')}
                   </span>
                 </td>
               </tr>

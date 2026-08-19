@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
 type MatchType = 'contains' | 'starts_with' | 'ends_with' | 'exact' | 'regex';
 type AmountSign = 'any' | 'positive' | 'negative';
+type Translate = TFunction<readonly ['banking', 'common']>;
 
 interface Account {
   id: string;
@@ -42,19 +45,15 @@ interface RuleDraft {
   priority: number;
 }
 
-const MATCH_TYPE_LABEL: Record<MatchType, string> = {
-  contains: 'Contains',
-  starts_with: 'Starts with',
-  ends_with: 'Ends with',
-  exact: 'Exact',
-  regex: 'Regex',
-};
+const MATCH_TYPES: readonly MatchType[] = [
+  'contains',
+  'starts_with',
+  'ends_with',
+  'exact',
+  'regex',
+];
 
-const AMOUNT_SIGN_LABEL: Record<AmountSign, string> = {
-  any: 'Any',
-  positive: 'Deposits only',
-  negative: 'Withdrawals only',
-};
+const AMOUNT_SIGNS: readonly AmountSign[] = ['any', 'positive', 'negative'];
 
 function emptyDraft(targetAccountId: string): RuleDraft {
   return {
@@ -72,6 +71,7 @@ function emptyDraft(targetAccountId: string): RuleDraft {
 type FormMode = null | { type: 'create' } | { type: 'edit'; id: string };
 
 export function BankRules() {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
@@ -168,11 +168,10 @@ export function BankRules() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-base font-semibold tracking-tight text-slate-900">Bank rules</h3>
-          <p className="text-sm text-slate-500">
-            Auto-categorize bank lines on import. The first matching rule (lowest priority number)
-            wins; AI categorize only runs for lines no rule matched.
-          </p>
+          <h3 className="text-base font-semibold tracking-tight text-slate-900">
+            {t('rules.title')}
+          </h3>
+          <p className="text-sm text-slate-500">{t('rules.subtitle')}</p>
         </div>
         <button
           type="button"
@@ -180,7 +179,7 @@ export function BankRules() {
           disabled={targetCandidates.length === 0}
           className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mode ? 'Cancel' : '+ New rule'}
+          {mode ? t('common:cancel') : t('rules.newRule')}
         </button>
       </div>
 
@@ -190,22 +189,22 @@ export function BankRules() {
           className="space-y-3 rounded-md border border-slate-200 bg-white p-4"
         >
           <h4 className="text-sm font-medium text-slate-700">
-            {mode.type === 'create' ? 'New rule' : 'Edit rule'}
+            {mode.type === 'create' ? t('rules.formTitleCreate') : t('rules.formTitleEdit')}
           </h4>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Name" required>
+            <Field label={t('common:name')} required>
               <input
                 type="text"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                placeholder="Verizon -> Telephone"
+                placeholder={t('rules.placeholders.name')}
                 maxLength={120}
                 required
                 autoFocus
                 className={inputClass}
               />
             </Field>
-            <Field label="Priority">
+            <Field label={t('rules.fields.priority')}>
               <input
                 type="number"
                 min={0}
@@ -215,50 +214,54 @@ export function BankRules() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Match type">
+            <Field label={t('rules.fields.matchType')}>
               <select
                 value={draft.matchType}
                 onChange={(e) => setDraft({ ...draft, matchType: e.target.value as MatchType })}
                 className={inputClass}
               >
-                {(Object.keys(MATCH_TYPE_LABEL) as MatchType[]).map((mt) => (
+                {MATCH_TYPES.map((mt) => (
                   <option key={mt} value={mt}>
-                    {MATCH_TYPE_LABEL[mt]}
+                    {t(`matchType.${mt}`)}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Match value" required>
+            <Field label={t('rules.fields.matchValue')} required>
               <input
                 type="text"
                 value={draft.matchValue}
                 onChange={(e) => setDraft({ ...draft, matchValue: e.target.value })}
-                placeholder={draft.matchType === 'regex' ? '^uber\\s+(eats|trip)' : 'verizon'}
+                placeholder={
+                  draft.matchType === 'regex'
+                    ? '^uber\\s+(eats|trip)'
+                    : t('rules.placeholders.matchValue')
+                }
                 maxLength={500}
                 required
                 className={inputClass}
               />
             </Field>
-            <Field label="Amount sign">
+            <Field label={t('rules.fields.amountSign')}>
               <select
                 value={draft.amountSign}
                 onChange={(e) => setDraft({ ...draft, amountSign: e.target.value as AmountSign })}
                 className={inputClass}
               >
-                {(Object.keys(AMOUNT_SIGN_LABEL) as AmountSign[]).map((s) => (
+                {AMOUNT_SIGNS.map((s) => (
                   <option key={s} value={s}>
-                    {AMOUNT_SIGN_LABEL[s]}
+                    {t(`amountSign.${s}`)}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Bank account scope">
+            <Field label={t('rules.fields.bankAccountScope')}>
               <select
                 value={draft.bankAccountId}
                 onChange={(e) => setDraft({ ...draft, bankAccountId: e.target.value })}
                 className={inputClass}
               >
-                <option value="">All bank accounts</option>
+                <option value="">{t('rules.allBankAccounts')}</option>
                 {bankAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.code} — {a.name}
@@ -266,27 +269,29 @@ export function BankRules() {
                 ))}
               </select>
             </Field>
-            <Field label="Categorize as" required>
+            <Field label={t('rules.fields.categorizeAs')} required>
               <select
                 value={draft.targetAccountId}
                 onChange={(e) => setDraft({ ...draft, targetAccountId: e.target.value })}
                 required
                 className={inputClass}
               >
-                {targetCandidates.length === 0 && <option value="">No eligible accounts</option>}
+                {targetCandidates.length === 0 && (
+                  <option value="">{t('rules.noEligibleAccounts')}</option>
+                )}
                 {targetCandidates.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.code} — {a.name} ({a.type})
+                    {a.code} — {a.name} ({t(`accountType.${a.type}`, { defaultValue: a.type })})
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Memo override (optional)">
+            <Field label={t('rules.fields.memoOverride')}>
               <input
                 type="text"
                 value={draft.memoTemplate}
                 onChange={(e) => setDraft({ ...draft, memoTemplate: e.target.value })}
-                placeholder="Leave blank to keep CSV description"
+                placeholder={t('rules.placeholders.memoOverride')}
                 maxLength={500}
                 className={inputClass}
               />
@@ -305,34 +310,36 @@ export function BankRules() {
               }
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {createMutation.isPending || updateMutation.isPending ? 'Saving…' : 'Save rule'}
+              {createMutation.isPending || updateMutation.isPending
+                ? t('rules.saving')
+                : t('rules.saveRule')}
             </button>
             <button
               type="button"
               onClick={cancel}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
           </div>
 
           {(createMutation.isError || updateMutation.isError) && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(createMutation.error ?? updateMutation.error)}
+              {formatError(createMutation.error ?? updateMutation.error, t)}
             </div>
           )}
         </form>
       )}
 
-      {rulesQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {rulesQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {rulesQ.isError && (
         <p className="text-sm text-rose-600">
-          {rulesQ.error instanceof Error ? rulesQ.error.message : 'Failed to load rules.'}
+          {rulesQ.error instanceof Error ? rulesQ.error.message : t('rules.loadFailed')}
         </p>
       )}
       {!rulesQ.isLoading && rules.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No rules yet. Create one above; it will run on every CSV import going forward.
+          {t('rules.empty')}
         </p>
       )}
 
@@ -341,13 +348,15 @@ export function BankRules() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Priority</th>
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-left font-medium">Match</th>
-                <th className="px-4 py-2 text-left font-medium">Sign</th>
-                <th className="px-4 py-2 text-left font-medium">Categorize as</th>
-                <th className="px-4 py-2 text-right font-medium">Hits</th>
-                <th className="px-4 py-2 text-center font-medium">Active</th>
+                <th className="px-4 py-2 text-left font-medium">{t('rules.fields.priority')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:name')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('rules.columns.match')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('rules.columns.sign')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('rules.columns.categorizeAs')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">{t('rules.columns.hits')}</th>
+                <th className="px-4 py-2 text-center font-medium">{t('rules.columns.active')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -359,11 +368,11 @@ export function BankRules() {
                     <td className="px-4 py-2 font-mono text-xs text-slate-500">{r.priority}</td>
                     <td className="px-4 py-2 text-slate-900">{r.name}</td>
                     <td className="px-4 py-2 text-slate-700">
-                      <span className="text-xs text-slate-500">{MATCH_TYPE_LABEL[r.matchType]}: </span>
+                      <span className="text-xs text-slate-500">{t(`matchType.${r.matchType}`)}: </span>
                       <span className="font-mono text-xs">"{r.matchValue}"</span>
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-600">
-                      {AMOUNT_SIGN_LABEL[r.amountSign]}
+                      {t(`amountSign.${r.amountSign}`)}
                     </td>
                     <td className="px-4 py-2 text-slate-700">
                       {target ? (
@@ -372,7 +381,7 @@ export function BankRules() {
                           {target.name}
                         </>
                       ) : (
-                        <span className="text-rose-600">missing account</span>
+                        <span className="text-rose-600">{t('rules.missingAccount')}</span>
                       )}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-700">
@@ -400,16 +409,17 @@ export function BankRules() {
                           onClick={() => startEdit(r)}
                           className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                         >
-                          Edit
+                          {t('common:edit')}
                         </button>
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Delete rule "${r.name}"?`)) deleteMutation.mutate(r.id);
+                            if (confirm(t('rules.deleteConfirm', { name: r.name })))
+                              deleteMutation.mutate(r.id);
                           }}
                           className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
                         >
-                          Delete
+                          {t('common:delete')}
                         </button>
                       </div>
                     </td>
@@ -438,13 +448,13 @@ function buildBody(d: RuleDraft): Record<string, unknown> {
   return body;
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errors.label')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed to save.';
+  return err instanceof Error ? err.message : t('errors.saveFailed');
 }
 
 const inputClass =

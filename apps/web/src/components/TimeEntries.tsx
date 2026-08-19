@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -77,6 +78,7 @@ function formatHours(s: string | number | null | undefined): string {
 }
 
 export function TimeEntries() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [filterVendorId, setFilterVendorId] = useState<string>('');
@@ -136,11 +138,12 @@ export function TimeEntries() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Time entries</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('timeEntries.title')}
+          </h2>
           <p className="text-sm text-slate-500">
-            Log billable hours per contractor; click <strong>Build bill</strong> on any vendor with
-            unbilled time and KPBooks creates a real A/P bill (one bill line per entry, posted
-            through the same pipeline as a manual bill). Replaces the side-spreadsheet workflow.
+            {t('timeEntries.blurbBefore')} <strong>{t('timeEntries.buildBill')}</strong>{' '}
+            {t('timeEntries.blurbAfter')}
           </p>
         </div>
         <button
@@ -148,7 +151,7 @@ export function TimeEntries() {
           onClick={() => setShowForm((v) => !v)}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          {showForm ? 'Cancel' : '+ Log time'}
+          {showForm ? t('common:cancel') : t('timeEntries.logTimeAction')}
         </button>
       </div>
 
@@ -166,10 +169,12 @@ export function TimeEntries() {
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-900">
-              Unbilled time by contractor
+              {t('timeEntries.unbilledByContractor')}
               <span className="ml-2 text-xs font-normal text-slate-500">
-                {summaryRows.length} vendor(s) · {formatUsd(totalUnbilledAmount.toFixed(4))}
-                {' '}total
+                {t('timeEntries.summaryMeta', {
+                  count: summaryRows.length,
+                  amount: formatUsd(totalUnbilledAmount.toFixed(4)),
+                })}
               </span>
             </h3>
           </div>
@@ -183,8 +188,10 @@ export function TimeEntries() {
                   <div>
                     <div className="font-medium text-slate-900">{r.vendorName}</div>
                     <div className="text-xs text-slate-500">
-                      {r.entryCount} entr{r.entryCount === 1 ? 'y' : 'ies'} ·{' '}
-                      {formatHours(r.totalHours)} hrs
+                      {t('timeEntries.entryMeta', {
+                        count: r.entryCount,
+                        hours: formatHours(r.totalHours),
+                      })}
                       {r.earliestDate && r.latestDate && r.earliestDate !== r.latestDate && (
                         <>
                           {' '}
@@ -205,7 +212,7 @@ export function TimeEntries() {
                     onClick={() => setBuildBillFor(r)}
                     className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800"
                   >
-                    Build bill
+                    {t('timeEntries.buildBill')}
                   </button>
                   <button
                     type="button"
@@ -217,7 +224,7 @@ export function TimeEntries() {
                     }}
                     className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                   >
-                    View entries
+                    {t('timeEntries.viewEntries')}
                   </button>
                 </div>
               </div>
@@ -227,13 +234,13 @@ export function TimeEntries() {
       )}
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
-        <Field label="Contractor">
+        <Field label={t('timeEntries.fields.contractor')}>
           <select
             value={filterVendorId}
             onChange={(e) => setFilterVendorId(e.target.value)}
             className={inputClass + ' min-w-[180px]'}
           >
-            <option value="">All</option>
+            <option value="">{t('timeEntries.all')}</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.displayName}
@@ -241,7 +248,7 @@ export function TimeEntries() {
             ))}
           </select>
         </Field>
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={filterFrom}
@@ -249,7 +256,7 @@ export function TimeEntries() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={filterTo}
@@ -264,21 +271,21 @@ export function TimeEntries() {
             onChange={(e) => setFilterUnbilled(e.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Unbilled only
+          {t('timeEntries.unbilledOnly')}
         </label>
       </div>
 
-      {entriesQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {entriesQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {entriesQ.isError && (
         <p className="text-sm text-rose-600">
-          {entriesQ.error instanceof Error ? entriesQ.error.message : 'Failed to load.'}
+          {entriesQ.error instanceof Error ? entriesQ.error.message : t('failedToLoad')}
         </p>
       )}
       {!entriesQ.isLoading && entries.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
           {filterUnbilled
-            ? 'No unbilled entries match these filters. Click "+ Log time" above to add one.'
-            : 'No time entries match these filters.'}
+            ? t('timeEntries.emptyUnbilled', { action: t('timeEntries.logTimeAction') })
+            : t('timeEntries.empty')}
         </p>
       )}
 
@@ -287,14 +294,18 @@ export function TimeEntries() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Contractor</th>
-                <th className="px-4 py-2 text-left font-medium">Description</th>
-                <th className="px-4 py-2 text-left font-medium">Account</th>
-                <th className="px-4 py-2 text-right font-medium">Hrs</th>
-                <th className="px-4 py-2 text-right font-medium">Rate</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('timeEntries.fields.contractor')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('timeEntries.fields.description')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('timeEntries.hrs')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('timeEntries.rate')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:amount')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:status')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -329,11 +340,11 @@ export function TimeEntries() {
                   <td className="px-4 py-2 text-xs">
                     {e.billedBillId ? (
                       <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-600/20">
-                        billed
+                        {t('timeEntries.status.billed')}
                       </span>
                     ) : (
                       <span className="rounded-md bg-amber-50 px-2 py-0.5 text-amber-700 ring-1 ring-amber-600/20">
-                        unbilled
+                        {t('timeEntries.status.unbilled')}
                       </span>
                     )}
                   </td>
@@ -342,11 +353,11 @@ export function TimeEntries() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`Delete this time entry?`)) deleteMutation.mutate(e.id);
+                          if (confirm(t('timeEntries.confirmDelete'))) deleteMutation.mutate(e.id);
                         }}
                         className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
                       >
-                        Delete
+                        {t('common:delete')}
                       </button>
                     )}
                   </td>
@@ -403,6 +414,7 @@ function NewTimeEntryForm({
   vendors: Vendor[];
   onCreated: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState<NewDraft>(emptyDraft);
 
@@ -480,16 +492,16 @@ function NewTimeEntryForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">Log time</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('timeEntries.logTime')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <Field label="Contractor" required>
+        <Field label={t('timeEntries.fields.contractor')} required>
           <select
             value={draft.vendorId}
             onChange={(e) => setDraft({ ...draft, vendorId: e.target.value })}
             required
             className={inputClass}
           >
-            <option value="">Choose…</option>
+            <option value="">{t('timeEntries.choose')}</option>
             {vendors.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.displayName}
@@ -497,7 +509,7 @@ function NewTimeEntryForm({
             ))}
           </select>
         </Field>
-        <Field label="Date" required>
+        <Field label={t('common:date')} required>
           <input
             type="date"
             value={draft.entryDate}
@@ -506,7 +518,7 @@ function NewTimeEntryForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Hours" required>
+        <Field label={t('timeEntries.fields.hours')} required>
           <input
             type="number"
             step="0.01"
@@ -517,46 +529,48 @@ function NewTimeEntryForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Rate ($/hr)">
+        <Field label={t('timeEntries.fields.rateHourly')}>
           <input
             type="number"
             step="0.01"
             min={0}
             value={draft.rate}
             onChange={(e) => setDraft({ ...draft, rate: e.target.value })}
-            placeholder={v?.payRate ?? 'auto from contractor'}
+            placeholder={v?.payRate ?? t('timeEntries.autoFromContractor')}
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Description" required>
+        <Field label={t('timeEntries.fields.description')} required>
           <input
             type="text"
             value={draft.description}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-            placeholder="Wired upstairs bathroom"
+            placeholder={t('timeEntries.placeholders.description')}
             maxLength={500}
             required
             className={inputClass}
           />
         </Field>
-        <Field label="Project / job (optional)">
+        <Field label={t('timeEntries.fields.project')}>
           <input
             type="text"
             value={draft.project}
             onChange={(e) => setDraft({ ...draft, project: e.target.value })}
-            placeholder="123 Main St remodel"
+            placeholder={t('timeEntries.placeholders.project')}
             maxLength={120}
             className={inputClass}
           />
         </Field>
-        <Field label="Expense account">
+        <Field label={t('timeEntries.fields.expenseAccount')}>
           <select
             value={draft.accountId}
             onChange={(e) => setDraft({ ...draft, accountId: e.target.value })}
             className={inputClass}
           >
             <option value="">
-              {v?.defaultExpenseAccountId ? 'Use contractor default' : 'Choose…'}
+              {v?.defaultExpenseAccountId
+                ? t('timeEntries.useContractorDefault')
+                : t('timeEntries.choose')}
             </option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -565,7 +579,7 @@ function NewTimeEntryForm({
             ))}
           </select>
         </Field>
-        <Field label="Computed amount">
+        <Field label={t('timeEntries.fields.computedAmount')}>
           <input
             type="text"
             value={formatUsd(amount.toFixed(4))}
@@ -581,16 +595,18 @@ function NewTimeEntryForm({
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Saving…' : 'Save entry'}
+          {mutation.isPending ? t('timeEntries.saving') : t('timeEntries.saveEntry')}
         </button>
         <p className="text-xs text-slate-500">
-          Entries stay <strong>unbilled</strong> until you click "Build bill" on the contractor.
+          {t('timeEntries.formHintBefore')}{' '}
+          <strong>{t('timeEntries.status.unbilled')}</strong>{' '}
+          {t('timeEntries.formHintAfter', { action: t('timeEntries.buildBill') })}
         </p>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -608,6 +624,7 @@ function BuildBillModal({
   onClose: () => void;
   onBuilt: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [billDate, setBillDate] = useState<string>(todayIso());
   const [dueDate, setDueDate] = useState<string>(addDaysIso(todayIso(), 30));
@@ -674,17 +691,17 @@ function BuildBillModal({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Build bill from time entries
+              {t('timeEntries.buildBillTitle')}
             </h2>
             <p className="text-xs text-slate-500">
-              Posts a real A/P bill for <strong>{summary.vendorName}</strong>. Each entry becomes
-              one bill line; the entries flip from "unbilled" to "billed" and lock in place.
+              {t('timeEntries.buildBillBlurbBefore')} <strong>{summary.vendorName}</strong>
+              {t('timeEntries.buildBillBlurbAfter')}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             ✕
@@ -692,7 +709,7 @@ function BuildBillModal({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Field label="Bill date" required>
+          <Field label={t('timeEntries.fields.billDate')} required>
             <input
               type="date"
               value={billDate}
@@ -701,7 +718,7 @@ function BuildBillModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Due date">
+          <Field label={t('timeEntries.fields.dueDate')}>
             <input
               type="date"
               value={dueDate}
@@ -709,30 +726,35 @@ function BuildBillModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Bill # (optional)">
+          <Field label={t('timeEntries.fields.billNumber')}>
             <input
               type="text"
               value={billNumber}
               onChange={(e) => setBillNumber(e.target.value)}
-              placeholder="auto: TIME-YYYYMMDD-vendor"
+              placeholder={t('timeEntries.placeholders.billNumber')}
               maxLength={40}
               className={inputClass + ' font-mono'}
             />
           </Field>
         </div>
 
-        <Field label="Memo (optional)">
+        <Field label={t('timeEntries.fields.memo')}>
           <input
             type="text"
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             maxLength={500}
-            placeholder={`Time entries ${summary.earliestDate} - ${summary.latestDate}`}
+            placeholder={t('timeEntries.placeholders.memo', {
+              from: summary.earliestDate,
+              to: summary.latestDate,
+            })}
             className={inputClass}
           />
         </Field>
 
-        {entriesQ.isLoading && <p className="text-sm text-slate-500">Loading entries…</p>}
+        {entriesQ.isLoading && (
+          <p className="text-sm text-slate-500">{t('timeEntries.loadingEntries')}</p>
+        )}
 
         {entries.length > 0 && (
           <div className="overflow-hidden rounded-md border border-slate-200">
@@ -745,14 +767,20 @@ function BuildBillModal({
                       checked={allSelected}
                       onChange={toggleAll}
                       className="h-4 w-4 rounded border-slate-300"
-                      title={allSelected ? 'Including all' : 'Including selected only'}
+                      title={
+                        allSelected
+                          ? t('timeEntries.includingAll')
+                          : t('timeEntries.includingSelected')
+                      }
                     />
                   </th>
-                  <th className="px-3 py-2 text-left font-medium">Date</th>
-                  <th className="px-3 py-2 text-left font-medium">Description</th>
-                  <th className="px-3 py-2 text-right font-medium">Hrs</th>
-                  <th className="px-3 py-2 text-right font-medium">Rate</th>
-                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('common:date')}</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('timeEntries.fields.description')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">{t('timeEntries.hrs')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('timeEntries.rate')}</th>
+                  <th className="px-3 py-2 text-right font-medium">{t('common:amount')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -791,7 +819,7 @@ function BuildBillModal({
               <tfoot className="bg-slate-50">
                 <tr className="font-semibold">
                   <td colSpan={5} className="px-3 py-2 text-right text-slate-900">
-                    Bill total
+                    {t('timeEntries.billTotal')}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-900">
                     {formatUsd(includedTotal.toFixed(4))}
@@ -808,7 +836,7 @@ function BuildBillModal({
             onClick={onClose}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
           >
-            Cancel
+            {t('common:cancel')}
           </button>
           <button
             type="button"
@@ -817,16 +845,14 @@ function BuildBillModal({
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
             {mutation.isPending
-              ? 'Posting bill…'
-              : `Post bill (${includedIds.length} entr${
-                  includedIds.length === 1 ? 'y' : 'ies'
-                })`}
+              ? t('timeEntries.postingBill')
+              : t('timeEntries.postBill', { count: includedIds.length })}
           </button>
         </div>
 
         {mutation.isError && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatError(mutation.error)}
+            {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
           </div>
         )}
       </div>
@@ -836,13 +862,13 @@ function BuildBillModal({
 
 // --- Bits -------------------------------------------------------------------
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

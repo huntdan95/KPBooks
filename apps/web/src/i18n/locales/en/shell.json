@@ -4,5 +4,206 @@
     "google": "Continue with Google",
     "busy": "Signing in...",
     "failed": "Sign-in failed"
+  },
+  "app": {
+    "startingUp": "Starting up…",
+    "loadingAccount": "Loading account…",
+    "accountLoadFailed": "Could not load account: {{message}}",
+    "accountLoadFailedGeneric": "Could not load account.",
+    "noData": "No data."
+  },
+  "errors": {
+    "label": "Error",
+    "downloadFailedStatus": "Download failed: {{status}}"
+  },
+  "iifPreview": {
+    "skippedNonPosting": "skipped (non-posting)",
+    "excludedDataError": "excluded — data error (see warnings)"
+  },
+  "brand": {
+    "tagline": "Accounting · simplified"
+  },
+  "header": {
+    "openNavigation": "Open navigation",
+    "navigation": "Navigation"
+  },
+  "userMenu": {
+    "signedInAs": "Signed in as"
+  },
+  "companyPicker": {
+    "pick": "Pick a client",
+    "newClient": "New client"
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Admin",
+    "bookkeeper": "Bookkeeper",
+    "viewer": "Viewer"
+  },
+  "noCompany": {
+    "welcomeTitle": "Welcome — add your first client to get started",
+    "pickTitle": "Pick a client to continue",
+    "welcomeBody": "We'll create a fresh chart of accounts and let you import an existing QuickBooks .iif file once the company exists.",
+    "pickBody": "Each client has its own books, COA, and history. Switch any time from the dropdown in the page header.",
+    "addNew": "Add a new client"
+  },
+  "newCompanyModal": {
+    "title": "New client",
+    "description": "Adds a new company you'll be the owner of, with its own seeded chart of accounts."
+  },
+  "createCompany": {
+    "title": "Create your first client",
+    "description": "Each client (a small business you serve) gets their own chart of accounts, customers, vendors, and reports — fully isolated."
+  },
+  "companyForm": {
+    "displayName": "Display name *",
+    "displayNamePlaceholder": "Acme Bookkeeping LLC",
+    "legalName": "Legal name (optional)",
+    "legalNamePlaceholder": "Acme Bookkeeping, LLC",
+    "ein": "EIN (optional)",
+    "einPlaceholder": "12-3456789",
+    "seedNote": "We'll seed a default chart of accounts (26 accounts covering the common asset / liability / equity / revenue / expense categories) you can edit anytime from the Chart of Accounts tab.",
+    "creating": "Creating…",
+    "submit": "Create client",
+    "failed": "Failed to create client."
+  },
+  "readyz": {
+    "label": "API status:",
+    "checking": "checking…",
+    "live": "✓ live (Cloud Run + Neon Postgres)",
+    "unreachable": "✗ unreachable"
+  },
+  "nav": {
+    "sections": {
+      "sales": "Sales",
+      "expenses": "Expenses",
+      "workers": "Workers",
+      "banking": "Banking",
+      "accounting": "Accounting",
+      "reports": "Reports",
+      "files": "Files",
+      "taxes": "Taxes"
+    },
+    "items": {
+      "dashboard": "Dashboard",
+      "chat": "Ask Claude",
+      "estimates": "Estimates",
+      "invoices": "Invoices",
+      "customers": "Customers",
+      "items": "Items / services",
+      "payments": "Payments",
+      "bills": "Bills",
+      "vendors": "Vendors",
+      "mileage": "Mileage",
+      "workers": "Workers / 1099",
+      "time-entries": "Time entries",
+      "payroll-runs": "Pay runs",
+      "banking": "Bank accounts",
+      "accounts": "Chart of accounts",
+      "new-entry": "New journal entry",
+      "recurring": "Recurring",
+      "fixed-assets": "Fixed assets",
+      "import": "Import (.iif)",
+      "reports": "All reports",
+      "activity": "Activity log",
+      "documents": "Documents",
+      "tax-rates": "Tax rates",
+      "1099-prep": "1099 prep"
+    },
+    "tip": {
+      "label": "Tip:",
+      "text": "the dashboard surfaces overdue A/R + A/P and any subcontractor docs expiring soon."
+    }
+  },
+  "pages": {
+    "dashboard": { "title": "Dashboard", "subtitle": "Today at a glance" },
+    "chat": { "title": "Ask Claude", "subtitle": "AI bookkeeping assistant" },
+    "estimates": { "title": "Estimates", "subtitle": "Quotes ready to convert to invoices" },
+    "invoices": { "title": "Invoices", "subtitle": "Customer-facing A/R documents" },
+    "customers": { "title": "Customers", "subtitle": "A/R counterparties" },
+    "bills": { "title": "Bills", "subtitle": "Vendor-facing A/P documents" },
+    "vendors": { "title": "Vendors", "subtitle": "A/P counterparties" },
+    "mileage": { "title": "Mileage", "subtitle": "Business-use travel log" },
+    "workers": { "title": "Workers / 1099", "subtitle": "Contractors, employees, W-9s" },
+    "banking": { "title": "Banking", "subtitle": "Bank accounts + reconciliation" },
+    "payments": { "title": "Payments", "subtitle": "Money in and money out" },
+    "accounts": { "title": "Chart of Accounts", "subtitle": "Your ledger structure" },
+    "new-entry": { "title": "New journal entry", "subtitle": "Manual ledger posting" },
+    "import": { "title": "Import from QuickBooks", "subtitle": "Drop an .iif file to seed your books" },
+    "reports": { "title": "Reports", "subtitle": "Trial balance, P&L, A/R, A/P, and more" },
+    "tax-rates": { "title": "Tax rates", "subtitle": "Sales-tax rates applied to invoices" },
+    "1099-prep": { "title": "1099 prep", "subtitle": "Year-end NEC + MISC pre-flight" },
+    "recurring": { "title": "Recurring", "subtitle": "Monthly retainers + recurring bills" },
+    "time-entries": { "title": "Time entries", "subtitle": "Worker hours that flow into bills" },
+    "items": { "title": "Items / services", "subtitle": "Saved fixtures for invoice + bill lines" },
+    "payroll-runs": { "title": "Pay runs", "subtitle": "Batch entry for paychecks" },
+    "fixed-assets": { "title": "Fixed assets", "subtitle": "Capitalized assets + depreciation" },
+    "activity": { "title": "Activity log", "subtitle": "Append-only audit trail" },
+    "documents": { "title": "Documents", "subtitle": "Tax returns, 1099s, receipts, statements" }
+  },
+  "dashboard": {
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "late": "Working late"
+    },
+    "snapshot": "Snapshot for {{month}} (month-to-date) and outstanding A/R + A/P as of {{date}}.",
+    "compliance": {
+      "label": "Compliance alerts:",
+      "mixed_one": "{{count}} expired, {{expiring}} expiring within 30 days",
+      "mixed_other": "{{count}} expired, {{expiring}} expiring within 30 days",
+      "expiring_one": "{{count}} subcontractor doc expiring within 30 days",
+      "expiring_other": "{{count}} subcontractor docs expiring within 30 days",
+      "hint": "(license / GL / WC across your subs — click to review)"
+    },
+    "tiles": {
+      "cash": "Cash on hand",
+      "cashAccounts_one": "{{count}} account",
+      "cashAccounts_other": "{{count}} accounts",
+      "trend30d": "{{value}} 30d",
+      "netIncome": "Net income",
+      "netIncomeSub": "MTD · {{month}}",
+      "arOutstanding": "A/R outstanding",
+      "apOutstanding": "A/P outstanding",
+      "overdueInvoices_one": "{{count}} overdue invoice",
+      "overdueInvoices_other": "{{count}} overdue invoices",
+      "overdueBills_one": "{{count}} overdue bill",
+      "overdueBills_other": "{{count}} overdue bills",
+      "allCurrent": "all current"
+    },
+    "recentInvoices": {
+      "title": "Recent open invoices",
+      "empty": "No open invoices."
+    },
+    "recentBills": {
+      "title": "Recent open bills",
+      "empty": "No open bills."
+    },
+    "viewAll": "View all",
+    "dueLine": "{{number}} · due {{date}}",
+    "status": {
+      "partial": "Partially paid"
+    },
+    "activity": {
+      "title": "Recent activity",
+      "seeAll": "See all",
+      "empty": "No activity in the last 7 days."
+    },
+    "time": {
+      "justNow": "just now",
+      "minutes": "{{minutes}}m ago",
+      "hours": "{{hours}}h ago",
+      "days": "{{days}}d ago"
+    },
+    "quickActions": {
+      "title": "Quick actions",
+      "invoice": "New invoice",
+      "bill": "New bill",
+      "payment": "Receive payment",
+      "banking": "Import bank CSV",
+      "je": "Journal entry",
+      "iif": "Import .iif"
+    }
   }
 }

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -57,6 +58,7 @@ function formatUsd(s: string): string {
 }
 
 export function JournalEntryForm() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
 
@@ -142,25 +144,23 @@ export function JournalEntryForm() {
   }
 
   if (accountsQuery.isLoading) {
-    return <p className="text-sm text-slate-500">Loading accounts…</p>;
+    return <p className="text-sm text-slate-500">{t('journalEntry.loadingAccounts')}</p>;
   }
   if (accounts.length === 0) {
-    return (
-      <p className="text-sm text-slate-500">
-        No active accounts to post against. Create accounts first.
-      </p>
-    );
+    return <p className="text-sm text-slate-500">{t('journalEntry.noAccounts')}</p>;
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">New Journal Entry</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('journalEntry.title')}
+        </h2>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <label className="block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Date</span>
+          <span className="text-sm font-medium text-slate-700">{t('common:date')}</span>
           <input
             type="date"
             value={entryDate}
@@ -170,24 +170,24 @@ export function JournalEntryForm() {
           />
         </label>
         <label className="block space-y-1 sm:col-span-2">
-          <span className="text-sm font-medium text-slate-700">Memo</span>
+          <span className="text-sm font-medium text-slate-700">{t('common:memo')}</span>
           <input
             type="text"
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             maxLength={500}
-            placeholder="Optional"
+            placeholder={t('common:optional')}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </label>
         <label className="block space-y-1 sm:col-span-3">
-          <span className="text-sm font-medium text-slate-700">Reference</span>
+          <span className="text-sm font-medium text-slate-700">{t('common:reference')}</span>
           <input
             type="text"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             maxLength={120}
-            placeholder="Optional — invoice #, check #, etc."
+            placeholder={t('journalEntry.referencePlaceholder')}
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </label>
@@ -195,13 +195,13 @@ export function JournalEntryForm() {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-slate-700">Lines</h3>
+          <h3 className="text-sm font-medium text-slate-700">{t('journalEntry.lines')}</h3>
           <button
             type="button"
             onClick={addLine}
             className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
           >
-            + Add line
+            {t('journalEntry.addLine')}
           </button>
         </div>
 
@@ -214,27 +214,27 @@ export function JournalEntryForm() {
             >
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Line {idx + 1}
+                  {t('journalEntry.lineN', { n: idx + 1 })}
                 </span>
                 <button
                   type="button"
                   onClick={() => removeLine(idx)}
                   disabled={lines.length <= 2}
                   className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30"
-                  aria-label="Remove line"
+                  aria-label={t('journalEntry.removeLine')}
                 >
                   ✕
                 </button>
               </div>
               <label className="block space-y-1">
-                <span className="text-xs font-medium text-slate-600">Account</span>
+                <span className="text-xs font-medium text-slate-600">{t('common:account')}</span>
                 <select
                   value={line.accountId}
                   onChange={(e) => updateLine(idx, { accountId: e.target.value })}
                   className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
                   required
                 >
-                  <option value="">— select account —</option>
+                  <option value="">{t('journalEntry.selectAccount')}</option>
                   {accounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.code} — {a.name}
@@ -244,7 +244,7 @@ export function JournalEntryForm() {
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Side</span>
+                  <span className="text-xs font-medium text-slate-600">{t('journalEntry.side')}</span>
                   <select
                     value={line.side}
                     onChange={(e) =>
@@ -252,12 +252,12 @@ export function JournalEntryForm() {
                     }
                     className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
                   >
-                    <option value="debit">Debit</option>
-                    <option value="credit">Credit</option>
+                    <option value="debit">{t('common:debit')}</option>
+                    <option value="credit">{t('common:credit')}</option>
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-xs font-medium text-slate-600">Amount</span>
+                  <span className="text-xs font-medium text-slate-600">{t('common:amount')}</span>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -271,13 +271,13 @@ export function JournalEntryForm() {
                 </label>
               </div>
               <label className="block space-y-1">
-                <span className="text-xs font-medium text-slate-600">Memo</span>
+                <span className="text-xs font-medium text-slate-600">{t('common:memo')}</span>
                 <input
                   type="text"
                   value={line.memo}
                   onChange={(e) => updateLine(idx, { memo: e.target.value })}
                   maxLength={500}
-                  placeholder="Optional"
+                  placeholder={t('common:optional')}
                   className="w-full rounded-md border border-slate-300 px-3 py-2 text-base focus:border-slate-900 focus:outline-none"
                 />
               </label>
@@ -292,13 +292,18 @@ export function JournalEntryForm() {
             }
           >
             <div className="flex items-center justify-between">
-              <span className="font-medium">Totals</span>
+              <span className="font-medium">{t('totals')}</span>
               <span className="font-mono text-xs">
-                Dr {formatUsd(totals.debit)} / Cr {formatUsd(totals.credit)}
+                {t('journalEntry.drCr', {
+                  debit: formatUsd(totals.debit),
+                  credit: formatUsd(totals.credit),
+                })}
               </span>
             </div>
             <div className="mt-0.5 font-mono text-xs">
-              {balanced ? '✓ balanced' : `off by ${formatUsd(totals.diff)}`}
+              {balanced
+                ? t('journalEntry.balanced')
+                : t('journalEntry.offBy', { amount: formatUsd(totals.diff) })}
             </div>
           </div>
         </div>
@@ -308,10 +313,10 @@ export function JournalEntryForm() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Account</th>
-                <th className="px-3 py-2 text-left font-medium">Side</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-left font-medium">Memo</th>
+                <th className="px-3 py-2 text-left font-medium">{t('common:account')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('journalEntry.side')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('common:amount')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('common:memo')}</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -325,7 +330,7 @@ export function JournalEntryForm() {
                       className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                       required
                     >
-                      <option value="">— select account —</option>
+                      <option value="">{t('journalEntry.selectAccount')}</option>
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.code} — {a.name}
@@ -339,8 +344,8 @@ export function JournalEntryForm() {
                       onChange={(e) => updateLine(idx, { side: e.target.value as 'debit' | 'credit' })}
                       className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     >
-                      <option value="debit">Debit</option>
-                      <option value="credit">Credit</option>
+                      <option value="debit">{t('common:debit')}</option>
+                      <option value="credit">{t('common:credit')}</option>
                     </select>
                   </td>
                   <td className="px-3 py-2">
@@ -359,7 +364,7 @@ export function JournalEntryForm() {
                       value={line.memo}
                       onChange={(e) => updateLine(idx, { memo: e.target.value })}
                       maxLength={500}
-                      placeholder="Optional"
+                      placeholder={t('common:optional')}
                       className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     />
                   </td>
@@ -369,7 +374,7 @@ export function JournalEntryForm() {
                       onClick={() => removeLine(idx)}
                       disabled={lines.length <= 2}
                       className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Remove line"
+                      aria-label={t('journalEntry.removeLine')}
                     >
                       ✕
                     </button>
@@ -380,14 +385,19 @@ export function JournalEntryForm() {
             <tfoot className="bg-slate-50 text-sm">
               <tr className="font-medium">
                 <td className="px-3 py-2 text-right text-slate-600" colSpan={2}>
-                  Totals
+                  {t('totals')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">
-                  Dr {formatUsd(totals.debit)} / Cr {formatUsd(totals.credit)}
+                  {t('journalEntry.drCr', {
+                    debit: formatUsd(totals.debit),
+                    credit: formatUsd(totals.credit),
+                  })}
                 </td>
                 <td className="px-3 py-2 font-mono" colSpan={2}>
                   <span className={balanced ? 'text-emerald-600' : 'text-rose-600'}>
-                    {balanced ? '✓ balanced' : `off by ${formatUsd(totals.diff)}`}
+                    {balanced
+                      ? t('journalEntry.balanced')
+                      : t('journalEntry.offBy', { amount: formatUsd(totals.diff) })}
                   </span>
                 </td>
               </tr>
@@ -402,17 +412,17 @@ export function JournalEntryForm() {
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mutation.isPending ? 'Posting…' : 'Post entry'}
+          {mutation.isPending ? t('journalEntry.posting') : t('journalEntry.postEntry')}
         </button>
         <button
           type="button"
           onClick={resetForm}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Reset
+          {t('journalEntry.reset')}
         </button>
         {!balanced && lines.some((l) => l.amount) && (
-          <span className="text-xs text-slate-500">Debits must equal credits.</span>
+          <span className="text-xs text-slate-500">{t('journalEntry.mustBalance')}</span>
         )}
       </div>
 
@@ -422,9 +432,9 @@ export function JournalEntryForm() {
             const err = mutation.error;
             if (err instanceof ApiError) {
               const body = err.body as { error?: string; message?: string } | null;
-              if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+              if (body?.message) return `${body.error ?? t('errorLabel')}: ${body.message}`;
             }
-            return err instanceof Error ? err.message : 'Failed to post entry.';
+            return err instanceof Error ? err.message : t('journalEntry.postError');
           })()}
         </div>
       )}
@@ -432,14 +442,15 @@ export function JournalEntryForm() {
       {postedId && !mutation.isError && (
         <div className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <span>
-            ✓ Posted entry <span className="font-mono">#{postedId.slice(0, 8)}</span>.
+            {t('journalEntry.postedEntry')}{' '}
+            <span className="font-mono">#{postedId.slice(0, 8)}</span>.
           </span>
           <button
             type="button"
             onClick={resetForm}
             className="rounded-md border border-emerald-300 bg-white px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
           >
-            Post another
+            {t('journalEntry.postAnother')}
           </button>
         </div>
       )}

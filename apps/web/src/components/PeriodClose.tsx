@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -21,6 +23,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
  * a finalised P&L. Reopening clears the date.
  */
 export function PeriodClose() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [draftDate, setDraftDate] = useState<string>('');
@@ -46,7 +49,7 @@ export function PeriodClose() {
       void queryClient.invalidateQueries({ queryKey: ['company-current', companyId] });
     },
     onError: (err) => {
-      setError(formatError(err));
+      setError(formatError(err, t));
     },
   });
 
@@ -56,14 +59,14 @@ export function PeriodClose() {
     e.preventDefault();
     if (!draftDate) return;
     if (mutation.isPending) return;
-    if (!confirm(`Close the books through ${draftDate}? Entries on or before this date will be rejected.`)) {
+    if (!confirm(t('periodClose.confirmClose', { date: draftDate }))) {
       return;
     }
     mutation.mutate(draftDate);
   }
 
   function reopen() {
-    if (!confirm('Reopen the books? Anyone with permission will be able to post entries to previously-closed periods.')) {
+    if (!confirm(t('periodClose.confirmReopen'))) {
       return;
     }
     mutation.mutate(null);
@@ -72,18 +75,16 @@ export function PeriodClose() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">Period close</h3>
-        <p className="text-sm text-slate-500">
-          Lock the books through a specific date so accidental late entries can't disturb a
-          finalised P&L. Posting to dates on or before the close date is rejected at the
-          database layer (the same guard catches API attempts and direct SQL).
-        </p>
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+          {t('periodClose.title')}
+        </h3>
+        <p className="text-sm text-slate-500">{t('periodClose.description')}</p>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load company.'}
+          {query.error instanceof Error ? query.error.message : t('periodClose.loadError')}
         </p>
       )}
 
@@ -91,15 +92,18 @@ export function PeriodClose() {
         <div className="rounded-md border border-slate-200 bg-white p-4">
           <div className="flex items-baseline justify-between">
             <div>
-              <p className="text-xs uppercase tracking-wider text-slate-500">Current state</p>
+              <p className="text-xs uppercase tracking-wider text-slate-500">
+                {t('periodClose.currentState')}
+              </p>
               {closedThrough ? (
                 <p className="text-lg font-medium text-slate-900">
-                  Books closed through{' '}
+                  {t('periodClose.closedThrough')}{' '}
                   <span className="font-mono text-emerald-700">{closedThrough}</span>
                 </p>
               ) : (
                 <p className="text-lg font-medium text-slate-900">
-                  <span className="text-slate-500">Books are open</span> — no close date set
+                  <span className="text-slate-500">{t('periodClose.booksOpen')}</span>{' '}
+                  {t('periodClose.noCloseDate')}
                 </p>
               )}
             </div>
@@ -110,7 +114,7 @@ export function PeriodClose() {
                 disabled={mutation.isPending}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
               >
-                Reopen books
+                {t('periodClose.reopen')}
               </button>
             )}
           </div>
@@ -119,11 +123,11 @@ export function PeriodClose() {
 
       <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
         <h4 className="text-sm font-medium text-slate-700">
-          {closedThrough ? 'Move close date' : 'Close the books through'}
+          {closedThrough ? t('periodClose.moveCloseDate') : t('periodClose.closeThrough')}
         </h4>
         <div className="flex items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            <span>Date</span>
+            <span>{t('common:date')}</span>
             <input
               type="date"
               value={draftDate}
@@ -137,13 +141,14 @@ export function PeriodClose() {
             disabled={!draftDate || mutation.isPending}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {mutation.isPending ? 'Saving…' : closedThrough ? 'Update close date' : 'Close books'}
+            {mutation.isPending
+              ? t('saving')
+              : closedThrough
+                ? t('periodClose.updateCloseDate')
+                : t('periodClose.closeBooks')}
           </button>
         </div>
-        <p className="text-xs text-slate-500">
-          Typical month-end: pick the last day of the month after you've reviewed and reconciled.
-          Reopening unlocks all closed periods at once; there's no per-month granularity in v1.
-        </p>
+        <p className="text-xs text-slate-500">{t('periodClose.tip')}</p>
       </form>
 
       {error && (
@@ -155,11 +160,11 @@ export function PeriodClose() {
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<['reports', 'common']>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed to update.';
+  return err instanceof Error ? err.message : t('periodClose.updateError');
 }

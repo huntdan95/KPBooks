@@ -7,6 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -109,6 +110,7 @@ export function CustomerDetail({
   customerId: string;
   onBack: () => void;
 }) {
+  const { t } = useTranslation('purchases');
   const { companyId } = useCurrentCompany();
 
   const customerQuery = useQuery({
@@ -165,7 +167,7 @@ export function CustomerDetail({
               isActive: c.isActive,
               openingBalance: c.openingBalance,
               extraField: c.taxExempt
-                ? { label: 'Tax-exempt', value: 'yes' }
+                ? { label: t('counterparty.taxExempt'), value: t('counterparty.taxExemptYes') }
                 : null,
               notes: c.notes ?? null,
             }
@@ -173,17 +175,25 @@ export function CustomerDetail({
       }
       isLoading={customerQuery.isLoading}
       kpis={[
-        { label: 'Total billed', value: formatUsd(totals.billed), tone: 'slate' },
-        { label: 'Total received', value: formatUsd(totals.received), tone: 'emerald' },
         {
-          label: 'Open balance',
+          label: t('counterparty.customer.totalBilled'),
+          value: formatUsd(totals.billed),
+          tone: 'slate',
+        },
+        {
+          label: t('counterparty.customer.totalReceived'),
+          value: formatUsd(totals.received),
+          tone: 'emerald',
+        },
+        {
+          label: t('counterparty.customer.openBalance'),
           value: formatUsd(totals.open),
           tone: Number(totals.open) > 0 ? 'amber' : 'emerald',
         },
       ]}
       docs={{
-        title: `Invoices (${invoices.length})`,
-        empty: 'No invoices yet for this customer.',
+        title: t('counterparty.customer.invoicesTitle', { count: invoices.length }),
+        empty: t('counterparty.customer.invoicesEmpty'),
         rows: invoices.map((i) => ({
           id: i.id,
           number: i.invoiceNumber,
@@ -195,8 +205,8 @@ export function CustomerDetail({
         })),
       }}
       payments={{
-        title: `Payments received (${payments.length})`,
-        empty: 'No payments received yet.',
+        title: t('counterparty.customer.paymentsTitle', { count: payments.length }),
+        empty: t('counterparty.customer.paymentsEmpty'),
         rows: payments,
       }}
     />
@@ -210,6 +220,7 @@ export function VendorDetail({
   vendorId: string;
   onBack: () => void;
 }) {
+  const { t } = useTranslation('purchases');
   const { companyId } = useCurrentCompany();
 
   const vendorQuery = useQuery({
@@ -266,8 +277,10 @@ export function VendorDetail({
               openingBalance: v.openingBalance,
               extraField: v.is1099Vendor
                 ? {
-                    label: '1099 vendor',
-                    value: v.taxId ? `Tax ID ${v.taxId}` : 'tax ID missing',
+                    label: t('counterparty.vendor1099'),
+                    value: v.taxId
+                      ? t('counterparty.taxIdValue', { taxId: v.taxId })
+                      : t('counterparty.taxIdMissing'),
                   }
                 : null,
               notes: v.notes ?? null,
@@ -276,17 +289,25 @@ export function VendorDetail({
       }
       isLoading={vendorQuery.isLoading}
       kpis={[
-        { label: 'Total billed (you)', value: formatUsd(totals.billed), tone: 'slate' },
-        { label: 'Total paid out', value: formatUsd(totals.sent), tone: 'emerald' },
         {
-          label: 'Open balance',
+          label: t('counterparty.vendor.totalBilled'),
+          value: formatUsd(totals.billed),
+          tone: 'slate',
+        },
+        {
+          label: t('counterparty.vendor.totalPaidOut'),
+          value: formatUsd(totals.sent),
+          tone: 'emerald',
+        },
+        {
+          label: t('counterparty.vendor.openBalance'),
           value: formatUsd(totals.open),
           tone: Number(totals.open) > 0 ? 'amber' : 'emerald',
         },
       ]}
       docs={{
-        title: `Bills (${bills.length})`,
-        empty: 'No bills from this vendor yet.',
+        title: t('counterparty.vendor.billsTitle', { count: bills.length }),
+        empty: t('counterparty.vendor.billsEmpty'),
         rows: bills.map((b) => ({
           id: b.id,
           number: b.billNumber,
@@ -298,8 +319,8 @@ export function VendorDetail({
         })),
       }}
       payments={{
-        title: `Payments sent (${payments.length})`,
-        empty: 'No payments sent yet.',
+        title: t('counterparty.vendor.paymentsTitle', { count: payments.length }),
+        empty: t('counterparty.vendor.paymentsEmpty'),
         rows: payments,
       }}
     />
@@ -358,6 +379,7 @@ function CounterpartyView({
   docs: DocsSection;
   payments: PaymentsSection;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -366,11 +388,13 @@ function CounterpartyView({
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back to {kind === 'customer' ? 'customers' : 'vendors'}
+          {kind === 'customer'
+            ? t('counterparty.backToCustomers')
+            : t('counterparty.backToVendors')}
         </button>
       </div>
 
-      {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
 
       {profile && (
         <div className="rounded-md border border-slate-200 bg-white p-4">
@@ -380,7 +404,7 @@ function CounterpartyView({
                 {profile.displayName}
                 {!profile.isActive && (
                   <span className="ml-2 align-middle text-sm font-normal text-slate-500">
-                    (inactive)
+                    {t('counterparty.inactiveSuffix')}
                   </span>
                 )}
               </h2>
@@ -394,14 +418,23 @@ function CounterpartyView({
             <div className="flex flex-col items-end gap-0.5 text-xs text-slate-600">
               {profile.email && <span>{profile.email}</span>}
               {profile.phone && <span>{profile.phone}</span>}
-              {profile.terms !== null && <span>Net {profile.terms}</span>}
+              {profile.terms !== null && (
+                <span>{t('counterparty.netTerms', { days: profile.terms })}</span>
+              )}
               {profile.extraField && (
                 <span className="font-medium text-slate-700">
-                  {profile.extraField.label}: {profile.extraField.value}
+                  {t('counterparty.extraField', {
+                    label: profile.extraField.label,
+                    value: profile.extraField.value,
+                  })}
                 </span>
               )}
               {Number(profile.openingBalance) !== 0 && (
-                <span>Opening balance: {formatUsd(profile.openingBalance)}</span>
+                <span>
+                  {t('counterparty.openingBalance', {
+                    amount: formatUsd(profile.openingBalance),
+                  })}
+                </span>
               )}
             </div>
           </div>
@@ -449,6 +482,7 @@ function KpiTile({
 }
 
 function DocsTable({ title, empty, rows }: DocsSection) {
+  const { t } = useTranslation('purchases');
   return (
     <section>
       <h3 className="mb-2 text-sm font-medium text-slate-700">{title}</h3>
@@ -461,12 +495,24 @@ function DocsTable({ title, empty, rows }: DocsSection) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Number</th>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Due</th>
-                <th className="px-4 py-2 text-center font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">Balance</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.docsTable.number')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.docsTable.date')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.docsTable.due')}
+                </th>
+                <th className="px-4 py-2 text-center font-medium">
+                  {t('counterparty.docsTable.status')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('counterparty.docsTable.total')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('counterparty.docsTable.balance')}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -479,7 +525,7 @@ function DocsTable({ title, empty, rows }: DocsSection) {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_COLOR[r.status]}`}
                     >
-                      {r.status}
+                      {t(`bills.status.${r.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
@@ -499,6 +545,7 @@ function DocsTable({ title, empty, rows }: DocsSection) {
 }
 
 function PaymentsTable({ title, empty, rows }: PaymentsSection) {
+  const { t } = useTranslation('purchases');
   return (
     <section>
       <h3 className="mb-2 text-sm font-medium text-slate-700">{title}</h3>
@@ -511,18 +558,30 @@ function PaymentsTable({ title, empty, rows }: PaymentsSection) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Method</th>
-                <th className="px-4 py-2 text-left font-medium">Reference</th>
-                <th className="px-4 py-2 text-center font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.paymentsTable.date')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.paymentsTable.method')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('counterparty.paymentsTable.reference')}
+                </th>
+                <th className="px-4 py-2 text-center font-medium">
+                  {t('counterparty.paymentsTable.status')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('counterparty.paymentsTable.amount')}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {rows.map((p) => (
                 <tr key={p.id} className={p.status === 'void' ? 'opacity-60' : ''}>
                   <td className="px-4 py-2 text-slate-700">{p.paymentDate}</td>
-                  <td className="px-4 py-2 text-slate-700">{p.paymentMethod}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {t(`payments.method.${p.paymentMethod}`, { defaultValue: p.paymentMethod })}
+                  </td>
                   <td className="px-4 py-2 font-mono text-xs text-slate-700">
                     {p.reference ?? '—'}
                   </td>
@@ -535,7 +594,7 @@ function PaymentsTable({ title, empty, rows }: PaymentsSection) {
                           : 'bg-slate-100 text-slate-500 ring-slate-300')
                       }
                     >
-                      {p.status}
+                      {t(`payments.status.${p.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">

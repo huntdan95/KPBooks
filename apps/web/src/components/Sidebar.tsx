@@ -5,6 +5,7 @@
  * app is currently single-route SPA (no router).
  */
 
+import { useTranslation } from 'react-i18next';
 import { Icon, type IconName } from './ui/Icon';
 
 export type View =
@@ -33,81 +34,86 @@ export type View =
   | 'activity'
   | 'documents';
 
+/**
+ * Labels are stored as i18n keys (not literals) because SECTIONS lives at
+ * module scope where hooks can't run -- the Sidebar component resolves each
+ * key through t() at render time so a language switch re-labels the rail.
+ */
 interface NavItem {
   id: View;
-  label: string;
+  labelKey: string;
   icon: IconName;
 }
 
 interface NavSection {
-  label: string | null;
+  labelKey: string | null;
   items: NavItem[];
 }
 
 const SECTIONS: NavSection[] = [
   {
-    label: null,
+    labelKey: null,
     items: [
-      { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-      { id: 'chat', label: 'Ask Claude', icon: 'sparkles' },
+      { id: 'dashboard', labelKey: 'nav.items.dashboard', icon: 'dashboard' },
+      { id: 'chat', labelKey: 'nav.items.chat', icon: 'sparkles' },
     ],
   },
   {
-    label: 'Sales',
+    labelKey: 'nav.sections.sales',
     items: [
-      { id: 'estimates', label: 'Estimates', icon: 'file-text' },
-      { id: 'invoices', label: 'Invoices', icon: 'file-stack' },
-      { id: 'customers', label: 'Customers', icon: 'users' },
-      { id: 'items', label: 'Items / services', icon: 'package' },
-      { id: 'payments', label: 'Payments', icon: 'credit-card' },
+      { id: 'estimates', labelKey: 'nav.items.estimates', icon: 'file-text' },
+      { id: 'invoices', labelKey: 'nav.items.invoices', icon: 'file-stack' },
+      { id: 'customers', labelKey: 'nav.items.customers', icon: 'users' },
+      { id: 'items', labelKey: 'nav.items.items', icon: 'package' },
+      { id: 'payments', labelKey: 'nav.items.payments', icon: 'credit-card' },
     ],
   },
   {
-    label: 'Expenses',
+    labelKey: 'nav.sections.expenses',
     items: [
-      { id: 'bills', label: 'Bills', icon: 'receipt' },
-      { id: 'vendors', label: 'Vendors', icon: 'building-2' },
-      { id: 'mileage', label: 'Mileage', icon: 'car' },
+      { id: 'bills', labelKey: 'nav.items.bills', icon: 'receipt' },
+      { id: 'vendors', labelKey: 'nav.items.vendors', icon: 'building-2' },
+      { id: 'mileage', labelKey: 'nav.items.mileage', icon: 'car' },
     ],
   },
   {
-    label: 'Workers',
+    labelKey: 'nav.sections.workers',
     items: [
-      { id: 'workers', label: 'Workers / 1099', icon: 'briefcase' },
-      { id: 'time-entries', label: 'Time entries', icon: 'clock' },
-      { id: 'payroll-runs', label: 'Pay runs', icon: 'wallet' },
+      { id: 'workers', labelKey: 'nav.items.workers', icon: 'briefcase' },
+      { id: 'time-entries', labelKey: 'nav.items.time-entries', icon: 'clock' },
+      { id: 'payroll-runs', labelKey: 'nav.items.payroll-runs', icon: 'wallet' },
     ],
   },
   {
-    label: 'Banking',
-    items: [{ id: 'banking', label: 'Bank accounts', icon: 'banknote' }],
+    labelKey: 'nav.sections.banking',
+    items: [{ id: 'banking', labelKey: 'nav.items.banking', icon: 'banknote' }],
   },
   {
-    label: 'Accounting',
+    labelKey: 'nav.sections.accounting',
     items: [
-      { id: 'accounts', label: 'Chart of accounts', icon: 'book-open' },
-      { id: 'new-entry', label: 'New journal entry', icon: 'plus-square' },
-      { id: 'recurring', label: 'Recurring', icon: 'repeat' },
-      { id: 'fixed-assets', label: 'Fixed assets', icon: 'truck' },
-      { id: 'import', label: 'Import (.iif)', icon: 'upload-cloud' },
+      { id: 'accounts', labelKey: 'nav.items.accounts', icon: 'book-open' },
+      { id: 'new-entry', labelKey: 'nav.items.new-entry', icon: 'plus-square' },
+      { id: 'recurring', labelKey: 'nav.items.recurring', icon: 'repeat' },
+      { id: 'fixed-assets', labelKey: 'nav.items.fixed-assets', icon: 'truck' },
+      { id: 'import', labelKey: 'nav.items.import', icon: 'upload-cloud' },
     ],
   },
   {
-    label: 'Reports',
+    labelKey: 'nav.sections.reports',
     items: [
-      { id: 'reports', label: 'All reports', icon: 'bar-chart' },
-      { id: 'activity', label: 'Activity log', icon: 'history' },
+      { id: 'reports', labelKey: 'nav.items.reports', icon: 'bar-chart' },
+      { id: 'activity', labelKey: 'nav.items.activity', icon: 'history' },
     ],
   },
   {
-    label: 'Files',
-    items: [{ id: 'documents', label: 'Documents', icon: 'file-stack' }],
+    labelKey: 'nav.sections.files',
+    items: [{ id: 'documents', labelKey: 'nav.items.documents', icon: 'file-stack' }],
   },
   {
-    label: 'Taxes',
+    labelKey: 'nav.sections.taxes',
     items: [
-      { id: 'tax-rates', label: 'Tax rates', icon: 'percent' },
-      { id: '1099-prep', label: '1099 prep', icon: 'badge-check' },
+      { id: 'tax-rates', labelKey: 'nav.items.tax-rates', icon: 'percent' },
+      { id: '1099-prep', labelKey: 'nav.items.1099-prep', icon: 'badge-check' },
     ],
   },
 ];
@@ -119,6 +125,8 @@ export function Sidebar({
   activeView: View;
   onSelect: (v: View) => void;
 }) {
+  const { t } = useTranslation('shell');
+
   return (
     <nav className="flex h-full flex-col overflow-y-auto bg-gradient-to-b from-slate-900 to-slate-950 px-3 py-4 text-sm text-slate-200">
       {/* Brand */}
@@ -131,16 +139,16 @@ export function Sidebar({
             KPBooks
           </div>
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            Accounting · simplified
+            {t('brand.tagline')}
           </div>
         </div>
       </div>
 
       {SECTIONS.map((section, sIdx) => (
         <div key={sIdx} className="mb-1">
-          {section.label && (
+          {section.labelKey && (
             <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              {section.label}
+              {t(section.labelKey)}
             </div>
           )}
           <ul className="space-y-0.5">
@@ -171,7 +179,7 @@ export function Sidebar({
                         (isActive ? 'text-emerald-300' : 'text-slate-500 group-hover:text-slate-300')
                       }
                     />
-                    <span className={isActive ? 'font-medium' : ''}>{item.label}</span>
+                    <span className={isActive ? 'font-medium' : ''}>{t(item.labelKey)}</span>
                   </button>
                 </li>
               );
@@ -183,7 +191,7 @@ export function Sidebar({
       {/* Footer */}
       <div className="mt-auto pt-4">
         <div className="mx-2 rounded-md border border-slate-800 bg-slate-900/60 px-3 py-2 text-[10px] leading-relaxed text-slate-500">
-          <span className="text-slate-400">Tip:</span> the dashboard surfaces overdue A/R + A/P and any subcontractor docs expiring soon.
+          <span className="text-slate-400">{t('nav.tip.label')}</span> {t('nav.tip.text')}
         </div>
       </div>
     </nav>

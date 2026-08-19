@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -75,15 +77,17 @@ interface TaxRate {
   isActive: boolean;
 }
 
-const FREQ_LABEL: Record<Frequency, string> = {
-  weekly: 'Weekly',
-  biweekly: 'Every 2 weeks',
-  monthly: 'Monthly',
-  quarterly: 'Quarterly',
-  annually: 'Annually',
+type Translate = TFunction<readonly ['payroll', 'common']>;
+
+const FREQ_LABEL_KEY: Record<Frequency, string> = {
+  weekly: 'recurring.frequency.weekly',
+  biweekly: 'recurring.frequency.biweekly',
+  monthly: 'recurring.frequency.monthly',
+  quarterly: 'recurring.frequency.quarterly',
+  annually: 'recurring.frequency.annually',
 };
 
-const DOW_LABEL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -97,28 +101,33 @@ function formatUsd(s: string | number | null | undefined): string {
   return `${negative ? '-' : ''}$${withCommas}.${frac.slice(0, 2)}`;
 }
 
-function describeSchedule(t: Pick<Template, 'frequency' | 'dayOfMonth' | 'dayOfWeek'>): string {
-  switch (t.frequency) {
+function describeSchedule(
+  t: Translate,
+  tpl: Pick<Template, 'frequency' | 'dayOfMonth' | 'dayOfWeek'>,
+): string {
+  const day = t(`recurring.dow.${DOW_KEYS[tpl.dayOfWeek ?? 1]}`);
+  switch (tpl.frequency) {
     case 'weekly':
-      return `Weekly on ${DOW_LABEL[t.dayOfWeek ?? 1]}`;
+      return t('recurring.schedule.weekly', { day });
     case 'biweekly':
-      return `Every 2 weeks on ${DOW_LABEL[t.dayOfWeek ?? 1]}`;
+      return t('recurring.schedule.biweekly', { day });
     case 'monthly':
-      return t.dayOfMonth === 31
-        ? 'Monthly on the last day'
-        : `Monthly on day ${t.dayOfMonth ?? 1}`;
+      return tpl.dayOfMonth === 31
+        ? t('recurring.schedule.monthlyLast')
+        : t('recurring.schedule.monthlyDay', { day: tpl.dayOfMonth ?? 1 });
     case 'quarterly':
-      return t.dayOfMonth === 31
-        ? 'Quarterly on the last day'
-        : `Quarterly on day ${t.dayOfMonth ?? 1}`;
+      return tpl.dayOfMonth === 31
+        ? t('recurring.schedule.quarterlyLast')
+        : t('recurring.schedule.quarterlyDay', { day: tpl.dayOfMonth ?? 1 });
     case 'annually':
-      return t.dayOfMonth === 31
-        ? 'Annually on the last day'
-        : `Annually on day ${t.dayOfMonth ?? 1}`;
+      return tpl.dayOfMonth === 31
+        ? t('recurring.schedule.annuallyLast')
+        : t('recurring.schedule.annuallyDay', { day: tpl.dayOfMonth ?? 1 });
   }
 }
 
 export function Recurring() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<Kind | 'all'>('all');
@@ -180,13 +189,13 @@ export function Recurring() {
   const templates = templatesQ.data?.templates ?? [];
   const today = todayIso();
   const dueCount = templates.filter(
-    (t) => t.isActive && t.nextRunDate <= today && (!t.endDate || t.endDate >= today),
+    (tpl) => tpl.isActive && tpl.nextRunDate <= today && (!tpl.endDate || tpl.endDate >= today),
   ).length;
 
   const counts = {
     all: templates.length,
-    invoice: templates.filter((t) => t.kind === 'invoice').length,
-    bill: templates.filter((t) => t.kind === 'bill').length,
+    invoice: templates.filter((tpl) => tpl.kind === 'invoice').length,
+    bill: templates.filter((tpl) => tpl.kind === 'bill').length,
   };
 
   return (
@@ -194,12 +203,10 @@ export function Recurring() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            Recurring transactions
+            {t('recurring.title')}
           </h2>
           <p className="text-sm text-slate-500">
-            Templates for invoices and bills that fire on a schedule. Each fire posts a real
-            invoice/bill through the same A/R / A/P pipeline as a one-off doc — same validation,
-            same ledger writes. Click "Run all due" to fire everything that's caught up to today.
+            {t('recurring.blurb', { action: t('recurring.runAllDue') })}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -210,20 +217,22 @@ export function Recurring() {
             className="whitespace-nowrap rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
             title={
               dueCount === 0
-                ? 'Nothing is due today'
-                : `${dueCount} template(s) due as of today`
+                ? t('recurring.nothingDue')
+                : t('recurring.dueAsOfToday', { count: dueCount })
             }
           >
             {runDueMutation.isPending
-              ? 'Running…'
-              : `Run all due${dueCount > 0 ? ` (${dueCount})` : ''}`}
+              ? t('recurring.running')
+              : dueCount > 0
+                ? t('recurring.runAllDueCount', { count: dueCount })
+                : t('recurring.runAllDue')}
           </button>
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {showForm ? 'Cancel' : '+ New template'}
+            {showForm ? t('common:cancel') : t('recurring.newTemplateAction')}
           </button>
         </div>
       </div>
@@ -237,9 +246,9 @@ export function Recurring() {
               : 'border-amber-200 bg-amber-50 text-amber-800')
           }
         >
-          Posted {runDueMutation.data.ran.length} new doc(s)
+          {t('recurring.postedDocs', { count: runDueMutation.data.ran.length })}
           {runDueMutation.data.failed.length > 0
-            ? `, ${runDueMutation.data.failed.length} failed`
+            ? t('recurring.andFailed', { count: runDueMutation.data.failed.length })
             : ''}
           .
           {runDueMutation.data.failed.length > 0 && (
@@ -266,17 +275,17 @@ export function Recurring() {
       <div className="flex gap-1 border-b border-slate-200">
         {(
           [
-            { id: 'all', label: 'All', count: counts.all },
-            { id: 'invoice', label: 'Invoices', count: counts.invoice },
-            { id: 'bill', label: 'Bills', count: counts.bill },
+            { id: 'all', labelKey: 'recurring.tabs.all', count: counts.all },
+            { id: 'invoice', labelKey: 'recurring.tabs.invoices', count: counts.invoice },
+            { id: 'bill', labelKey: 'recurring.tabs.bills', count: counts.bill },
           ] as const
-        ).map((t) => {
-          const active = tab === t.id;
+        ).map((tabDef) => {
+          const active = tab === tabDef.id;
           return (
             <button
-              key={t.id}
+              key={tabDef.id}
               type="button"
-              onClick={() => setTab(t.id)}
+              onClick={() => setTab(tabDef.id)}
               className={
                 'border-b-2 px-3 py-2 text-sm transition-colors -mb-px ' +
                 (active
@@ -284,26 +293,26 @@ export function Recurring() {
                   : 'border-transparent text-slate-500 hover:text-slate-800')
               }
             >
-              {t.label}
+              {t(tabDef.labelKey)}
               <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs font-mono text-slate-600">
-                {t.count}
+                {tabDef.count}
               </span>
             </button>
           );
         })}
       </div>
 
-      {templatesQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {templatesQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {templatesQ.isError && (
         <p className="text-sm text-rose-600">
           {templatesQ.error instanceof Error
             ? templatesQ.error.message
-            : 'Failed to load templates.'}
+            : t('recurring.failedToLoadTemplates')}
         </p>
       )}
       {!templatesQ.isLoading && templates.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No templates yet. Click "+ New template" above to set one up.
+          {t('recurring.empty', { action: t('recurring.newTemplateAction') })}
         </p>
       )}
 
@@ -312,84 +321,102 @@ export function Recurring() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-left font-medium">Kind</th>
-                <th className="px-4 py-2 text-left font-medium">Schedule</th>
-                <th className="px-4 py-2 text-left font-medium">Next run</th>
-                <th className="px-4 py-2 text-left font-medium">Last run</th>
-                <th className="px-4 py-2 text-right font-medium">Fires</th>
-                <th className="px-4 py-2 text-center font-medium">Active</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:name')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('recurring.columns.kind')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('recurring.columns.schedule')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('recurring.columns.nextRun')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('recurring.columns.lastRun')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('recurring.columns.fires')}
+                </th>
+                <th className="px-4 py-2 text-center font-medium">
+                  {t('recurring.columns.active')}
+                </th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {templates.map((t) => {
+              {templates.map((tpl) => {
                 const due =
-                  t.isActive && t.nextRunDate <= today && (!t.endDate || t.endDate >= today);
-                const ended = t.endDate && t.endDate < today;
+                  tpl.isActive &&
+                  tpl.nextRunDate <= today &&
+                  (!tpl.endDate || tpl.endDate >= today);
+                const ended = tpl.endDate && tpl.endDate < today;
+                const payloadLines =
+                  tpl.kind === 'invoice'
+                    ? (tpl.payload as InvoicePayload).lines
+                    : (tpl.payload as BillPayload).lines;
                 return (
-                  <tr key={t.id} className={t.isActive ? '' : 'opacity-60'}>
+                  <tr key={tpl.id} className={tpl.isActive ? '' : 'opacity-60'}>
                     <td className="px-4 py-2 text-slate-900">
-                      <div className="font-medium">{t.name}</div>
+                      <div className="font-medium">{tpl.name}</div>
                       <div className="text-xs text-slate-500">
-                        {t.kind === 'invoice'
-                          ? `${(t.payload as InvoicePayload).lines?.length ?? 0} line(s) · ${
-                              (t.payload as InvoicePayload).lines
-                                ?.reduce(
-                                  (acc, l) =>
-                                    acc + Number(l.quantity || 0) * Number(l.unitPrice || 0),
-                                  0,
-                                )
-                                ?.toFixed(2) ?? '0.00'
-                            }`
-                          : `${(t.payload as BillPayload).lines?.length ?? 0} line(s) · ${
-                              (t.payload as BillPayload).lines
-                                ?.reduce(
-                                  (acc, l) =>
-                                    acc + Number(l.quantity || 0) * Number(l.unitPrice || 0),
-                                  0,
-                                )
-                                ?.toFixed(2) ?? '0.00'
-                            }`}
+                        {t('recurring.linesMeta', {
+                          count: payloadLines?.length ?? 0,
+                          amount:
+                            payloadLines
+                              ?.reduce(
+                                (acc, l) =>
+                                  acc + Number(l.quantity || 0) * Number(l.unitPrice || 0),
+                                0,
+                              )
+                              ?.toFixed(2) ?? '0.00',
+                        })}
                       </div>
                     </td>
                     <td className="px-4 py-2">
                       <span
                         className={
                           'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' +
-                          (t.kind === 'invoice'
+                          (tpl.kind === 'invoice'
                             ? 'bg-sky-50 text-sky-700 ring-sky-600/20'
                             : 'bg-amber-50 text-amber-700 ring-amber-600/20')
                         }
                       >
-                        {t.kind === 'invoice' ? 'Invoice' : 'Bill'}
+                        {tpl.kind === 'invoice'
+                          ? t('recurring.kind.invoice')
+                          : t('recurring.kind.bill')}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-600">{describeSchedule(t)}</td>
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {describeSchedule(t, tpl)}
+                    </td>
                     <td className="px-4 py-2 text-slate-700">
                       {ended ? (
-                        <span className="text-xs text-slate-400">Ended {t.endDate}</span>
+                        <span className="text-xs text-slate-400">
+                          {t('recurring.ended', { date: tpl.endDate })}
+                        </span>
                       ) : (
                         <div className="flex items-center gap-1">
-                          {t.nextRunDate}
+                          {tpl.nextRunDate}
                           {due && (
                             <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium uppercase text-emerald-700 ring-1 ring-emerald-600/20">
-                              due
+                              {t('recurring.due')}
                             </span>
                           )}
                         </div>
                       )}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-500">
-                      {t.lastRunDate ?? '—'}
+                      {tpl.lastRunDate ?? '—'}
                     </td>
-                    <td className="px-4 py-2 text-right font-mono text-slate-700">{t.runCount}</td>
+                    <td className="px-4 py-2 text-right font-mono text-slate-700">
+                      {tpl.runCount}
+                    </td>
                     <td className="px-4 py-2 text-center">
                       <input
                         type="checkbox"
-                        checked={t.isActive}
+                        checked={tpl.isActive}
                         onChange={(e) =>
-                          toggleMutation.mutate({ id: t.id, isActive: e.target.checked })
+                          toggleMutation.mutate({ id: tpl.id, isActive: e.target.checked })
                         }
                         className="h-4 w-4 rounded border-slate-300"
                       />
@@ -398,27 +425,28 @@ export function Recurring() {
                       <div className="flex justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => runOneMutation.mutate(t.id)}
-                          disabled={!t.isActive || runOneMutation.isPending || Boolean(ended)}
+                          onClick={() => runOneMutation.mutate(tpl.id)}
+                          disabled={!tpl.isActive || runOneMutation.isPending || Boolean(ended)}
                           className="rounded-md border border-slate-300 bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
                           title={
-                            !t.isActive
-                              ? 'Activate first'
+                            !tpl.isActive
+                              ? t('recurring.activateFirst')
                               : ended
-                                ? 'Past end date'
-                                : 'Fire one occurrence now'
+                                ? t('recurring.pastEndDate')
+                                : t('recurring.fireNow')
                           }
                         >
-                          Run now
+                          {t('recurring.runNow')}
                         </button>
                         <button
                           type="button"
                           onClick={() => {
-                            if (confirm(`Delete template "${t.name}"?`)) deleteMutation.mutate(t.id);
+                            if (confirm(t('recurring.confirmDelete', { name: tpl.name })))
+                              deleteMutation.mutate(tpl.id);
                           }}
                           className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
                         >
-                          Delete
+                          {t('common:delete')}
                         </button>
                       </div>
                     </td>
@@ -432,9 +460,10 @@ export function Recurring() {
 
       {(runOneMutation.isError || deleteMutation.isError || toggleMutation.isError) && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(
-            runOneMutation.error ?? deleteMutation.error ?? toggleMutation.error,
-          )}
+          {formatError(runOneMutation.error ?? deleteMutation.error ?? toggleMutation.error, {
+            error: t('shell:errors.label'),
+            fallback: t('failed'),
+          })}
         </div>
       )}
     </div>
@@ -484,6 +513,7 @@ const emptyDraft = (): Draft => ({
 });
 
 function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
 
@@ -614,26 +644,28 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">New recurring template</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('recurring.newTemplate')}</h3>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Kind" required>
+        <Field label={t('recurring.fields.kind')} required>
           <select
             value={draft.kind}
             onChange={(e) => setDraft({ ...draft, kind: e.target.value as Kind })}
             className={inputClass}
           >
-            <option value="invoice">Invoice (A/R)</option>
-            <option value="bill">Bill (A/P)</option>
+            <option value="invoice">{t('recurring.kindOption.invoice')}</option>
+            <option value="bill">{t('recurring.kindOption.bill')}</option>
           </select>
         </Field>
-        <Field label="Template name" required>
+        <Field label={t('recurring.fields.templateName')} required>
           <input
             type="text"
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
             placeholder={
-              draft.kind === 'invoice' ? 'Acme monthly retainer' : 'Office rent — landlord'
+              draft.kind === 'invoice'
+                ? t('recurring.placeholders.invoiceName')
+                : t('recurring.placeholders.billName')
             }
             maxLength={120}
             required
@@ -642,14 +674,14 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
           />
         </Field>
         {draft.kind === 'invoice' ? (
-          <Field label="Customer" required>
+          <Field label={t('recurring.fields.customer')} required>
             <select
               value={draft.customerId}
               onChange={(e) => setDraft({ ...draft, customerId: e.target.value })}
               required
               className={inputClass}
             >
-              <option value="">Choose…</option>
+              <option value="">{t('recurring.choose')}</option>
               {customers.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.displayName}
@@ -658,14 +690,14 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             </select>
           </Field>
         ) : (
-          <Field label="Vendor" required>
+          <Field label={t('recurring.fields.vendor')} required>
             <select
               value={draft.vendorId}
               onChange={(e) => setDraft({ ...draft, vendorId: e.target.value })}
               required
               className={inputClass}
             >
-              <option value="">Choose…</option>
+              <option value="">{t('recurring.choose')}</option>
               {vendors.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.displayName}
@@ -677,21 +709,21 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="Frequency" required>
+        <Field label={t('recurring.fields.frequency')} required>
           <select
             value={draft.frequency}
             onChange={(e) => setDraft({ ...draft, frequency: e.target.value as Frequency })}
             className={inputClass}
           >
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Every 2 weeks</option>
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="annually">Annually</option>
+            <option value="weekly">{t('recurring.frequency.weekly')}</option>
+            <option value="biweekly">{t('recurring.frequency.biweekly')}</option>
+            <option value="monthly">{t('recurring.frequency.monthly')}</option>
+            <option value="quarterly">{t('recurring.frequency.quarterly')}</option>
+            <option value="annually">{t('recurring.frequency.annually')}</option>
           </select>
         </Field>
         {periodicHint ? (
-          <Field label="Day of month" required>
+          <Field label={t('recurring.fields.dayOfMonth')} required>
             <select
               value={draft.dayOfMonth}
               onChange={(e) => setDraft({ ...draft, dayOfMonth: e.target.value })}
@@ -699,27 +731,27 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             >
               {Array.from({ length: 31 }, (_, i) => i + 1).map((n) => (
                 <option key={n} value={n}>
-                  {n === 31 ? '31 (last day of month)' : `${n}`}
+                  {n === 31 ? t('recurring.lastDayOfMonth') : `${n}`}
                 </option>
               ))}
             </select>
           </Field>
         ) : (
-          <Field label="Day of week" required>
+          <Field label={t('recurring.fields.dayOfWeek')} required>
             <select
               value={draft.dayOfWeek}
               onChange={(e) => setDraft({ ...draft, dayOfWeek: e.target.value })}
               className={inputClass}
             >
-              {DOW_LABEL.map((d, i) => (
+              {DOW_KEYS.map((d, i) => (
                 <option key={i} value={i}>
-                  {d}
+                  {t(`recurring.dow.${d}`)}
                 </option>
               ))}
             </select>
           </Field>
         )}
-        <Field label="Start date" required>
+        <Field label={t('recurring.fields.startDate')} required>
           <input
             type="date"
             value={draft.startDate}
@@ -728,7 +760,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             className={inputClass}
           />
         </Field>
-        <Field label="End date (optional)">
+        <Field label={t('recurring.fields.endDate')}>
           <input
             type="date"
             value={draft.endDate}
@@ -739,7 +771,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Number prefix">
+        <Field label={t('recurring.fields.numberPrefix')}>
           <input
             type="text"
             value={draft.numberPrefix}
@@ -750,24 +782,24 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
           />
         </Field>
         {draft.kind === 'invoice' && (
-          <Field label="Tax rate">
+          <Field label={t('recurring.fields.taxRate')}>
             <select
               value={draft.taxRateId}
               onChange={(e) => setDraft({ ...draft, taxRateId: e.target.value })}
               className={inputClass}
             >
-              <option value="">No tax</option>
+              <option value="">{t('recurring.noTax')}</option>
               {taxRates
-                .filter((t) => t.isActive)
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+                .filter((rate) => rate.isActive)
+                .map((rate) => (
+                  <option key={rate.id} value={rate.id}>
+                    {rate.name} ({Number(rate.ratePercent).toFixed(2)}%)
                   </option>
                 ))}
             </select>
           </Field>
         )}
-        <Field label="Memo">
+        <Field label={t('common:memo')}>
           <input
             type="text"
             value={draft.memo}
@@ -781,13 +813,13 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
       {/* Lines */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-slate-700">Line items</h4>
+          <h4 className="text-sm font-medium text-slate-700">{t('recurring.lineItems')}</h4>
           <button
             type="button"
             onClick={addLine}
             className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
           >
-            + Add line
+            {t('recurring.addLine')}
           </button>
         </div>
         <div className="overflow-x-auto rounded-md border border-slate-200">
@@ -795,15 +827,17 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-3 py-2 text-left">
-                  {draft.kind === 'invoice' ? 'Income account' : 'Expense account'}
+                  {draft.kind === 'invoice'
+                    ? t('recurring.columns.incomeAccount')
+                    : t('recurring.columns.expenseAccount')}
                 </th>
-                <th className="px-3 py-2 text-left">Description</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Price</th>
+                <th className="px-3 py-2 text-left">{t('recurring.columns.description')}</th>
+                <th className="px-3 py-2 text-right">{t('recurring.columns.qty')}</th>
+                <th className="px-3 py-2 text-right">{t('recurring.columns.price')}</th>
                 {draft.kind === 'invoice' && (
-                  <th className="px-3 py-2 text-center">Tax</th>
+                  <th className="px-3 py-2 text-center">{t('recurring.columns.tax')}</th>
                 )}
-                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2 text-right">{t('common:amount')}</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -820,7 +854,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
                         onChange={(e) => setLine(idx, { accountId: e.target.value })}
                         className={inputClass + ' min-w-[180px]'}
                       >
-                        <option value="">Choose…</option>
+                        <option value="">{t('recurring.choose')}</option>
                         {accounts.map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.code} — {a.name}
@@ -877,7 +911,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
                           onClick={() => removeLine(idx)}
                           className="text-xs text-rose-600 hover:underline"
                         >
-                          Remove
+                          {t('recurring.remove')}
                         </button>
                       )}
                     </td>
@@ -888,7 +922,7 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
             <tfoot className="bg-slate-50">
               <tr className="font-medium">
                 <td colSpan={draft.kind === 'invoice' ? 5 : 4} className="px-3 py-2 text-right text-slate-700">
-                  Subtotal
+                  {t('recurring.subtotal')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">
                   {formatUsd(subtotal.toFixed(4))}
@@ -906,17 +940,14 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Creating…' : 'Save template'}
+          {mutation.isPending ? t('recurring.creating') : t('recurring.saveTemplate')}
         </button>
-        <p className="text-xs text-slate-500">
-          The first run-date is computed from your start date + schedule (e.g. monthly day=15
-          starting 2026-05-08 → first run 2026-05-15).
-        </p>
+        <p className="text-xs text-slate-500">{t('recurring.firstRunHint')}</p>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -925,13 +956,13 @@ function NewTemplateForm({ onCreated }: { onCreated: () => void }) {
 
 // --- Bits -----------------------------------------------------------------
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

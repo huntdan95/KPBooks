@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -27,6 +28,7 @@ function formatUsd(s: string | number): string {
 }
 
 export function WorkersCompSummary() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfYear);
   const [to, setTo] = useState<string>(todayIso);
@@ -52,7 +54,7 @@ export function WorkersCompSummary() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={from}
@@ -60,7 +62,7 @@ export function WorkersCompSummary() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={to}
@@ -71,16 +73,15 @@ export function WorkersCompSummary() {
       </div>
 
       <p className="text-xs text-slate-500">
-        Workers' comp summary: payments to active workers grouped by{' '}
-        <code>workers_comp_class</code>. Use this at WC-audit / WC-recertification time to hand
-        the carrier a per-class breakdown of labor dollars. Workers without a class fall into the
-        "unclassified" row at the bottom — assign codes on the Workers page.
+        {t('workersComp.blurbBefore')}{' '}
+        <code>workers_comp_class</code>
+        {t('workersComp.blurbAfter')}
       </p>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load.'}
+          {query.error instanceof Error ? query.error.message : t('failedToLoad')}
         </p>
       )}
 
@@ -88,26 +89,34 @@ export function WorkersCompSummary() {
         <>
           {unclassifiedRow && unclassifiedRow.workerCount > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              <strong>{unclassifiedRow.workerCount}</strong> active worker(s) totaling{' '}
-              <strong>{formatUsd(unclassifiedRow.totalPaid)}</strong> in this period have no
-              workers' comp class assigned. Carriers will usually default these to the highest-
-              risk rate; assign a class on each worker's record to fix.
+              <strong>{unclassifiedRow.workerCount}</strong>{' '}
+              {t('workersComp.unclassifiedMid', { count: unclassifiedRow.workerCount })}{' '}
+              <strong>{formatUsd(unclassifiedRow.totalPaid)}</strong>{' '}
+              {t('workersComp.unclassifiedTail')}
             </div>
           )}
 
           {data.rows.length === 0 ? (
             <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-              No payments to active workers in this period.
+              {t('workersComp.empty')}
             </p>
           ) : (
             <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">WC class</th>
-                    <th className="px-4 py-2 text-right font-medium">Worker count</th>
-                    <th className="px-4 py-2 text-right font-medium">Total paid</th>
-                    <th className="px-4 py-2 text-right font-medium">% of total</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('workersComp.columns.wcClass')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('workersComp.columns.workerCount')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('workersComp.columns.totalPaid')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('workersComp.columns.pctOfTotal')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -122,7 +131,7 @@ export function WorkersCompSummary() {
                         <td className="px-4 py-2">
                           {unclassified ? (
                             <span className="rounded-md bg-rose-50 px-2 py-0.5 text-xs text-rose-700 ring-1 ring-rose-200">
-                              unclassified
+                              {t('workersComp.unclassified')}
                             </span>
                           ) : (
                             <span className="font-mono text-slate-700">
@@ -146,17 +155,19 @@ export function WorkersCompSummary() {
                 <tfoot className="bg-slate-100 text-sm font-semibold">
                   <tr>
                     <td className="px-4 py-3 text-right text-slate-900">
-                      Total ({data.from} → {data.to})
+                      {t('workersComp.totalRange', { from: data.from, to: data.to })}
                     </td>
                     <td className="px-4 py-3 text-right text-slate-700"></td>
                     <td className="px-4 py-3 text-right font-mono text-slate-900">
                       {formatUsd(data.totalPaid)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-xs text-slate-500">
-                      {Number(data.totalPaid) > 0
-                        ? ((classifiedTotal / Number(data.totalPaid)) * 100).toFixed(1)
-                        : '0.0'}
-                      % classified
+                      {t('workersComp.pctClassified', {
+                        pct:
+                          Number(data.totalPaid) > 0
+                            ? ((classifiedTotal / Number(data.totalPaid)) * 100).toFixed(1)
+                            : '0.0',
+                      })}
                     </td>
                   </tr>
                 </tfoot>

@@ -4,5 +4,206 @@
     "google": "Continuar con Google",
     "busy": "Iniciando sesión...",
     "failed": "No se pudo iniciar sesión"
+  },
+  "app": {
+    "startingUp": "Iniciando…",
+    "loadingAccount": "Cargando la cuenta…",
+    "accountLoadFailed": "No se pudo cargar la cuenta: {{message}}",
+    "accountLoadFailedGeneric": "No se pudo cargar la cuenta.",
+    "noData": "Sin datos."
+  },
+  "errors": {
+    "label": "Error",
+    "downloadFailedStatus": "No se pudo descargar: {{status}}"
+  },
+  "iifPreview": {
+    "skippedNonPosting": "omitido (no contabiliza)",
+    "excludedDataError": "excluido: error de datos (vea las advertencias)"
+  },
+  "brand": {
+    "tagline": "Contabilidad · simplificada"
+  },
+  "header": {
+    "openNavigation": "Abrir la navegación",
+    "navigation": "Navegación"
+  },
+  "userMenu": {
+    "signedInAs": "Sesión iniciada como"
+  },
+  "companyPicker": {
+    "pick": "Seleccione un cliente",
+    "newClient": "Nuevo cliente"
+  },
+  "roles": {
+    "owner": "Propietario",
+    "admin": "Administrador",
+    "bookkeeper": "Auxiliar contable",
+    "viewer": "Lector"
+  },
+  "noCompany": {
+    "welcomeTitle": "Bienvenido: agregue su primer cliente para comenzar",
+    "pickTitle": "Seleccione un cliente para continuar",
+    "welcomeBody": "Crearemos un catálogo de cuentas nuevo y podrá importar un archivo .iif de QuickBooks existente una vez que la empresa exista.",
+    "pickBody": "Cada cliente tiene sus propios libros, catálogo de cuentas e historial. Cambie de cliente en cualquier momento desde la lista desplegable del encabezado de la página.",
+    "addNew": "Agregar un cliente nuevo"
+  },
+  "newCompanyModal": {
+    "title": "Nuevo cliente",
+    "description": "Agrega una empresa nueva de la que usted será el propietario, con su propio catálogo de cuentas inicial."
+  },
+  "createCompany": {
+    "title": "Cree su primer cliente",
+    "description": "Cada cliente (un negocio pequeño al que usted atiende) recibe su propio catálogo de cuentas, clientes, proveedores e informes, totalmente aislados."
+  },
+  "companyForm": {
+    "displayName": "Nombre para mostrar *",
+    "displayNamePlaceholder": "Acme Bookkeeping LLC",
+    "legalName": "Razón social (opcional)",
+    "legalNamePlaceholder": "Acme Bookkeeping, LLC",
+    "ein": "EIN (opcional)",
+    "einPlaceholder": "12-3456789",
+    "seedNote": "Inicializaremos un catálogo de cuentas predeterminado (26 cuentas que cubren las categorías comunes de activo, pasivo, capital, ingresos y gastos) que podrá editar en cualquier momento desde la pestaña Catálogo de cuentas.",
+    "creating": "Creando…",
+    "submit": "Crear cliente",
+    "failed": "No se pudo crear el cliente."
+  },
+  "readyz": {
+    "label": "Estado de la API:",
+    "checking": "verificando…",
+    "live": "✓ en línea (Cloud Run + Neon Postgres)",
+    "unreachable": "✗ sin conexión"
+  },
+  "nav": {
+    "sections": {
+      "sales": "Ventas",
+      "expenses": "Gastos",
+      "workers": "Trabajadores",
+      "banking": "Bancos",
+      "accounting": "Contabilidad",
+      "reports": "Informes",
+      "files": "Archivos",
+      "taxes": "Impuestos"
+    },
+    "items": {
+      "dashboard": "Panel",
+      "chat": "Preguntar a Claude",
+      "estimates": "Cotizaciones",
+      "invoices": "Facturas",
+      "customers": "Clientes",
+      "items": "Artículos y servicios",
+      "payments": "Pagos",
+      "bills": "Facturas por pagar",
+      "vendors": "Proveedores",
+      "mileage": "Millaje",
+      "workers": "Trabajadores / 1099",
+      "time-entries": "Registro de horas",
+      "payroll-runs": "Corridas de nómina",
+      "banking": "Cuentas bancarias",
+      "accounts": "Catálogo de cuentas",
+      "new-entry": "Nuevo asiento contable",
+      "recurring": "Transacciones recurrentes",
+      "fixed-assets": "Activos fijos",
+      "import": "Importar (.iif)",
+      "reports": "Todos los informes",
+      "activity": "Registro de actividad",
+      "documents": "Documentos",
+      "tax-rates": "Tasas de impuesto",
+      "1099-prep": "Preparación de 1099"
+    },
+    "tip": {
+      "label": "Consejo:",
+      "text": "el panel muestra las cuentas por cobrar y por pagar vencidas y los documentos de subcontratistas próximos a vencer."
+    }
+  },
+  "pages": {
+    "dashboard": { "title": "Panel", "subtitle": "Resumen del día" },
+    "chat": { "title": "Preguntar a Claude", "subtitle": "Asistente contable con IA" },
+    "estimates": { "title": "Cotizaciones", "subtitle": "Cotizaciones listas para convertirse en facturas" },
+    "invoices": { "title": "Facturas", "subtitle": "Documentos de cuentas por cobrar dirigidos al cliente" },
+    "customers": { "title": "Clientes", "subtitle": "Contrapartes de cuentas por cobrar" },
+    "bills": { "title": "Facturas por pagar", "subtitle": "Documentos de cuentas por pagar del proveedor" },
+    "vendors": { "title": "Proveedores", "subtitle": "Contrapartes de cuentas por pagar" },
+    "mileage": { "title": "Millaje", "subtitle": "Registro de viajes de uso comercial" },
+    "workers": { "title": "Trabajadores / 1099", "subtitle": "Contratistas, empleados y formularios W-9" },
+    "banking": { "title": "Bancos", "subtitle": "Cuentas bancarias y conciliación bancaria" },
+    "payments": { "title": "Pagos", "subtitle": "Entradas y salidas de dinero" },
+    "accounts": { "title": "Catálogo de cuentas", "subtitle": "La estructura de su libro mayor" },
+    "new-entry": { "title": "Nuevo asiento contable", "subtitle": "Registro manual en el libro mayor" },
+    "import": { "title": "Importar desde QuickBooks", "subtitle": "Suelte un archivo .iif para inicializar sus libros" },
+    "reports": { "title": "Informes", "subtitle": "Balanza de comprobación, estado de resultados, cuentas por cobrar, cuentas por pagar y más" },
+    "tax-rates": { "title": "Tasas de impuesto", "subtitle": "Tasas de impuesto sobre ventas aplicadas a las facturas" },
+    "1099-prep": { "title": "Preparación de 1099", "subtitle": "Revisión de fin de año para 1099-NEC y 1099-MISC" },
+    "recurring": { "title": "Transacciones recurrentes", "subtitle": "Cobros mensuales fijos y facturas por pagar recurrentes" },
+    "time-entries": { "title": "Registro de horas", "subtitle": "Horas de trabajadores que se trasladan a las facturas por pagar" },
+    "items": { "title": "Artículos y servicios", "subtitle": "Plantillas guardadas para las líneas de facturas y facturas por pagar" },
+    "payroll-runs": { "title": "Corridas de nómina", "subtitle": "Captura por lotes de cheques de nómina" },
+    "fixed-assets": { "title": "Activos fijos", "subtitle": "Activos capitalizados y depreciación" },
+    "activity": { "title": "Registro de actividad", "subtitle": "Pista de auditoría de solo adición" },
+    "documents": { "title": "Documentos", "subtitle": "Declaraciones de impuestos, 1099, recibos y estados de cuenta" }
+  },
+  "dashboard": {
+    "greeting": {
+      "morning": "Buenos días",
+      "afternoon": "Buenas tardes",
+      "evening": "Buenas noches",
+      "late": "Trabajando hasta tarde"
+    },
+    "snapshot": "Resumen de {{month}} (del mes a la fecha) y cuentas por cobrar y por pagar pendientes al {{date}}.",
+    "compliance": {
+      "label": "Alertas de cumplimiento:",
+      "mixed_one": "{{count}} vencido, {{expiring}} por vencer en 30 días",
+      "mixed_other": "{{count}} vencidos, {{expiring}} por vencer en 30 días",
+      "expiring_one": "{{count}} documento de subcontratista por vencer en 30 días",
+      "expiring_other": "{{count}} documentos de subcontratistas por vencer en 30 días",
+      "hint": "(licencia, responsabilidad civil general y seguro de compensación laboral de sus subcontratistas: haga clic para revisar)"
+    },
+    "tiles": {
+      "cash": "Efectivo disponible",
+      "cashAccounts_one": "{{count}} cuenta",
+      "cashAccounts_other": "{{count}} cuentas",
+      "trend30d": "{{value}} 30 d",
+      "netIncome": "Utilidad neta",
+      "netIncomeSub": "Del mes a la fecha · {{month}}",
+      "arOutstanding": "Cuentas por cobrar pendientes",
+      "apOutstanding": "Cuentas por pagar pendientes",
+      "overdueInvoices_one": "{{count}} factura vencida",
+      "overdueInvoices_other": "{{count}} facturas vencidas",
+      "overdueBills_one": "{{count}} factura por pagar vencida",
+      "overdueBills_other": "{{count}} facturas por pagar vencidas",
+      "allCurrent": "todo al corriente"
+    },
+    "recentInvoices": {
+      "title": "Facturas pendientes recientes",
+      "empty": "No hay facturas pendientes."
+    },
+    "recentBills": {
+      "title": "Facturas por pagar pendientes recientes",
+      "empty": "No hay facturas por pagar pendientes."
+    },
+    "viewAll": "Ver todas",
+    "dueLine": "{{number}} · vence {{date}}",
+    "status": {
+      "partial": "Pagado parcialmente"
+    },
+    "activity": {
+      "title": "Actividad reciente",
+      "seeAll": "Ver todo",
+      "empty": "Sin actividad en los últimos 7 días."
+    },
+    "time": {
+      "justNow": "hace un momento",
+      "minutes": "hace {{minutes}} min",
+      "hours": "hace {{hours}} h",
+      "days": "hace {{days}} d"
+    },
+    "quickActions": {
+      "title": "Acciones rápidas",
+      "invoice": "Nueva factura",
+      "bill": "Nueva factura por pagar",
+      "payment": "Recibir pago",
+      "banking": "Importar CSV bancario",
+      "je": "Asiento contable",
+      "iif": "Importar .iif"
+    }
   }
 }

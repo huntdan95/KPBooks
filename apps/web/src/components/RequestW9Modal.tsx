@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -18,35 +19,16 @@ function buildUploadUrl(token: string): string {
   return `${window.location.origin}/w9-upload/${token}`;
 }
 
-function buildMailToHref(token: CreatedToken, companyName: string | null): string {
-  const url = buildUploadUrl(token.token);
-  const subject = encodeURIComponent(`W-9 needed for ${companyName ?? 'your work'}`);
-  const body = encodeURIComponent(
-    `Hi ${token.vendorName},\n\n` +
-      `For year-end 1099 reporting we need a current Form W-9 on file. ` +
-      `Please upload yours via the secure link below — no account needed:\n\n` +
-      `${url}\n\n` +
-      `If you don't have a blank W-9 handy, download one at\n` +
-      `https://www.irs.gov/pub/irs-pdf/fw9.pdf\n\n` +
-      `The link is good for 30 days and is single-use.\n\n` +
-      `Thanks!`,
-  );
+function buildMailToHref(token: CreatedToken, subject: string, body: string): string {
   const to = token.emailTo ? encodeURIComponent(token.emailTo) : '';
-  return `mailto:${to}?subject=${subject}&body=${body}`;
+  return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-function buildGmailHref(token: CreatedToken, companyName: string | null): string {
-  const url = buildUploadUrl(token.token);
-  const subject = encodeURIComponent(`W-9 needed for ${companyName ?? 'your work'}`);
-  const body = encodeURIComponent(
-    `Hi ${token.vendorName},\n\n` +
-      `For year-end 1099 reporting we need a current Form W-9 on file. ` +
-      `Please upload yours via the secure link below — no account needed:\n\n` +
-      `${url}\n\n` +
-      `Thanks!`,
-  );
+function buildGmailHref(token: CreatedToken, subject: string, body: string): string {
   const to = token.emailTo ? encodeURIComponent(token.emailTo) : '';
-  return `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${subject}&body=${body}`;
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${to}&su=${encodeURIComponent(
+    subject,
+  )}&body=${encodeURIComponent(body)}`;
 }
 
 export function RequestW9Modal({
@@ -60,6 +42,7 @@ export function RequestW9Modal({
   companyName: string | null;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [token, setToken] = useState<CreatedToken | null>(null);
@@ -83,6 +66,15 @@ export function RequestW9Modal({
   }
 
   const url = token ? buildUploadUrl(token.token) : '';
+  const emailSubject = t('w9Email.subject', {
+    company: companyName ?? t('w9Email.fallbackCompany'),
+  });
+  const emailBodyFull = token
+    ? t('w9Email.bodyFull', { vendor: token.vendorName, url })
+    : '';
+  const emailBodyShort = token
+    ? t('w9Email.bodyShort', { vendor: token.vendorName, url })
+    : '';
 
   async function copyUrl() {
     if (!url) return;
@@ -117,28 +109,30 @@ export function RequestW9Modal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Request W-9 from {vendorName}
+              {t('requestW9.title', { vendor: vendorName })}
             </h2>
-            <p className="text-xs text-slate-500">
-              Generates a single-use upload link the contractor can open in any browser. No
-              login required. The link expires in 30 days.
-            </p>
+            <p className="text-xs text-slate-500">{t('requestW9.subtitle')}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             ✕
           </button>
         </div>
 
-        {mutation.isPending && <p className="text-sm text-slate-500">Generating link…</p>}
+        {mutation.isPending && (
+          <p className="text-sm text-slate-500">{t('requestW9.generatingLink')}</p>
+        )}
 
         {mutation.isError && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatError(mutation.error)}
+            {formatError(mutation.error, {
+              error: t('errors.label'),
+              fallback: t('errors.failed'),
+            })}
           </div>
         )}
 
@@ -146,14 +140,13 @@ export function RequestW9Modal({
           <>
             {token.reused && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                A previous link was still active for this contractor — re-using it instead of
-                minting a new one. Same URL the contractor already has (if you sent it before).
+                {t('requestW9.reused')}
               </div>
             )}
 
             <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
               <label className="block text-xs font-medium uppercase tracking-wider text-slate-500">
-                Upload URL
+                {t('requestW9.uploadUrl')}
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -168,52 +161,51 @@ export function RequestW9Modal({
                   onClick={copyUrl}
                   className="shrink-0 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
                 >
-                  {copied ? '✓ Copied' : 'Copy'}
+                  {copied ? t('requestW9.copied') : t('requestW9.copy')}
                 </button>
               </div>
               {token.emailTo ? (
                 <p className="text-xs text-slate-500">
-                  Recipient email on file: <strong>{token.emailTo}</strong>
+                  <Trans
+                    t={t}
+                    i18nKey="requestW9.emailOnFile"
+                    values={{ email: token.emailTo }}
+                    components={{ strong: <strong /> }}
+                  />
                 </p>
               ) : (
-                <p className="text-xs text-rose-600">
-                  No email on file for this contractor — add one on the Worker page so the email
-                  shortcuts pre-fill the recipient.
-                </p>
+                <p className="text-xs text-rose-600">{t('requestW9.noEmail')}</p>
               )}
             </div>
 
             <div className="space-y-1.5">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Send by email
+                {t('requestW9.sendByEmail')}
               </p>
               <div className="flex flex-wrap gap-2">
                 <a
-                  href={buildMailToHref(token, companyName)}
+                  href={buildMailToHref(token, emailSubject, emailBodyFull)}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
                 >
-                  Open in default mail
+                  {t('requestW9.openDefaultMail')}
                 </a>
                 <a
-                  href={buildGmailHref(token, companyName)}
+                  href={buildGmailHref(token, emailSubject, emailBodyShort)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
                 >
-                  Compose in Gmail
+                  {t('requestW9.composeGmail')}
                 </a>
                 <button
                   type="button"
                   onClick={copyUrl}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
                 >
-                  Copy URL
+                  {t('requestW9.copyUrl')}
                 </button>
               </div>
-              <p className="text-xs text-slate-500">
-                Both shortcuts open a pre-filled draft. Review and hit send from your own email
-                — KPBooks never sends mail on your behalf.
-              </p>
+              <p className="text-xs text-slate-500">{t('requestW9.shortcutsHint')}</p>
             </div>
 
             <div className="flex justify-end">
@@ -222,7 +214,7 @@ export function RequestW9Modal({
                 onClick={onClose}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
               >
-                Done
+                {t('requestW9.done')}
               </button>
             </div>
           </>
@@ -232,11 +224,11 @@ export function RequestW9Modal({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -44,11 +45,11 @@ function formatUsd(s: string | number): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-const TYPE_LABEL: Record<WorkerType, string> = {
-  contractor: '1099 Contractor',
-  subcontractor: '1099 Subcontractor',
-  employee: 'W-2 Employee',
-  not_a_worker: 'Vendor',
+const TYPE_LABEL_KEY: Record<WorkerType, string> = {
+  contractor: 'register.type.contractor',
+  subcontractor: 'register.type.subcontractor',
+  employee: 'register.type.employee',
+  not_a_worker: 'register.type.notAWorker',
 };
 
 const TYPE_TONE: Record<WorkerType, string> = {
@@ -59,6 +60,7 @@ const TYPE_TONE: Record<WorkerType, string> = {
 };
 
 export function PayrollRegister() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfMonth);
   const [to, setTo] = useState<string>(todayIso);
@@ -83,7 +85,7 @@ export function PayrollRegister() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={from}
@@ -91,7 +93,7 @@ export function PayrollRegister() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={to}
@@ -99,7 +101,7 @@ export function PayrollRegister() {
             className={inputClass}
           />
         </Field>
-        <Field label="Classification">
+        <Field label={t('register.classification')}>
           <select
             value={workerType}
             onChange={(e) =>
@@ -107,25 +109,23 @@ export function PayrollRegister() {
             }
             className={inputClass}
           >
-            <option value="">All</option>
-            <option value="employee">W-2 Employees</option>
-            <option value="contractor">1099 Contractors</option>
-            <option value="subcontractor">1099 Subcontractors</option>
+            <option value="">{t('register.filter.all')}</option>
+            <option value="employee">{t('register.filter.employees')}</option>
+            <option value="contractor">{t('register.filter.contractors')}</option>
+            <option value="subcontractor">{t('register.filter.subcontractors')}</option>
           </select>
         </Field>
       </div>
 
       <p className="text-xs text-slate-500">
-        Payroll register: every active worker and what they were paid in posted vendor payments
-        between the dates above. Workers who weren't paid in the period still show with $0 so you
-        can spot missed paychecks. Source: <code>payments</code> WHERE{' '}
+        {t('register.blurb')} <code>payments</code> WHERE{' '}
         <code>payment_type='vendor_sent' AND status='posted'</code>.
       </p>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load.'}
+          {query.error instanceof Error ? query.error.message : t('failedToLoad')}
         </p>
       )}
 
@@ -133,9 +133,9 @@ export function PayrollRegister() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Tile
-              label="Total payroll"
+              label={t('register.totalPayroll')}
               value={formatUsd(data.totals.totalPaid)}
-              hint={`${data.totals.totalPayments} payment(s)`}
+              hint={t('register.paymentCount', { count: data.totals.totalPayments })}
               tone="slate"
             />
             {data.totals.byWorkerType
@@ -145,9 +145,9 @@ export function PayrollRegister() {
               .map((b) => (
                 <Tile
                   key={b.workerType}
-                  label={TYPE_LABEL[b.workerType]}
+                  label={t(TYPE_LABEL_KEY[b.workerType])}
                   value={formatUsd(b.total)}
-                  hint={`${b.count} payment(s)`}
+                  hint={t('register.paymentCount', { count: b.count })}
                   tone="slate"
                 />
               ))}
@@ -155,20 +155,34 @@ export function PayrollRegister() {
 
           {data.rows.length === 0 ? (
             <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-              No active workers matching the filter.
+              {t('register.empty')}
             </p>
           ) : (
             <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Worker</th>
-                    <th className="px-4 py-2 text-left font-medium">Type</th>
-                    <th className="px-4 py-2 text-left font-medium">Tax ID</th>
-                    <th className="px-4 py-2 text-left font-medium">WC class</th>
-                    <th className="px-4 py-2 text-left font-medium">Schedule</th>
-                    <th className="px-4 py-2 text-right font-medium">Payments</th>
-                    <th className="px-4 py-2 text-right font-medium">Total paid</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('register.columns.worker')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('register.columns.type')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('register.columns.taxId')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('register.columns.wcClass')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('register.columns.schedule')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('register.columns.payments')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('register.columns.totalPaid')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -182,13 +196,13 @@ export function PayrollRegister() {
                             TYPE_TONE[r.workerType]
                           }
                         >
-                          {TYPE_LABEL[r.workerType]}
+                          {t(TYPE_LABEL_KEY[r.workerType])}
                         </span>
                       </td>
                       <td className="px-4 py-2 font-mono text-xs text-slate-600">
                         {r.taxId
                           ? r.taxId.replace(/.(?=.{4})/g, '•').slice(-9)
-                          : <span className="text-rose-600">missing</span>}
+                          : <span className="text-rose-600">{t('register.missing')}</span>}
                       </td>
                       <td className="px-4 py-2 text-xs text-slate-700">
                         {r.workersCompClass || (
@@ -210,7 +224,7 @@ export function PayrollRegister() {
                 <tfoot className="bg-slate-100 text-sm font-semibold">
                   <tr>
                     <td colSpan={5} className="px-4 py-3 text-right text-slate-900">
-                      Total ({data.from} → {data.to})
+                      {t('register.totalRange', { from: data.from, to: data.to })}
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-slate-700">
                       {data.totals.totalPayments}
@@ -224,11 +238,7 @@ export function PayrollRegister() {
             </div>
           )}
 
-          <p className="text-xs text-slate-500">
-            Tip: Ctrl+P prints this register at year-end as the per-employee paystub history for
-            recordkeeping. Use the classification filter to print W-2 and 1099 sections separately
-            if your filing software wants them split.
-          </p>
+          <p className="text-xs text-slate-500">{t('register.tip')}</p>
         </>
       )}
     </div>

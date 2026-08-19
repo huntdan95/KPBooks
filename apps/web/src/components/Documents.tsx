@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { EmptyState } from './ui/EmptyState';
@@ -42,22 +43,26 @@ interface ListResp {
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
-const CATEGORY_OPTIONS: Array<{ value: Category; label: string; icon: IconName }> = [
-  { value: 'tax_return', label: 'Tax return', icon: 'file-text' },
-  { value: 'w9', label: 'W-9', icon: 'badge-check' },
-  { value: 'w2', label: 'W-2', icon: 'badge-check' },
-  { value: 'form_1099', label: '1099', icon: 'badge-check' },
-  { value: 'form_941', label: '941', icon: 'badge-check' },
-  { value: 'receipt', label: 'Receipt', icon: 'receipt' },
-  { value: 'statement', label: 'Statement', icon: 'banknote' },
-  { value: 'contract', label: 'Contract', icon: 'file-text' },
-  { value: 'correspondence', label: 'Correspondence', icon: 'inbox' },
-  { value: 'financial_report', label: 'Financial report', icon: 'bar-chart' },
-  { value: 'other', label: 'Other', icon: 'package' },
+const CATEGORY_OPTIONS: Array<{ value: Category; labelKey: string; icon: IconName }> = [
+  { value: 'tax_return', labelKey: 'documents.category.taxReturn', icon: 'file-text' },
+  { value: 'w9', labelKey: 'documents.category.w9', icon: 'badge-check' },
+  { value: 'w2', labelKey: 'documents.category.w2', icon: 'badge-check' },
+  { value: 'form_1099', labelKey: 'documents.category.form1099', icon: 'badge-check' },
+  { value: 'form_941', labelKey: 'documents.category.form941', icon: 'badge-check' },
+  { value: 'receipt', labelKey: 'documents.category.receipt', icon: 'receipt' },
+  { value: 'statement', labelKey: 'documents.category.statement', icon: 'banknote' },
+  { value: 'contract', labelKey: 'documents.category.contract', icon: 'file-text' },
+  { value: 'correspondence', labelKey: 'documents.category.correspondence', icon: 'inbox' },
+  {
+    value: 'financial_report',
+    labelKey: 'documents.category.financialReport',
+    icon: 'bar-chart',
+  },
+  { value: 'other', labelKey: 'documents.category.other', icon: 'package' },
 ];
 
-const CATEGORY_LABEL: Record<Category, string> = Object.fromEntries(
-  CATEGORY_OPTIONS.map((c) => [c.value, c.label]),
+const CATEGORY_LABEL_KEY: Record<Category, string> = Object.fromEntries(
+  CATEGORY_OPTIONS.map((c) => [c.value, c.labelKey]),
 ) as Record<Category, string>;
 
 const CATEGORY_TONE: Record<Category, string> = {
@@ -85,25 +90,26 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
 }
 
-function fileToBase64(file: File): Promise<string> {
+function fileToBase64(file: File, readError: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== 'string') {
-        reject(new Error('reader result not a string'));
+        reject(new Error(readError));
         return;
       }
       // result is "data:<mime>;base64,XXXX". Strip prefix.
       const comma = result.indexOf(',');
       resolve(comma === -1 ? result : result.slice(comma + 1));
     };
-    reader.onerror = () => reject(reader.error ?? new Error('read failed'));
+    reader.onerror = () => reject(reader.error ?? new Error(readError));
     reader.readAsDataURL(file);
   });
 }
 
 export function Documents() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [category, setCategory] = useState<'' | Category>('');
@@ -133,12 +139,10 @@ export function Documents() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">Documents</h2>
-        <p className="text-sm text-slate-500">
-          Tax returns, 1099s, W-9s, W-2s, 941s, expense receipts, bank statements,
-          contracts, and more. Files are stored encrypted at rest, scoped per client. Per-vendor
-          HR docs (W-9 / W-4 / I-9) still live on the Worker page.
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('documents.title')}
+        </h2>
+        <p className="text-sm text-slate-500">{t('documents.blurb')}</p>
       </div>
 
       {/* Upload zone */}
@@ -154,37 +158,37 @@ export function Documents() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
-        <Field label="Category">
+        <Field label={t('documents.fields.category')}>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as '' | Category)}
             className={inputClass}
           >
-            <option value="">All categories</option>
+            <option value="">{t('documents.allCategories')}</option>
             {CATEGORY_OPTIONS.map((c) => (
               <option key={c.value} value={c.value}>
-                {c.label}
+                {t(c.labelKey)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Tax year">
+        <Field label={t('documents.fields.taxYear')}>
           <input
             type="number"
             min={1990}
             max={2100}
             value={taxYear}
             onChange={(e) => setTaxYear(e.target.value)}
-            placeholder="e.g. 2024"
+            placeholder={t('documents.placeholders.taxYear')}
             className={inputClass + ' w-28'}
           />
         </Field>
-        <Field label="Search filename / description">
+        <Field label={t('documents.fields.search')}>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="invoice, Q3, ABC LLC…"
+            placeholder={t('documents.placeholders.search')}
             className={inputClass + ' min-w-[240px]'}
           />
         </Field>
@@ -198,18 +202,18 @@ export function Documents() {
             }}
             className="self-end rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100"
           >
-            Clear filters
+            {t('documents.clearFilters')}
           </button>
         )}
         <div className="ml-auto self-end text-xs text-slate-500">
-          {docs.length} document{docs.length === 1 ? '' : 's'}
+          {t('documents.count', { count: docs.length })}
         </div>
       </div>
 
-      {documentsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {documentsQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {documentsQ.isError && (
         <p className="text-sm text-rose-600">
-          {documentsQ.error instanceof Error ? documentsQ.error.message : 'Failed to load.'}
+          {documentsQ.error instanceof Error ? documentsQ.error.message : t('failedToLoad')}
         </p>
       )}
 
@@ -218,13 +222,13 @@ export function Documents() {
           icon="upload-cloud"
           title={
             category || taxYear || search
-              ? 'No documents match these filters'
-              : 'No documents yet'
+              ? t('documents.emptyFilteredTitle')
+              : t('documents.emptyTitle')
           }
           description={
             category || taxYear || search
-              ? 'Try clearing filters above, or upload something new.'
-              : 'Drag files into the upload zone above, or click to pick. Tax returns, receipts, statements, signed agreements — anything you want to keep alongside the books.'
+              ? t('documents.emptyFilteredDescription')
+              : t('documents.emptyDescription')
           }
         />
       )}
@@ -234,11 +238,21 @@ export function Documents() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Filename</th>
-                <th className="px-4 py-2 text-left font-medium">Category</th>
-                <th className="px-4 py-2 text-left font-medium">Tax year</th>
-                <th className="px-4 py-2 text-right font-medium">Size</th>
-                <th className="px-4 py-2 text-left font-medium">Uploaded</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('documents.columns.filename')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('documents.columns.category')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('documents.columns.taxYear')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('documents.columns.size')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('documents.columns.uploaded')}
+                </th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -252,12 +266,12 @@ export function Documents() {
                     )}
                     {d.tags.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
-                        {d.tags.map((t) => (
+                        {d.tags.map((tag) => (
                           <span
-                            key={t}
+                            key={tag}
                             className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"
                           >
-                            {t}
+                            {tag}
                           </span>
                         ))}
                       </div>
@@ -270,7 +284,7 @@ export function Documents() {
                         CATEGORY_TONE[d.category]
                       }
                     >
-                      {CATEGORY_LABEL[d.category]}
+                      {t(CATEGORY_LABEL_KEY[d.category])}
                     </span>
                   </td>
                   <td className="px-4 py-2 font-mono text-xs text-slate-600">
@@ -288,7 +302,7 @@ export function Documents() {
                         onClick={() => setEditingId(d.id)}
                         className="text-xs text-slate-600 hover:text-slate-900 hover:underline"
                       >
-                        Edit
+                        {t('common:edit')}
                       </button>
                     </div>
                   </td>
@@ -321,6 +335,7 @@ function UploadZone({
   onTaxYearChange: (y: string) => void;
   onUploaded: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState<string[]>([]); // filenames
@@ -330,12 +345,12 @@ function UploadZone({
 
   async function uploadOne(file: File): Promise<void> {
     if (file.size === 0) {
-      throw new Error('empty file');
+      throw new Error(t('documents.errors.emptyFile'));
     }
     if (file.size > MAX_BYTES) {
-      throw new Error(`file too large (max ${formatBytes(MAX_BYTES)})`);
+      throw new Error(t('documents.errors.tooLarge', { max: formatBytes(MAX_BYTES) }));
     }
-    const base64 = await fileToBase64(file);
+    const base64 = await fileToBase64(file, t('documents.errors.readFailed'));
     const body: Record<string, unknown> = {
       filename: file.name,
       mimeType: file.type || 'application/octet-stream',
@@ -366,7 +381,7 @@ function UploadZone({
               ? (err.body as { message?: string } | null)?.message ?? `HTTP ${err.status}`
               : err instanceof Error
                 ? err.message
-                : 'Upload failed.',
+                : t('documents.errors.uploadFailed'),
         });
       }
     }
@@ -395,7 +410,7 @@ function UploadZone({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Upload as">
+        <Field label={t('documents.fields.uploadAs')}>
           <select
             value={defaultCategory}
             onChange={(e) => onCategoryChange(e.target.value as Category)}
@@ -403,25 +418,23 @@ function UploadZone({
           >
             {CATEGORY_OPTIONS.map((c) => (
               <option key={c.value} value={c.value}>
-                {c.label}
+                {t(c.labelKey)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Tax year (optional)">
+        <Field label={t('documents.fields.taxYearOptional')}>
           <input
             type="number"
             min={1990}
             max={2100}
             value={defaultTaxYear}
             onChange={(e) => onTaxYearChange(e.target.value)}
-            placeholder="2024"
+            placeholder={t('documents.placeholders.year')}
             className={inputClass + ' w-28'}
           />
         </Field>
-        <p className="self-end text-xs text-slate-500">
-          Defaults applied to every dropped file. Edit per-document after upload.
-        </p>
+        <p className="self-end text-xs text-slate-500">{t('documents.defaultsHint')}</p>
       </div>
 
       <div
@@ -442,18 +455,16 @@ function UploadZone({
           <Icon name="upload-cloud" className="h-5 w-5" />
         </div>
         <div className="text-sm font-medium text-slate-900">
-          Drag files here or{' '}
+          {t('documents.dragFiles')}{' '}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             className="text-emerald-700 underline hover:text-emerald-900"
           >
-            click to pick
+            {t('documents.clickToPick')}
           </button>
         </div>
-        <p className="text-xs text-slate-500">
-          Up to 10 MB each. PDFs, images, Word docs, anything.
-        </p>
+        <p className="text-xs text-slate-500">{t('documents.uploadHint')}</p>
         <input
           ref={fileInputRef}
           type="file"
@@ -465,17 +476,17 @@ function UploadZone({
 
       {uploading.length > 0 && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          Uploading {uploading.length} file{uploading.length === 1 ? '' : 's'}…
+          {t('documents.uploading', { count: uploading.length })}
         </div>
       )}
       {successCount > 0 && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ✓ Uploaded {successCount} file{successCount === 1 ? '' : 's'}.
+          {t('documents.uploaded', { count: successCount })}
         </div>
       )}
       {errors.length > 0 && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {errors.length} upload{errors.length === 1 ? '' : 's'} failed:
+          {t('documents.uploadsFailed', { count: errors.length })}
           <ul className="mt-1 list-disc pl-5 text-xs">
             {errors.map((e, i) => (
               <li key={i}>
@@ -492,6 +503,7 @@ function UploadZone({
 // --- Download button -------------------------------------------------------
 
 function DownloadButton({ id, filename }: { id: string; filename: string }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [downloading, setDownloading] = useState(false);
 
@@ -516,7 +528,7 @@ function DownloadButton({ id, filename }: { id: string; filename: string }) {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed.');
+      alert(err instanceof Error ? err.message : t('downloadFailed'));
     } finally {
       setDownloading(false);
     }
@@ -530,7 +542,7 @@ function DownloadButton({ id, filename }: { id: string; filename: string }) {
       className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 hover:underline disabled:opacity-50"
     >
       <Icon name="upload-cloud" className="h-3 w-3 rotate-180" />
-      {downloading ? 'Downloading…' : 'Download'}
+      {downloading ? t('documents.downloading') : t('common:download')}
     </button>
   );
 }
@@ -544,6 +556,7 @@ function EditDocumentModal({
   doc: DocumentRow;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [filename, setFilename] = useState(doc.filename);
@@ -556,7 +569,7 @@ function EditDocumentModal({
     mutationFn: async () => {
       const tags = tagsInput
         .split(',')
-        .map((t) => t.trim())
+        .map((tag) => tag.trim())
         .filter(Boolean);
       const body: Record<string, unknown> = {
         filename,
@@ -592,23 +605,25 @@ function EditDocumentModal({
       <div className="kpb-pop-in my-8 w-full max-w-xl space-y-3 rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/10">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">Edit document</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {t('documents.editTitle')}
+            </h3>
             <p className="text-xs text-slate-500">
-              {formatBytes(doc.fileSizeBytes)} · {doc.mimeType} · uploaded{' '}
-              {formatDate(doc.createdAt)}
+              {formatBytes(doc.fileSizeBytes)} · {doc.mimeType} ·{' '}
+              {t('documents.uploadedOn', { date: formatDate(doc.createdAt) })}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100"
           >
             ✕
           </button>
         </div>
 
-        <Field label="Filename" required>
+        <Field label={t('documents.fields.filename')} required>
           <input
             type="text"
             value={filename}
@@ -619,7 +634,7 @@ function EditDocumentModal({
           />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Category" required>
+          <Field label={t('documents.fields.category')} required>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as Category)}
@@ -628,12 +643,12 @@ function EditDocumentModal({
             >
               {CATEGORY_OPTIONS.map((c) => (
                 <option key={c.value} value={c.value}>
-                  {c.label}
+                  {t(c.labelKey)}
                 </option>
               ))}
             </select>
           </Field>
-          <Field label="Tax year">
+          <Field label={t('documents.fields.taxYear')}>
             <input
               type="number"
               min={1990}
@@ -644,7 +659,7 @@ function EditDocumentModal({
             />
           </Field>
         </div>
-        <Field label="Description">
+        <Field label={t('documents.fields.description')}>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -653,12 +668,12 @@ function EditDocumentModal({
             className={inputClass}
           />
         </Field>
-        <Field label="Tags (comma-separated)">
+        <Field label={t('documents.fields.tags')}>
           <input
             type="text"
             value={tagsInput}
             onChange={(e) => setTagsInput(e.target.value)}
-            placeholder="2024, q3, abc-llc"
+            placeholder={t('documents.placeholders.tags')}
             className={inputClass}
           />
         </Field>
@@ -668,9 +683,7 @@ function EditDocumentModal({
             type="button"
             onClick={() => {
               if (
-                confirm(
-                  'Delete this document? It moves to a soft-deleted state and stops appearing in lists. The audit log keeps a record.',
-                )
+                confirm(t('documents.confirmDelete'))
               ) {
                 deleteMut.mutate();
               }
@@ -678,7 +691,7 @@ function EditDocumentModal({
             disabled={deleteMut.isPending}
             className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
           >
-            {deleteMut.isPending ? 'Deleting…' : 'Delete'}
+            {deleteMut.isPending ? t('documents.deleting') : t('common:delete')}
           </button>
           <div className="flex gap-2">
             <button
@@ -686,7 +699,7 @@ function EditDocumentModal({
               onClick={onClose}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
             <button
               type="button"
@@ -694,13 +707,16 @@ function EditDocumentModal({
               disabled={updateMut.isPending || !filename.trim()}
               className="whitespace-nowrap rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {updateMut.isPending ? 'Saving…' : 'Save changes'}
+              {updateMut.isPending ? t('documents.saving') : t('documents.saveChanges')}
             </button>
           </div>
         </div>
         {(updateMut.isError || deleteMut.isError) && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatError(updateMut.error ?? deleteMut.error)}
+            {formatError(updateMut.error ?? deleteMut.error, {
+              error: t('shell:errors.label'),
+              fallback: t('failed'),
+            })}
           </div>
         )}
       </div>
@@ -710,13 +726,13 @@ function EditDocumentModal({
 
 // --- Bits ------------------------------------------------------------------
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Aging } from './Aging';
 import { BalanceSheet } from './BalanceSheet';
 import { CashFlowForecast } from './CashFlowForecast';
@@ -25,22 +26,24 @@ type ReportView =
   | 'period-close'
   | 'tax-rates';
 
-const SUB_TABS: ReadonlyArray<{ id: ReportView; label: string }> = [
-  { id: 'trial-balance', label: 'Trial Balance' },
-  { id: 'pnl', label: 'Profit & Loss' },
-  { id: 'balance-sheet', label: 'Balance Sheet' },
-  { id: 'cash-flows', label: 'Cash Flows' },
-  { id: 'cash-flow-forecast', label: 'Cash Flow Forecast' },
-  { id: 'ar-aging', label: 'A/R Aging' },
-  { id: 'ap-aging', label: 'A/P Aging' },
-  { id: 'payroll-register', label: 'Payroll Register' },
-  { id: 'workers-comp', label: "Workers' Comp" },
-  { id: 'sales-tax-liability', label: 'Sales Tax Liability' },
-  { id: 'period-close', label: 'Close Period' },
-  { id: 'tax-rates', label: 'Tax Rates' },
+// Module-level constant, so it stores the translation key and t() runs at render.
+const SUB_TABS: ReadonlyArray<{ id: ReportView; labelKey: string }> = [
+  { id: 'trial-balance', labelKey: 'tabs.trialBalance' },
+  { id: 'pnl', labelKey: 'tabs.pnl' },
+  { id: 'balance-sheet', labelKey: 'tabs.balanceSheet' },
+  { id: 'cash-flows', labelKey: 'tabs.cashFlows' },
+  { id: 'cash-flow-forecast', labelKey: 'tabs.cashFlowForecast' },
+  { id: 'ar-aging', labelKey: 'tabs.arAging' },
+  { id: 'ap-aging', labelKey: 'tabs.apAging' },
+  { id: 'payroll-register', labelKey: 'tabs.payrollRegister' },
+  { id: 'workers-comp', labelKey: 'tabs.workersComp' },
+  { id: 'sales-tax-liability', labelKey: 'tabs.salesTaxLiability' },
+  { id: 'period-close', labelKey: 'tabs.periodClose' },
+  { id: 'tax-rates', labelKey: 'tabs.taxRates' },
 ];
 
 export function Reports() {
+  const { t } = useTranslation('reports');
   const [view, setView] = useState<ReportView>('trial-balance');
 
   return (
@@ -61,7 +64,7 @@ export function Reports() {
                     : 'border-transparent text-slate-500 hover:text-slate-800')
                 }
               >
-                {tab.label}
+                {t(tab.labelKey)}
               </button>
             );
           })}

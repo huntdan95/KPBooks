@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { Icon, type IconName } from './ui/Icon';
@@ -99,17 +100,6 @@ function formatUsd(s: string): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diffSec = Math.floor((now - then) / 1000);
-  if (diffSec < 60) return 'just now';
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}d ago`;
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
 const STATUS_COLOR: Record<InvoiceListRow['status'], string> = {
   open: 'bg-amber-50 text-amber-700 ring-amber-600/20',
   partial: 'bg-sky-50 text-sky-700 ring-sky-600/20',
@@ -117,7 +107,19 @@ const STATUS_COLOR: Record<InvoiceListRow['status'], string> = {
   void: 'bg-slate-100 text-slate-500 ring-slate-300',
 };
 
+/**
+ * Badge labels for the status pill. Three of the four already live in the
+ * shared `common` namespace; "partial" is dashboard-specific.
+ */
+const STATUS_LABEL_KEY: Record<InvoiceListRow['status'], string> = {
+  open: 'common:open',
+  partial: 'dashboard.status.partial',
+  paid: 'common:paid',
+  void: 'common:voided',
+};
+
 export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void }) {
+  const { t, i18n } = useTranslation(['shell', 'common']);
   const { companyId } = useCurrentCompany();
   const today = todayIso();
   const monthStart = firstOfMonth();
@@ -207,7 +209,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
     [compliance.data],
   );
 
-  const monthLabel = new Date(today + 'T00:00:00Z').toLocaleString('default', {
+  const monthLabel = new Date(today + 'T00:00:00Z').toLocaleString(i18n.language, {
     month: 'long',
     year: 'numeric',
   });
@@ -220,10 +222,10 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       <div className="flex items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-            {greeting()}
+            {t(greetingKey())}
           </h2>
           <p className="mt-0.5 text-sm text-slate-500">
-            Snapshot for {monthLabel} (month-to-date) and outstanding A/R + A/P as of {today}.
+            {t('dashboard.snapshot', { month: monthLabel, date: today })}
           </p>
         </div>
       </div>
@@ -244,13 +246,14 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
             className={'mt-0.5 h-4 w-4 shrink-0 ' + (alreadyExpired > 0 ? 'text-rose-600' : 'text-amber-600')}
           />
           <div className="flex-1">
-            <strong>Compliance alerts:</strong>{' '}
+            <strong>{t('dashboard.compliance.label')}</strong>{' '}
             {alreadyExpired > 0
-              ? `${alreadyExpired} expired, ${expiringCount - alreadyExpired} expiring within 30 days`
-              : `${expiringCount} subcontractor doc${expiringCount === 1 ? '' : 's'} expiring within 30 days`}
-            <span className="ml-1 text-xs opacity-80">
-              (license / GL / WC across your subs — click to review)
-            </span>
+              ? t('dashboard.compliance.mixed', {
+                  count: alreadyExpired,
+                  expiring: expiringCount - alreadyExpired,
+                })
+              : t('dashboard.compliance.expiring', { count: expiringCount })}
+            <span className="ml-1 text-xs opacity-80">{t('dashboard.compliance.hint')}</span>
           </div>
           <span className="rounded-md bg-white/70 px-2 py-1 font-mono text-xs">
             {expiringCount}
@@ -265,10 +268,10 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
         ) : (
           <Tile
             icon="banknote"
-            label="Cash on hand"
+            label={t('dashboard.tiles.cash')}
             sub={
               forecast.data
-                ? `${forecast.data.cashAccounts.length} account${forecast.data.cashAccounts.length === 1 ? '' : 's'}`
+                ? t('dashboard.tiles.cashAccounts', { count: forecast.data.cashAccounts.length })
                 : '—'
             }
             value={forecast.data ? formatUsd(forecast.data.startingBalance) : '—'}
@@ -277,7 +280,9 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
               forecast.data
                 ? {
                     direction: cashTrend,
-                    label: `${cashTrend === 'up' ? '+' : ''}${formatUsd(forecast.data.totals.netChange)} 30d`,
+                    label: t('dashboard.tiles.trend30d', {
+                      value: `${cashTrend === 'up' ? '+' : ''}${formatUsd(forecast.data.totals.netChange)}`,
+                    }),
                   }
                 : null
             }
@@ -289,8 +294,8 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
         ) : (
           <Tile
             icon="trending-up"
-            label="Net income"
-            sub={`MTD · ${monthLabel}`}
+            label={t('dashboard.tiles.netIncome')}
+            sub={t('dashboard.tiles.netIncomeSub', { month: monthLabel })}
             value={pnl.data ? formatUsd(pnl.data.netIncome) : '—'}
             tone={pnl.data && Number(pnl.data.netIncome) >= 0 ? 'emerald' : 'rose'}
             onClick={() => onNavigate?.('reports:pnl')}
@@ -301,11 +306,11 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
         ) : (
           <Tile
             icon="arrow-down-right"
-            label="A/R outstanding"
+            label={t('dashboard.tiles.arOutstanding')}
             sub={
               overdueInvoices > 0
-                ? `${overdueInvoices} overdue invoice${overdueInvoices === 1 ? '' : 's'}`
-                : 'all current'
+                ? t('dashboard.tiles.overdueInvoices', { count: overdueInvoices })
+                : t('dashboard.tiles.allCurrent')
             }
             value={ar.data ? formatUsd(ar.data.totals.total) : '—'}
             tone={overdueInvoices > 0 ? 'amber' : 'slate'}
@@ -317,11 +322,11 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
         ) : (
           <Tile
             icon="arrow-up-right"
-            label="A/P outstanding"
+            label={t('dashboard.tiles.apOutstanding')}
             sub={
               overdueBills > 0
-                ? `${overdueBills} overdue bill${overdueBills === 1 ? '' : 's'}`
-                : 'all current'
+                ? t('dashboard.tiles.overdueBills', { count: overdueBills })
+                : t('dashboard.tiles.allCurrent')
             }
             value={ap.data ? formatUsd(ap.data.totals.total) : '—'}
             tone={overdueBills > 0 ? 'amber' : 'slate'}
@@ -333,33 +338,33 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       {/* ----------- Recent open invoices + bills ------------- */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RecentList
-          title="Recent open invoices"
+          title={t('dashboard.recentInvoices.title')}
           icon="file-stack"
-          empty="No open invoices."
+          empty={t('dashboard.recentInvoices.empty')}
           isLoading={invoices.isLoading}
           rows={recentInvoices.map((i) => ({
             id: i.id,
             primary: i.customerName,
-            secondary: `${i.invoiceNumber} · due ${i.dueDate}`,
+            secondary: t('dashboard.dueLine', { number: i.invoiceNumber, date: i.dueDate }),
             amount: i.balanceDue,
             status: i.status,
           }))}
-          actionLabel="View all"
+          actionLabel={t('dashboard.viewAll')}
           onAction={() => onNavigate?.('invoices')}
         />
         <RecentList
-          title="Recent open bills"
+          title={t('dashboard.recentBills.title')}
           icon="receipt"
-          empty="No open bills."
+          empty={t('dashboard.recentBills.empty')}
           isLoading={bills.isLoading}
           rows={recentBills.map((b) => ({
             id: b.id,
             primary: b.vendorName,
-            secondary: `${b.billNumber} · due ${b.dueDate}`,
+            secondary: t('dashboard.dueLine', { number: b.billNumber, date: b.dueDate }),
             amount: b.balanceDue,
             status: b.status,
           }))}
-          actionLabel="View all"
+          actionLabel={t('dashboard.viewAll')}
           onAction={() => onNavigate?.('bills')}
         />
       </div>
@@ -379,13 +384,14 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
   );
 }
 
-function greeting(): string {
+/** Returns the i18n key for the time-of-day greeting; caller runs it through t(). */
+function greetingKey(): string {
   const h = new Date().getHours();
-  if (h < 5) return 'Working late';
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  if (h < 21) return 'Good evening';
-  return 'Working late';
+  if (h < 5) return 'dashboard.greeting.late';
+  if (h < 12) return 'dashboard.greeting.morning';
+  if (h < 17) return 'dashboard.greeting.afternoon';
+  if (h < 21) return 'dashboard.greeting.evening';
+  return 'dashboard.greeting.late';
 }
 
 const TONE_CLASSES = {
@@ -499,6 +505,8 @@ function RecentList({
   actionLabel: string;
   onAction: () => void;
 }) {
+  const { t } = useTranslation(['shell', 'common']);
+
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/50 px-4 py-2.5">
@@ -544,7 +552,7 @@ function RecentList({
                 <span
                   className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ring-1 ring-inset ${STATUS_COLOR[r.status]}`}
                 >
-                  {r.status}
+                  {t(STATUS_LABEL_KEY[r.status])}
                 </span>
                 <span className="font-mono text-sm font-medium tabular-nums text-slate-900">
                   {formatUsd(r.amount)}
@@ -585,19 +593,34 @@ function ActivityFeed({
   rows: ActivityResp['rows'];
   onSeeAll: () => void;
 }) {
+  const { t, i18n } = useTranslation('shell');
+
+  // Lives inside the component (rather than at module scope) so it can reach
+  // the translator; the unit suffixes and "just now" are localized.
+  const formatRelativeTime = (iso: string): string => {
+    const then = new Date(iso).getTime();
+    const now = Date.now();
+    const diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return t('dashboard.time.justNow');
+    if (diffSec < 3600) return t('dashboard.time.minutes', { minutes: Math.floor(diffSec / 60) });
+    if (diffSec < 86400) return t('dashboard.time.hours', { hours: Math.floor(diffSec / 3600) });
+    if (diffSec < 86400 * 7) return t('dashboard.time.days', { days: Math.floor(diffSec / 86400) });
+    return new Date(iso).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
+  };
+
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50/50 px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <Icon name="history" className="h-4 w-4 text-slate-400" />
-          Recent activity
+          {t('dashboard.activity.title')}
         </h3>
         <button
           type="button"
           onClick={onSeeAll}
           className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-900"
         >
-          See all
+          {t('dashboard.activity.seeAll')}
           <Icon name="arrow-right" className="h-3 w-3" strokeWidth={2} />
         </button>
       </div>
@@ -615,7 +638,7 @@ function ActivityFeed({
         </div>
       ) : rows.length === 0 ? (
         <p className="px-4 py-6 text-center text-sm text-slate-500">
-          No activity in the last 7 days.
+          {t('dashboard.activity.empty')}
         </p>
       ) : (
         <ol className="divide-y divide-slate-100">
@@ -647,22 +670,26 @@ function ActivityFeed({
   );
 }
 
-const QUICK_ACTIONS: Array<{ id: string; label: string; icon: IconName; target: string }> = [
-  { id: 'invoice', label: 'New invoice', icon: 'file-stack', target: 'invoices' },
-  { id: 'bill', label: 'New bill', icon: 'receipt', target: 'bills' },
-  { id: 'payment', label: 'Receive payment', icon: 'credit-card', target: 'payments' },
-  { id: 'banking', label: 'Import bank CSV', icon: 'upload-cloud', target: 'banking' },
-  { id: 'je', label: 'Journal entry', icon: 'plus-square', target: 'new-entry' },
-  { id: 'iif', label: 'Import .iif', icon: 'package', target: 'import' },
+// Labels held as i18n keys -- this array is module scope, where hooks can't
+// run; QuickActionsPanel resolves them through t() at render time.
+const QUICK_ACTIONS: Array<{ id: string; labelKey: string; icon: IconName; target: string }> = [
+  { id: 'invoice', labelKey: 'dashboard.quickActions.invoice', icon: 'file-stack', target: 'invoices' },
+  { id: 'bill', labelKey: 'dashboard.quickActions.bill', icon: 'receipt', target: 'bills' },
+  { id: 'payment', labelKey: 'dashboard.quickActions.payment', icon: 'credit-card', target: 'payments' },
+  { id: 'banking', labelKey: 'dashboard.quickActions.banking', icon: 'upload-cloud', target: 'banking' },
+  { id: 'je', labelKey: 'dashboard.quickActions.je', icon: 'plus-square', target: 'new-entry' },
+  { id: 'iif', labelKey: 'dashboard.quickActions.iif', icon: 'package', target: 'import' },
 ];
 
 function QuickActionsPanel({ onNavigate }: { onNavigate: (view: string) => void }) {
+  const { t } = useTranslation('shell');
+
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50/50 px-4 py-2.5">
         <h3 className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <Icon name="sparkles" className="h-4 w-4 text-slate-400" />
-          Quick actions
+          {t('dashboard.quickActions.title')}
         </h3>
       </div>
       <div className="grid grid-cols-2 gap-1 p-2">
@@ -677,7 +704,7 @@ function QuickActionsPanel({ onNavigate }: { onNavigate: (view: string) => void 
               <Icon name={a.icon} className="h-3.5 w-3.5" strokeWidth={2} />
             </div>
             <span className="text-xs font-medium text-slate-700 group-hover:text-slate-900">
-              {a.label}
+              {t(a.labelKey)}
             </span>
           </button>
         ))}

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -37,6 +38,7 @@ function formatUsd(s: string): string {
 }
 
 export function ProfitAndLoss() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [start, setStart] = useState<string>(firstOfYear);
   const [end, setEnd] = useState<string>(todayIso);
@@ -66,7 +68,7 @@ export function ProfitAndLoss() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={start}
@@ -74,7 +76,7 @@ export function ProfitAndLoss() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={end}
@@ -82,26 +84,26 @@ export function ProfitAndLoss() {
             className={inputClass}
           />
         </Field>
-        <Field label="Basis">
+        <Field label={t('pnl.basis')}>
           <select
             value={basis}
             onChange={(e) => setBasis(e.target.value as 'accrual' | 'cash')}
             className={inputClass}
           >
-            <option value="accrual">Accrual</option>
+            <option value="accrual">{t('pnl.basisAccrual')}</option>
             {/* Cash basis is not implemented server-side yet; offering it
                 produced a hard error. Re-enable when the API supports it. */}
             <option value="cash" disabled>
-              Cash (coming soon)
+              {t('pnl.basisCashSoon')}
             </option>
           </select>
         </Field>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load P&L.'}
+          {query.error instanceof Error ? query.error.message : t('pnl.loadError')}
         </p>
       )}
 
@@ -110,20 +112,20 @@ export function ProfitAndLoss() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Code</th>
-                <th className="px-4 py-2 text-left font-medium">Account</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
+                <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:amount')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               <tr className="bg-slate-50">
                 <td colSpan={3} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Revenue
+                  {t('pnl.revenue')}
                 </td>
               </tr>
               {sortedRevenue.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-2 text-slate-500">No revenue in this range.</td>
+                  <td colSpan={3} className="px-4 py-2 text-slate-500">{t('pnl.noRevenue')}</td>
                 </tr>
               ) : (
                 sortedRevenue.map((r) => (
@@ -135,18 +137,20 @@ export function ProfitAndLoss() {
                 ))
               )}
               <tr className="bg-slate-50 font-medium">
-                <td colSpan={2} className="px-4 py-2 text-right text-slate-700">Total revenue</td>
+                <td colSpan={2} className="px-4 py-2 text-right text-slate-700">
+                  {t('pnl.totalRevenue')}
+                </td>
                 <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(data.totalRevenue)}</td>
               </tr>
 
               <tr className="bg-slate-50">
                 <td colSpan={3} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Expenses
+                  {t('pnl.expenses')}
                 </td>
               </tr>
               {sortedExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-2 text-slate-500">No expenses in this range.</td>
+                  <td colSpan={3} className="px-4 py-2 text-slate-500">{t('pnl.noExpenses')}</td>
                 </tr>
               ) : (
                 sortedExpenses.map((r) => (
@@ -158,14 +162,16 @@ export function ProfitAndLoss() {
                 ))
               )}
               <tr className="bg-slate-50 font-medium">
-                <td colSpan={2} className="px-4 py-2 text-right text-slate-700">Total expenses</td>
+                <td colSpan={2} className="px-4 py-2 text-right text-slate-700">
+                  {t('pnl.totalExpenses')}
+                </td>
                 <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(data.totalExpenses)}</td>
               </tr>
             </tbody>
             <tfoot className="bg-slate-100 text-sm font-semibold">
               <tr>
                 <td colSpan={2} className="px-4 py-3 text-right text-slate-900">
-                  Net income ({data.basis} basis)
+                  {t('pnl.netIncome', { basis: t(`pnl.basisName.${data.basis}`) })}
                 </td>
                 <td
                   className={

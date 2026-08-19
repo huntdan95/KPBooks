@@ -1,1 +1,276 @@
-{}
+{
+  "shared": {
+    "errorLabel": "Error",
+    "failed": "Ocurrió un error.",
+    "failedToSave": "No se pudo guardar.",
+    "failedToLoad": "No se pudo cargar.",
+    "operationFailed": "La operación falló.",
+    "saving": "Guardando…",
+    "saveChanges": "Guardar cambios",
+    "downloadPdf": "Descargar PDF",
+    "generatingPdf": "Generando PDF…",
+    "pdfFailed": "No se pudo descargar el PDF.",
+    "addLine": "+ Agregar línea",
+    "subtotal": "Subtotal",
+    "tax": "Impuesto",
+    "qty": "Cant.",
+    "description": "Descripción",
+    "unitPrice": "Precio unitario",
+    "price": "Precio",
+    "customer": "Cliente",
+    "number": "Número",
+    "email": "Correo electrónico",
+    "phone": "Teléfono",
+    "active": "Activo",
+    "inactive": "(inactivo)",
+    "noTax": "Sin impuesto",
+    "choose": "Elija…",
+    "net": "Neto {{days}}",
+    "incomeAccount": "Cuenta de ingresos",
+    "expenseAccount": "Cuenta de gastos"
+  },
+  "customers": {
+    "title": "Clientes",
+    "onFile_one": "{{count}} cliente registrado",
+    "onFile_other": "{{count}} clientes registrados",
+    "searchMatches_one": " · {{count}} coincide con \"{{query}}\"",
+    "searchMatches_other": " · {{count}} coinciden con \"{{query}}\"",
+    "mergeDuplicates": "Combinar duplicados…",
+    "newButton": "+ Nuevo cliente",
+    "searchPlaceholder": "Buscar por nombre, empresa, número de cuenta, correo o teléfono…",
+    "searchAria": "Buscar clientes",
+    "clearSearch": "Borrar búsqueda",
+    "loadFailed": "No se pudieron cargar los clientes.",
+    "noMatch": "Ningún cliente coincide con \"<0>{{query}}</0>\".",
+    "noContact": "sin contacto",
+    "form": {
+      "createTitle": "Nuevo cliente",
+      "editTitle": "Editar cliente",
+      "displayName": "Nombre para mostrar",
+      "companyName": "Nombre de la empresa",
+      "accountNumber": "Número de cuenta",
+      "defaultTerms": "Plazo predeterminado (días)",
+      "taxExempt": "Exento de impuestos (no se cobra impuesto sobre ventas)",
+      "saveCustomer": "Guardar cliente"
+    },
+    "empty": {
+      "title": "Aún no hay clientes",
+      "description": "Agregue un cliente para comenzar a enviar cotizaciones y facturas. También puede importar en lote con el importador IIF en Contabilidad.",
+      "action": "Nuevo cliente"
+    },
+    "table": {
+      "accountNumber": "N.º de cuenta",
+      "displayName": "Nombre para mostrar",
+      "terms": "Plazo",
+      "openingBalance": "Saldo inicial"
+    }
+  },
+  "invoices": {
+    "title": "Facturas",
+    "onFile_one": "{{count}} factura registrada",
+    "onFile_other": "{{count}} facturas registradas",
+    "newButton": "+ Nueva factura",
+    "loadFailed": "No se pudieron cargar las facturas.",
+    "voidConfirm": "¿Anular la factura {{number}}? Se contabilizará un asiento contable de reversión.",
+    "empty": {
+      "title": "Aún no hay facturas",
+      "description": "Cree su primera factura para comenzar a facturar a sus clientes. Al contabilizar una factura se genera automáticamente un asiento contable balanceado (cargo a Cuentas por cobrar, abono a Ingresos).",
+      "action": "Nueva factura"
+    },
+    "table": {
+      "due": "Vence",
+      "balance": "Saldo"
+    },
+    "status": {
+      "open": "pendiente",
+      "partial": "parcial",
+      "paid": "pagado",
+      "void": "anulado"
+    },
+    "new": {
+      "title": "Nueva factura",
+      "needCustomer": "Necesita al menos un cliente activo antes de crear una factura. Agregue uno en la pestaña Clientes.",
+      "selectCustomer": "— seleccione un cliente —",
+      "invoiceNumber": "N.º de factura",
+      "dueDate": "Fecha de vencimiento",
+      "dueDateHint": "Se usará {{date}} de forma predeterminada (plazo del cliente).",
+      "lines": "Líneas",
+      "colItem": "Artículo",
+      "itemPickerTitle": "Seleccione un artículo para completar automáticamente la descripción, el precio, la cuenta y si es gravable",
+      "pickItem": "— elegir artículo —",
+      "descriptionPlaceholder": "Servicio prestado",
+      "selectAccount": "— cuenta —",
+      "taxEnabledTitle": "Aplicar la tasa de impuesto seleccionada a esta línea",
+      "taxDisabledTitle": "Seleccione una tasa de impuesto abajo para habilitarlo",
+      "removeLine": "Quitar línea",
+      "taxLine": "Impuesto ({{percent}}% de {{amount}})",
+      "salesTaxRate": "Tasa de impuesto sobre ventas",
+      "addNewRate": "+ Agregar nueva tasa…",
+      "newRateName": "Nombre de la nueva tasa",
+      "newRateNamePlaceholder": "Impuesto sobre ventas de CA",
+      "percent": "Porcentaje",
+      "saveRate": "Guardar tasa",
+      "taxHint": "Marque la casilla Impuesto en cada línea que deba gravarse; el impuesto = suma de esas líneas × la tasa.",
+      "posting": "Contabilizando…",
+      "submit": "Guardar y contabilizar factura"
+    }
+  },
+  "invoiceDetail": {
+    "label": "Factura",
+    "for": "Para",
+    "issued": "Emitida {{date}}",
+    "due": "Vence {{date}}",
+    "voidedOn": "Anulada el {{date}} (se contabilizó el asiento de reversión; se restauró Cuentas por cobrar).",
+    "balanceDue": "Saldo pendiente",
+    "totalAmount": "Total {{amount}}",
+    "voidConfirm": "¿Anular la factura {{number}}? Se contabilizará un asiento contable de reversión; el asiento original permanece intacto para la pista de auditoría.",
+    "voiding": "Anulando…",
+    "voidButton": "Anular factura",
+    "loadFailed": "No se pudo cargar la factura."
+  },
+  "estimates": {
+    "title": "Cotizaciones",
+    "blurb_one": "{{count}} cotización registrada. Las cotizaciones no se contabilizan en el libro mayor; una vez aceptadas, haga clic en \"Convertir en factura\" para crear de una sola vez la factura por cobrar correspondiente.",
+    "blurb_other": "{{count}} cotizaciones registradas. Las cotizaciones no se contabilizan en el libro mayor; una vez aceptadas, haga clic en \"Convertir en factura\" para crear de una sola vez la factura por cobrar correspondiente.",
+    "newButton": "+ Nueva cotización",
+    "emptyHint": "Aún no hay cotizaciones. Haga clic en \"+ Nueva cotización\" arriba.",
+    "filter": {
+      "all": "Todos los estados",
+      "draft": "Borrador",
+      "sent": "Enviada",
+      "accepted": "Aceptada",
+      "declined": "Rechazada",
+      "expired": "Vencida",
+      "converted": "Convertida"
+    },
+    "status": {
+      "draft": "borrador",
+      "sent": "enviada",
+      "accepted": "aceptada",
+      "declined": "rechazada",
+      "expired": "vencida",
+      "converted": "convertida"
+    },
+    "table": {
+      "expires": "Vence"
+    },
+    "form": {
+      "title": "Nueva cotización",
+      "estimateNumber": "N.º de cotización",
+      "expires": "Vence",
+      "taxRate": "Tasa de impuesto",
+      "lineItems": "Líneas",
+      "descriptionPlaceholder": "Descripción del servicio",
+      "remove": "Quitar",
+      "taxLine": "Impuesto ({{percent}}%)",
+      "creating": "Creando…",
+      "submit": "Guardar cotización"
+    },
+    "detail": {
+      "label": "Cotización",
+      "forCustomer": "Para {{name}}",
+      "expiresOn": "Vence {{date}}",
+      "invoiceId": "ID de factura: {{id}}…",
+      "markSent": "Marcar como enviada",
+      "markAccepted": "Marcar como aceptada",
+      "decline": "Rechazar",
+      "convert": "Convertir en factura",
+      "deleteConfirm": "¿Eliminar la cotización {{number}}?"
+    },
+    "convert": {
+      "title": "Convertir en factura",
+      "description": "Crea una nueva factura por cobrar contabilizada (cargo a Cuentas por cobrar, abono a Ingresos por cada línea) y bloquea esta cotización para futuras ediciones. Cotización {{number}} · {{total}}",
+      "invoiceNumber": "N.º de factura",
+      "invoiceDate": "Fecha de la factura",
+      "dueDate": "Fecha de vencimiento",
+      "converting": "Convirtiendo…",
+      "submit": "Convertir"
+    }
+  },
+  "items": {
+    "title": "Artículos y servicios",
+    "countTotal_one": "{{count}} en total.",
+    "countTotal_other": "{{count}} en total.",
+    "countActive_one": "{{count}} activo.",
+    "countActive_other": "{{count}} activos.",
+    "blurb": "Los artículos completan automáticamente la descripción, el precio y la cuenta contable en las líneas de facturas y facturas por pagar, para que registrar una línea siga tomando 5 segundos.",
+    "showInactive": "Mostrar inactivos",
+    "newButton": "+ Nuevo artículo",
+    "loadFailed": "No se pudieron cargar los artículos.",
+    "emptyHint": "Aún no hay artículos. Haga clic en \"+ Nuevo artículo\" arriba.",
+    "taxBadge": "imp.",
+    "deactivate": "Desactivar",
+    "deactivateConfirm": "¿Desactivar \"{{name}}\"? Las facturas y facturas por pagar existentes que lo usaron permanecen intactas.",
+    "form": {
+      "createTitle": "Nuevo artículo",
+      "editTitle": "Editar artículo",
+      "namePlaceholder": "Visita al sitio",
+      "sku": "SKU (opcional)",
+      "type": "Tipo",
+      "typeService": "Servicio",
+      "typeNonInventory": "Sin inventario",
+      "salesLegend": "Lado de ventas (se usa en facturas)",
+      "notForSale": "— no está a la venta —",
+      "defaultPrice": "Precio predeterminado",
+      "taxableDefault": "Gravable de forma predeterminada",
+      "salesDescription": "Descripción de venta",
+      "salesDescriptionPlaceholder": "Llamada de servicio en sitio (mínimo 1 hora)",
+      "purchaseLegend": "Lado de compras (se usa en facturas por pagar)",
+      "notPurchased": "— no se compra —",
+      "defaultCost": "Costo predeterminado",
+      "optionalPlaceholder": "opcional",
+      "purchaseDescription": "Descripción de compra",
+      "saveItem": "Guardar artículo",
+      "accountHint": "Se requiere al menos una <0>Cuenta de ingresos</0> o una <1>Cuenta de gastos</1> para que el artículo sepa dónde contabilizarse."
+    },
+    "table": {
+      "sku": "SKU",
+      "type": "Tipo",
+      "incomeAccount": "Cta. de ingresos",
+      "salesPrice": "Precio de venta",
+      "expenseAccount": "Cta. de gastos",
+      "cost": "Costo"
+    }
+  },
+  "statements": {
+    "generate": "Generar estados de cuenta",
+    "title": "Estados de cuenta de clientes",
+    "description": "Genere un estado de cuenta imprimible de cuentas por cobrar para cada cliente correspondiente al período indicado abajo. Incluye a todos los clientes activos con actividad distinta de cero en el período o con saldo distinto de cero: primero revise la lista y luego descargue uno o todos en PDF.",
+    "close": "cerrar",
+    "periodStart": "Inicio del período",
+    "periodEnd": "Fin del período",
+    "thisMonth": "Este mes",
+    "lastMonth": "Mes pasado",
+    "loadingCandidates": "Cargando candidatos…",
+    "none": "Ningún cliente tuvo actividad ni saldos pendientes en este período.",
+    "downloading": "Descargando…",
+    "bulkRunning_one": "Descargando {{count}} PDF…",
+    "bulkRunning_other": "Descargando {{count}} PDF…",
+    "downloadAll_one": "Descargar {{count}} estado de cuenta",
+    "downloadAll_other": "Descargar los {{count}} estados de cuenta",
+    "downloadHint": "Cada estado de cuenta se abre como un archivo separado en sus descargas. Permita descargas múltiples si el navegador se lo solicita.",
+    "downloadFailed": "No se pudo descargar.",
+    "bulkFailed": "No se pudo completar la descarga masiva.",
+    "table": {
+      "activityRows": "Filas de actividad",
+      "closingBalance": "Saldo final"
+    }
+  },
+  "taxRates": {
+    "title": "Tasas de impuesto",
+    "description": "Configure las tasas de impuesto sobre ventas por jurisdicción. Cada tasa puede aplicarse a las líneas de una factura mediante la casilla \"Gravable\"; el servicio de contabilización calcula el impuesto = suma(líneas gravables) × (tasa / 100) y abona a Impuesto sobre ventas por pagar.",
+    "newButton": "+ Nueva tasa de impuesto",
+    "empty": "Aún no hay tasas de impuesto. Agregue una arriba.",
+    "form": {
+      "createTitle": "Nueva tasa de impuesto",
+      "editTitle": "Editar tasa de impuesto",
+      "namePlaceholder": "Impuesto sobre ventas de CA",
+      "rate": "Tasa (porcentaje)",
+      "rateHint": "Ingrese como porcentaje: 8.75 significa 8.75% (no 0.0875)",
+      "saveRate": "Guardar tasa"
+    },
+    "table": {
+      "rate": "Tasa"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { VendorDetail } from './CounterpartyDetail';
@@ -77,6 +78,7 @@ function buildPayload(draft: FormDraft, mode: 'create' | 'edit'): Record<string,
 }
 
 export function VendorsList() {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
@@ -142,8 +144,10 @@ export function VendorsList() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Vendors</h2>
-          <p className="text-sm text-slate-500">{vendors.length} on file</p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('vendors.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('onFile', { count: vendors.length })}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -151,14 +155,14 @@ export function VendorsList() {
             onClick={() => setShowMerge(true)}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
           >
-            Merge duplicates…
+            {t('vendors.mergeDuplicates')}
           </button>
           <button
             type="button"
             onClick={mode ? cancel : startCreate}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {mode ? 'Cancel' : '+ New vendor'}
+            {mode ? t('common:cancel') : t('vendors.newVendorCta')}
           </button>
         </div>
       </div>
@@ -170,10 +174,10 @@ export function VendorsList() {
       {mode && (
         <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
           <h3 className="text-sm font-medium text-slate-700">
-            {mode.type === 'create' ? 'New vendor' : `Edit vendor`}
+            {mode.type === 'create' ? t('vendors.createTitle') : t('vendors.editTitle')}
           </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Display name" required>
+            <Field label={t('vendors.fields.displayName')} required>
               <input
                 type="text"
                 value={draft.displayName}
@@ -184,7 +188,7 @@ export function VendorsList() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Company name">
+            <Field label={t('vendors.fields.companyName')}>
               <input
                 type="text"
                 value={draft.companyName ?? ''}
@@ -193,7 +197,7 @@ export function VendorsList() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Account number">
+            <Field label={t('vendors.fields.accountNumber')}>
               <input
                 type="text"
                 value={draft.accountNumber ?? ''}
@@ -203,7 +207,7 @@ export function VendorsList() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Email">
+            <Field label={t('vendors.fields.email')}>
               <input
                 type="email"
                 value={draft.email ?? ''}
@@ -212,7 +216,7 @@ export function VendorsList() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Phone">
+            <Field label={t('vendors.fields.phone')}>
               <input
                 type="tel"
                 value={draft.phone ?? ''}
@@ -221,7 +225,7 @@ export function VendorsList() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Default terms (days)">
+            <Field label={t('vendors.fields.defaultTerms')}>
               <input
                 type="number"
                 min={0}
@@ -246,17 +250,17 @@ export function VendorsList() {
               onChange={(e) => setDraft({ ...draft, is1099Vendor: e.target.checked })}
               className="h-4 w-4 rounded border-slate-300"
             />
-            1099-NEC vendor (will be included in year-end 1099 prep)
+            {t('vendors.fields.is1099')}
           </label>
 
           {draft.is1099Vendor && (
-            <Field label="Tax ID (TIN/EIN)" required>
+            <Field label={t('vendors.fields.taxId')} required>
               <input
                 type="text"
                 value={draft.taxId ?? ''}
                 onChange={(e) => setDraft({ ...draft, taxId: e.target.value })}
                 maxLength={40}
-                placeholder="12-3456789 or 123-45-6789"
+                placeholder={t('vendors.fields.taxIdPlaceholder')}
                 required
                 className={inputClass}
               />
@@ -271,7 +275,7 @@ export function VendorsList() {
                 onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              Active
+              {t('vendors.fields.active')}
             </label>
           )}
 
@@ -281,40 +285,47 @@ export function VendorsList() {
               disabled={!canSubmit || mutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {mutation.isPending ? 'Saving…' : mode.type === 'create' ? 'Save vendor' : 'Save changes'}
+              {mutation.isPending
+                ? t('vendors.saving')
+                : mode.type === 'create'
+                  ? t('vendors.saveVendor')
+                  : t('vendors.saveChanges')}
             </button>
             <button
               type="button"
               onClick={cancel}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('common:cancel')}
             </button>
             {taxIdMissing && (
-              <span className="text-xs text-slate-500">Tax ID required for 1099 vendors.</span>
+              <span className="text-xs text-slate-500">{t('vendors.taxIdRequired')}</span>
             )}
           </div>
 
           {mutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(mutation.error)}
+              {formatError(mutation.error, {
+                error: t('errors.label'),
+                fallback: t('errors.saveFailed'),
+              })}
             </div>
           )}
         </form>
       )}
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load vendors.'}
+          {query.error instanceof Error ? query.error.message : t('vendors.loadFailed')}
         </p>
       )}
       {!query.isLoading && vendors.length === 0 && (
         <EmptyState
           icon="building-2"
-          title="No vendors yet"
-          description="Add a vendor to record bills, contractor payments, and 1099-eligible payees. The IIF importer can also bulk-load existing vendors."
-          action={{ label: 'New vendor', onClick: startCreate }}
+          title={t('vendors.empty.title')}
+          description={t('vendors.empty.description')}
+          action={{ label: t('vendors.empty.action'), onClick: startCreate }}
         />
       )}
 
@@ -323,13 +334,15 @@ export function VendorsList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Account #</th>
-                <th className="px-4 py-2 text-left font-medium">Display name</th>
-                <th className="px-4 py-2 text-left font-medium">Email</th>
-                <th className="px-4 py-2 text-left font-medium">Phone</th>
-                <th className="px-4 py-2 text-right font-medium">Terms</th>
-                <th className="px-4 py-2 text-center font-medium">1099</th>
-                <th className="px-4 py-2 text-right font-medium">Opening balance</th>
+                <th className="px-4 py-2 text-left font-medium">{t('vendors.table.accountNumber')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('vendors.table.displayName')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('vendors.table.email')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('vendors.table.phone')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('vendors.table.terms')}</th>
+                <th className="px-4 py-2 text-center font-medium">{t('vendors.table.form1099')}</th>
+                <th className="px-4 py-2 text-right font-medium">
+                  {t('vendors.table.openingBalance')}
+                </th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -346,14 +359,20 @@ export function VendorsList() {
                   <td className="px-4 py-2 text-slate-900">
                     <div className="font-medium">
                       {v.displayName}
-                      {!v.isActive && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                      {!v.isActive && (
+                        <span className="ml-2 text-xs text-slate-500">
+                          {t('vendors.inactiveSuffix')}
+                        </span>
+                      )}
                     </div>
                     {v.companyName && <div className="text-xs text-slate-500">{v.companyName}</div>}
                   </td>
                   <td className="px-4 py-2 text-slate-700">{v.email ?? '—'}</td>
                   <td className="px-4 py-2 text-slate-700">{v.phone ?? '—'}</td>
                   <td className="px-4 py-2 text-right text-slate-700">
-                    {v.defaultTermsDays === null ? '—' : `Net ${v.defaultTermsDays}`}
+                    {v.defaultTermsDays === null
+                      ? '—'
+                      : t('vendors.netTerms', { days: v.defaultTermsDays })}
                   </td>
                   <td className="px-4 py-2 text-center text-slate-700">{v.is1099Vendor ? '✓' : '—'}</td>
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
@@ -368,7 +387,7 @@ export function VendorsList() {
                       }}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                     >
-                      Edit
+                      {t('common:edit')}
                     </button>
                   </td>
                 </tr>
@@ -404,11 +423,11 @@ function Field({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string; details?: unknown } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed to save.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

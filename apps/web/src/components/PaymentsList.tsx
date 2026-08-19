@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -99,6 +100,7 @@ function formatUsd(s: string): string {
 }
 
 export function PaymentsList() {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | { type: 'new'; payType: PaymentType }>('list');
@@ -146,8 +148,10 @@ export function PaymentsList() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Payments</h2>
-          <p className="text-sm text-slate-500">{list.length} on file</p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('payments.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('onFile', { count: list.length })}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -155,27 +159,29 @@ export function PaymentsList() {
             onClick={() => setMode({ type: 'new', payType: 'customer_received' })}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            + Receive payment
+            {t('payments.receiveCta')}
           </button>
           <button
             type="button"
             onClick={() => setMode({ type: 'new', payType: 'vendor_sent' })}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            + Pay bill
+            {t('payments.payBillCta')}
           </button>
         </div>
       </div>
 
-      {paymentsQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {paymentsQuery.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {paymentsQuery.isError && (
         <p className="text-sm text-rose-600">
-          {paymentsQuery.error instanceof Error ? paymentsQuery.error.message : 'Failed to load.'}
+          {paymentsQuery.error instanceof Error
+            ? paymentsQuery.error.message
+            : t('payments.loadFailed')}
         </p>
       )}
 
       {!paymentsQuery.isLoading && list.length === 0 && (
-        <p className="text-sm text-slate-500">No payments yet.</p>
+        <p className="text-sm text-slate-500">{t('payments.empty')}</p>
       )}
 
       {list.length > 0 && (
@@ -183,13 +189,15 @@ export function PaymentsList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Type</th>
-                <th className="px-4 py-2 text-left font-medium">Counterparty</th>
-                <th className="px-4 py-2 text-left font-medium">Method</th>
-                <th className="px-4 py-2 text-left font-medium">Reference</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-                <th className="px-4 py-2 text-center font-medium">Status</th>
+                <th className="px-4 py-2 text-left font-medium">{t('payments.table.date')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('payments.table.type')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('payments.table.counterparty')}
+                </th>
+                <th className="px-4 py-2 text-left font-medium">{t('payments.table.method')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('payments.table.reference')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('payments.table.amount')}</th>
+                <th className="px-4 py-2 text-center font-medium">{t('payments.table.status')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -198,12 +206,16 @@ export function PaymentsList() {
                 <tr key={p.id} className={p.status === 'void' ? 'opacity-60' : ''}>
                   <td className="px-4 py-2 text-slate-700">{p.paymentDate}</td>
                   <td className="px-4 py-2 text-slate-700">
-                    {p.paymentType === 'customer_received' ? 'Received' : 'Sent'}
+                    {p.paymentType === 'customer_received'
+                      ? t('payments.type.received')
+                      : t('payments.type.sent')}
                   </td>
                   <td className="px-4 py-2 text-slate-900">
                     {p.customerName ?? p.vendorName ?? '—'}
                   </td>
-                  <td className="px-4 py-2 text-slate-700">{p.paymentMethod}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {t(`payments.method.${p.paymentMethod}`)}
+                  </td>
                   <td className="px-4 py-2 font-mono text-slate-700">{p.reference ?? '—'}</td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(p.amount)}
@@ -212,7 +224,7 @@ export function PaymentsList() {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_COLOR[p.status]}`}
                     >
-                      {p.status}
+                      {t(`payments.status.${p.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right">
@@ -220,18 +232,14 @@ export function PaymentsList() {
                       <button
                         type="button"
                         onClick={() => {
-                          if (
-                            confirm(
-                              `Void this payment? A reversing journal entry will be posted and any invoice/bill balances restored.`,
-                            )
-                          ) {
+                          if (confirm(t('payments.voidConfirm'))) {
                             voidMutation.mutate(p.id);
                           }
                         }}
                         disabled={voidMutation.isPending}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                       >
-                        Void
+                        {t('common:void')}
                       </button>
                     )}
                   </td>
@@ -244,7 +252,10 @@ export function PaymentsList() {
 
       {voidMutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(voidMutation.error)}
+          {formatError(voidMutation.error, {
+            error: t('errors.label'),
+            fallback: t('errors.operationFailed'),
+          })}
         </div>
       )}
     </div>
@@ -260,6 +271,7 @@ function NewPayment({
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const isReceive = payType === 'customer_received';
 
@@ -409,7 +421,7 @@ function NewPayment({
     accountsQuery.isLoading ||
     (isReceive ? openInvoicesQuery.isLoading : openBillsQuery.isLoading)
   ) {
-    return <p className="text-sm text-slate-500">Loading…</p>;
+    return <p className="text-sm text-slate-500">{t('common:loading')}</p>;
   }
 
   if (counterparties.length === 0) {
@@ -417,18 +429,18 @@ function NewPayment({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            {isReceive ? 'Receive Payment' : 'Pay Bill'}
+            {isReceive ? t('payments.new.receiveTitle') : t('payments.new.payTitle')}
           </h2>
           <button
             type="button"
             onClick={onCancel}
             className="text-sm text-slate-600 hover:text-slate-900"
           >
-            Cancel
+            {t('common:cancel')}
           </button>
         </div>
         <p className="text-sm text-slate-500">
-          You need at least one active {isReceive ? 'customer' : 'vendor'} before recording a payment.
+          {isReceive ? t('payments.new.noCustomers') : t('payments.new.noVendors')}
         </p>
       </div>
     );
@@ -439,20 +451,17 @@ function NewPayment({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            {isReceive ? 'Receive Payment' : 'Pay Bill'}
+            {isReceive ? t('payments.new.receiveTitle') : t('payments.new.payTitle')}
           </h2>
           <button
             type="button"
             onClick={onCancel}
             className="text-sm text-slate-600 hover:text-slate-900"
           >
-            Cancel
+            {t('common:cancel')}
           </button>
         </div>
-        <p className="text-sm text-slate-500">
-          You need at least one active bank or credit-card account on the chart of accounts before
-          recording a payment.
-        </p>
+        <p className="text-sm text-slate-500">{t('payments.new.noBankAccounts')}</p>
       </div>
     );
   }
@@ -461,19 +470,22 @@ function NewPayment({
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-          {isReceive ? 'Receive Payment' : 'Pay Bill'}
+          {isReceive ? t('payments.new.receiveTitle') : t('payments.new.payTitle')}
         </h2>
         <button
           type="button"
           onClick={onCancel}
           className="text-sm text-slate-600 hover:text-slate-900"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label={isReceive ? 'From customer' : 'To vendor'} required>
+        <Field
+          label={isReceive ? t('payments.new.fromCustomer') : t('payments.new.toVendor')}
+          required
+        >
           <select
             value={counterpartyId}
             onChange={(e) => {
@@ -483,7 +495,7 @@ function NewPayment({
             required
             className={inputClass}
           >
-            <option value="">— select —</option>
+            <option value="">{t('payments.new.select')}</option>
             {counterparties.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.displayName}
@@ -491,7 +503,7 @@ function NewPayment({
             ))}
           </select>
         </Field>
-        <Field label="Date" required>
+        <Field label={t('payments.new.date')} required>
           <input
             type="date"
             value={paymentDate}
@@ -500,14 +512,17 @@ function NewPayment({
             className={inputClass}
           />
         </Field>
-        <Field label={isReceive ? 'Deposit to account' : 'Pay from account'} required>
+        <Field
+          label={isReceive ? t('payments.new.depositTo') : t('payments.new.payFrom')}
+          required
+        >
           <select
             value={bankAccountId}
             onChange={(e) => setBankAccountId(e.target.value)}
             required
             className={inputClass}
           >
-            <option value="">— select —</option>
+            <option value="">{t('payments.new.select')}</option>
             {bankAccounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -515,31 +530,31 @@ function NewPayment({
             ))}
           </select>
         </Field>
-        <Field label="Method" required>
+        <Field label={t('payments.new.method')} required>
           <select
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
             required
             className={inputClass}
           >
-            <option value="check">Check</option>
-            <option value="cash">Cash</option>
-            <option value="eft">EFT</option>
-            <option value="credit_card">Credit card</option>
-            <option value="other">Other</option>
+            <option value="check">{t('payments.method.check')}</option>
+            <option value="cash">{t('payments.method.cash')}</option>
+            <option value="eft">{t('payments.method.eft')}</option>
+            <option value="credit_card">{t('payments.method.credit_card')}</option>
+            <option value="other">{t('payments.method.other')}</option>
           </select>
         </Field>
-        <Field label="Reference">
+        <Field label={t('payments.new.reference')}>
           <input
             type="text"
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             maxLength={120}
-            placeholder="Check #, transfer ref"
+            placeholder={t('payments.new.referencePlaceholder')}
             className={inputClass}
           />
         </Field>
-        <Field label="Memo">
+        <Field label={t('payments.new.memo')}>
           <input
             type="text"
             value={memo}
@@ -552,27 +567,39 @@ function NewPayment({
 
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-slate-700">
-          Apply to outstanding {isReceive ? 'invoices' : 'bills'}
+          {isReceive ? t('payments.new.applyInvoices') : t('payments.new.applyBills')}
         </h3>
         {!counterpartyId ? (
           <p className="text-sm text-slate-500">
-            Pick a {isReceive ? 'customer' : 'vendor'} above to see open documents.
+            {isReceive ? t('payments.new.pickCustomer') : t('payments.new.pickVendor')}
           </p>
         ) : outstandingDocs.length === 0 ? (
           <p className="text-sm text-slate-500">
-            No open {isReceive ? 'invoices' : 'bills'} for this {isReceive ? 'customer' : 'vendor'}.
+            {isReceive ? t('payments.new.noOpenInvoices') : t('payments.new.noOpenBills')}
           </p>
         ) : (
           <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Number</th>
-                  <th className="px-3 py-2 text-left font-medium">Date</th>
-                  <th className="px-3 py-2 text-left font-medium">Due</th>
-                  <th className="px-3 py-2 text-right font-medium">Total</th>
-                  <th className="px-3 py-2 text-right font-medium">Balance</th>
-                  <th className="px-3 py-2 text-right font-medium">Apply</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('payments.new.table.number')}
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('payments.new.table.date')}
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('payments.new.table.due')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('payments.new.table.total')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('payments.new.table.balance')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('payments.new.table.apply')}
+                  </th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -625,7 +652,7 @@ function NewPayment({
                           }
                           className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                         >
-                          {v ? 'Clear' : 'In full'}
+                          {v ? t('payments.new.clear') : t('payments.new.inFull')}
                         </button>
                       </td>
                     </tr>
@@ -635,7 +662,7 @@ function NewPayment({
               <tfoot className="bg-slate-50 text-sm font-medium">
                 <tr>
                   <td colSpan={5} className="px-3 py-2 text-right text-slate-600">
-                    Payment total
+                    {t('payments.new.paymentTotal')}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-900">
                     {formatUsd(totalAmount)}
@@ -647,7 +674,7 @@ function NewPayment({
           </div>
         )}
         {overApplied && (
-          <p className="text-xs text-rose-600">An applied amount exceeds that document's balance.</p>
+          <p className="text-xs text-rose-600">{t('payments.new.overApplied')}</p>
         )}
       </div>
 
@@ -658,23 +685,26 @@ function NewPayment({
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {mutation.isPending
-            ? 'Posting…'
+            ? t('payments.new.posting')
             : isReceive
-              ? 'Save & post payment'
-              : 'Save & post bill payment'}
+              ? t('payments.new.savePayment')
+              : t('payments.new.saveBillPayment')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, {
+            error: t('errors.label'),
+            fallback: t('errors.operationFailed'),
+          })}
         </div>
       )}
     </form>
@@ -704,11 +734,11 @@ function Field({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Operation failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

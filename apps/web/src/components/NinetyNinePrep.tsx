@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { Generate1099Modal } from './Generate1099Modal';
@@ -46,6 +47,7 @@ function formatAddress(a: Record<string, unknown> | null): string {
 }
 
 export function NinetyNinePrep() {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   // Default to the prior calendar year (the year you'd be filing for now).
   const [year, setYear] = useState<number>(currentYear() - 1);
@@ -65,18 +67,15 @@ export function NinetyNinePrep() {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">1099 prep</h3>
-        <p className="text-sm text-slate-500">
-          Year-end summary of payments to 1099-NEC contractors. The IRS threshold is $600 for the
-          tax year — vendors at or above that need a 1099-NEC. Mark a vendor as 1099 in the
-          Vendors tab and they'll appear here automatically. Tax IDs are required to file; rows
-          missing one are flagged in red.
-        </p>
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+          {t('ninetyNine.title')}
+        </h3>
+        <p className="text-sm text-slate-500">{t('ninetyNine.intro')}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-md border border-slate-200 bg-white p-3">
         <label className="flex flex-col gap-1 text-sm text-slate-600">
-          <span>Tax year</span>
+          <span>{t('ninetyNine.taxYear')}</span>
           <select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
@@ -96,16 +95,16 @@ export function NinetyNinePrep() {
             onChange={(e) => setHideBelowThreshold(e.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
           />
-          Hide vendors below $600
+          {t('ninetyNine.hideBelow')}
         </label>
       </div>
 
       <W9BulkRequestPanel year={year} companyName={null} />
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load 1099 summary.'}
+          {query.error instanceof Error ? query.error.message : t('ninetyNine.loadFailed')}
         </p>
       )}
 
@@ -113,17 +112,17 @@ export function NinetyNinePrep() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Stat
-              label="Vendors at threshold"
+              label={t('ninetyNine.stats.atThreshold')}
               value={String(query.data.totals.aboveThreshold)}
               tone="emerald"
             />
             <Stat
-              label="Total to 1099 vendors"
+              label={t('ninetyNine.stats.total')}
               value={formatUsd(query.data.totals.total)}
               tone="slate"
             />
             <Stat
-              label="Missing tax IDs"
+              label={t('ninetyNine.stats.missingTaxIds')}
               value={String(query.data.totals.missingTaxIdAboveThreshold)}
               tone={query.data.totals.missingTaxIdAboveThreshold > 0 ? 'rose' : 'emerald'}
             />
@@ -132,18 +131,26 @@ export function NinetyNinePrep() {
           {visible.length === 0 ? (
             <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
               {rows.length === 0
-                ? `No 1099-flagged vendors had payments in ${year}.`
-                : `No 1099-flagged vendors hit the $600 threshold in ${year} (toggle "Hide vendors below $600" to see all).`}
+                ? t('ninetyNine.emptyNoPayments', { year })
+                : t('ninetyNine.emptyBelowThreshold', { year })}
             </p>
           ) : (
             <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 text-left font-medium">Vendor</th>
-                    <th className="px-4 py-2 text-left font-medium">Tax ID</th>
-                    <th className="px-4 py-2 text-left font-medium">Mailing address</th>
-                    <th className="px-4 py-2 text-right font-medium">Total paid {year}</th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('ninetyNine.table.vendor')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('ninetyNine.table.taxId')}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium">
+                      {t('ninetyNine.table.mailingAddress')}
+                    </th>
+                    <th className="px-4 py-2 text-right font-medium">
+                      {t('ninetyNine.table.totalPaid', { year })}
+                    </th>
                     <th className="px-4 py-2"></th>
                   </tr>
                 </thead>
@@ -156,7 +163,9 @@ export function NinetyNinePrep() {
                       <td className="px-4 py-2 text-slate-900">
                         <div className="font-medium">{r.displayName}</div>
                         {!r.meetsThreshold && (
-                          <div className="text-xs text-slate-500">below threshold</div>
+                          <div className="text-xs text-slate-500">
+                            {t('ninetyNine.belowThreshold')}
+                          </div>
                         )}
                       </td>
                       <td className="px-4 py-2 font-mono text-xs">
@@ -164,7 +173,7 @@ export function NinetyNinePrep() {
                           <span className="text-slate-700">{r.taxId}</span>
                         ) : r.meetsThreshold ? (
                           <span className="rounded-md bg-rose-50 px-2 py-0.5 text-rose-700 ring-1 ring-rose-200">
-                            missing
+                            {t('ninetyNine.missing')}
                           </span>
                         ) : (
                           <span className="text-slate-400">—</span>
@@ -182,9 +191,13 @@ export function NinetyNinePrep() {
                           onClick={() => setGenerateForVendorId(r.vendorId)}
                           disabled={!r.meetsThreshold}
                           className="rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                          title={r.meetsThreshold ? 'Generate 1099-NEC PDF' : 'Below $600 threshold'}
+                          title={
+                            r.meetsThreshold
+                              ? t('ninetyNine.generateTitle')
+                              : t('ninetyNine.belowThresholdTitle')
+                          }
                         >
-                          Generate
+                          {t('ninetyNine.generate')}
                         </button>
                       </td>
                     </tr>
@@ -195,9 +208,8 @@ export function NinetyNinePrep() {
           )}
 
           <p className="text-xs text-slate-500">
-            Click <strong>Generate</strong> on any vendor to download Copies B (recipient) + C
-            (payer) as PDFs. Copy A must be e-filed via the IRS FIRE system or printed onto the
-            official red-ink scannable form.
+            {t('ninetyNine.footerPre')} <strong>{t('ninetyNine.generate')}</strong>{' '}
+            {t('ninetyNine.footerPost')}
           </p>
         </>
       )}

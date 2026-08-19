@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -87,16 +88,6 @@ const EMPTY_MISC_BOXES: MiscBoxes = {
   attorneyProceeds: '',
 };
 
-const MISC_BOX_LABELS: Record<keyof MiscBoxes, string> = {
-  rents: 'Box 1 — Rents',
-  royalties: 'Box 2 — Royalties',
-  otherIncome: 'Box 3 — Other income',
-  federalIncomeTaxWithheld: 'Box 4 — Federal income tax withheld',
-  medicalPayments: 'Box 6 — Medical / health care',
-  substitutePayments: 'Box 8 — Substitute payments',
-  attorneyProceeds: 'Box 10 — Attorney proceeds',
-};
-
 function buildMiscQuery(boxes: MiscBoxes): string {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(boxes)) {
@@ -104,13 +95,6 @@ function buildMiscQuery(boxes: MiscBoxes): string {
   }
   return params.toString();
 }
-
-const FIX_LABEL: Record<FixHint, string> = {
-  'company-settings': 'Company info',
-  'worker-edit': 'Worker info',
-  'upload-w9': 'W-9 upload',
-  'pay-more': 'Threshold',
-};
 
 const FIX_TONE: Record<FixHint, 'rose' | 'amber'> = {
   'company-settings': 'rose',
@@ -142,6 +126,7 @@ export function Generate1099Modal({
   initialYear?: number;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const [formType, setFormType] = useState<FormType>('nec');
   const [year, setYear] = useState<number>(initialYear ?? currentYear() - 1);
@@ -232,7 +217,7 @@ export function Generate1099Modal({
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed.');
+      alert(err instanceof Error ? err.message : t('generate1099.downloadFailed'));
     } finally {
       setDownloading(false);
     }
@@ -255,20 +240,19 @@ export function Generate1099Modal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Generate Form {formType === 'nec' ? '1099-NEC' : '1099-MISC'}
+              {t('generate1099.title', {
+                form: formType === 'nec' ? '1099-NEC' : '1099-MISC',
+              })}
             </h2>
             <p className="text-xs text-slate-500">
-              {formType === 'nec'
-                ? 'Nonemployee Compensation — for 1099 contractors paid $600+ for services.'
-                : 'Miscellaneous Information — for rents, royalties, medical/health care, attorney proceeds, etc.'}{' '}
-              Generates Copies B (recipient) and C (payer) as a clean facsimile. Copy A must
-              still be e-filed via FIRE or printed onto the official IRS red-ink scannable form.
+              {formType === 'nec' ? t('generate1099.necIntro') : t('generate1099.miscIntro')}{' '}
+              {t('generate1099.sharedIntro')}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             ✕
@@ -298,7 +282,7 @@ export function Generate1099Modal({
         </div>
 
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Tax year">
+          <Field label={t('generate1099.taxYear')}>
             <select
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
@@ -311,15 +295,15 @@ export function Generate1099Modal({
               ))}
             </select>
           </Field>
-          <Field label="Copy">
+          <Field label={t('generate1099.copy')}>
             <select
               value={copy}
               onChange={(e) => setCopy(e.target.value as CopyType)}
               className={inputClass}
             >
-              <option value="all">B + C (recommended)</option>
-              <option value="B">B — Recipient only</option>
-              <option value="C">C — Payer only</option>
+              <option value="all">{t('generate1099.copyAll')}</option>
+              <option value="B">{t('generate1099.copyB')}</option>
+              <option value="C">{t('generate1099.copyC')}</option>
             </select>
           </Field>
         </div>
@@ -328,22 +312,22 @@ export function Generate1099Modal({
         {formType === 'misc' && (
           <div className="rounded-md border border-slate-200 bg-slate-50/50 p-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-slate-700">Box amounts</h4>
+              <h4 className="text-sm font-medium text-slate-700">
+                {t('generate1099.boxAmounts')}
+              </h4>
               {miscData && (
                 <span className="text-xs text-slate-500">
-                  YTD payments to vendor: {formatUsd(miscData.yearTotal)}
+                  {t('generate1099.ytdPayments', { amount: formatUsd(miscData.yearTotal) })}
                 </span>
               )}
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Enter the amount that goes in each box. Leave a box blank to omit it.{' '}
-              {miscDefaulted && (
-                <em>Box 1 (Rents) auto-filled with YTD payments — clear it if not rents.</em>
-              )}
+              {t('generate1099.boxHint')}{' '}
+              {miscDefaulted && <em>{t('generate1099.boxDefaulted')}</em>}
             </p>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {(Object.keys(EMPTY_MISC_BOXES) as Array<keyof MiscBoxes>).map((key) => (
-                <Field key={key} label={MISC_BOX_LABELS[key]}>
+                <Field key={key} label={t(`generate1099.miscBox.${key}`)}>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -351,7 +335,7 @@ export function Generate1099Modal({
                     onChange={(e) => setMiscBoxes({ ...miscBoxes, [key]: e.target.value })}
                     placeholder={
                       key === 'rents' && miscDefaulted && miscData
-                        ? `auto: ${miscData.yearTotal}`
+                        ? t('generate1099.autoPlaceholder', { amount: miscData.yearTotal })
                         : '0.00'
                     }
                     className={inputClass + ' font-mono text-right'}
@@ -364,15 +348,15 @@ export function Generate1099Modal({
               onClick={() => setMiscBoxes(EMPTY_MISC_BOXES)}
               className="mt-2 text-xs text-slate-500 underline hover:text-slate-700"
             >
-              Clear all boxes
+              {t('generate1099.clearBoxes')}
             </button>
           </div>
         )}
 
-        {isLoading && <p className="text-sm text-slate-500">Checking…</p>}
+        {isLoading && <p className="text-sm text-slate-500">{t('generate1099.checking')}</p>}
         {isError && (
           <p className="text-sm text-rose-600">
-            {error instanceof Error ? error.message : 'Failed to check pre-flight.'}
+            {error instanceof Error ? error.message : t('generate1099.preflightFailed')}
           </p>
         )}
 
@@ -381,7 +365,9 @@ export function Generate1099Modal({
             <div className="grid grid-cols-2 gap-3">
               <SummaryCard
                 label={
-                  formType === 'nec' ? `Paid in ${year}` : `Total being filed (${year})`
+                  formType === 'nec'
+                    ? t('generate1099.paidIn', { year })
+                    : t('generate1099.totalFiled', { year })
                 }
                 value={formatUsd(
                   formType === 'nec'
@@ -399,15 +385,15 @@ export function Generate1099Modal({
                 }
               />
               <SummaryCard
-                label="W-9 on file"
-                value={hasW9 ? '✓ yes' : '✗ no'}
+                label={t('generate1099.w9OnFile')}
+                value={hasW9 ? t('generate1099.w9Yes') : t('generate1099.w9No')}
                 tone={hasW9 ? 'emerald' : 'amber'}
               />
             </div>
 
             {issues.length === 0 ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                ✓ All checks passed — ready to generate.
+                {t('generate1099.allChecksPassed')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -423,7 +409,9 @@ export function Generate1099Modal({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <span className="font-medium">{FIX_LABEL[issue.fix]}:</span>{' '}
+                        <span className="font-medium">
+                          {t(`generate1099.fixLabel.${issue.fix}`)}:
+                        </span>{' '}
                         {issue.message}
                       </div>
                       {issue.fix === 'company-settings' && (
@@ -432,15 +420,17 @@ export function Generate1099Modal({
                           onClick={() => setEditingCompany(true)}
                           className="shrink-0 rounded-md border border-slate-300 bg-white px-2 py-0.5 text-xs hover:bg-slate-100"
                         >
-                          Fix here
+                          {t('generate1099.fixHere')}
                         </button>
                       )}
                       {issue.fix === 'worker-edit' && (
-                        <span className="shrink-0 text-xs italic">edit on Worker page</span>
+                        <span className="shrink-0 text-xs italic">
+                          {t('generate1099.editOnWorkerPage')}
+                        </span>
                       )}
                       {issue.fix === 'upload-w9' && (
                         <span className="shrink-0 text-xs italic">
-                          upload from Worker page
+                          {t('generate1099.uploadFromWorkerPage')}
                         </span>
                       )}
                     </div>
@@ -465,7 +455,7 @@ export function Generate1099Modal({
                 onClick={onClose}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
               >
-                Close
+                {t('common:close')}
               </button>
               <button
                 type="button"
@@ -474,17 +464,17 @@ export function Generate1099Modal({
                 className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 title={
                   blockerCount > 0
-                    ? `Fix ${blockerCount} blocker(s) above first`
+                    ? t('generate1099.blockersTitle', { count: blockerCount })
                     : warningCount > 0
-                      ? 'Has warnings but will still generate'
-                      : 'Generate the PDF'
+                      ? t('generate1099.warningsTitle')
+                      : t('generate1099.generateTitle')
                 }
               >
                 {downloading
-                  ? 'Generating…'
+                  ? t('generate1099.generating')
                   : warningCount > 0 && blockerCount === 0
-                    ? `Generate anyway (${warningCount} warning${warningCount === 1 ? '' : 's'})`
-                    : 'Generate PDF'}
+                    ? t('generate1099.generateAnyway', { count: warningCount })
+                    : t('generate1099.generatePdf')}
               </button>
             </div>
           </>
@@ -522,6 +512,7 @@ function CompanySettingsInlineForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
 
@@ -581,26 +572,33 @@ function CompanySettingsInlineForm({
   });
 
   if (!data || !draft) {
-    return <div className="text-sm text-slate-500">Loading company info…</div>;
+    return <div className="text-sm text-slate-500">{t('generate1099.company.loading')}</div>;
   }
 
   return (
     <div className="space-y-3 rounded-md border border-slate-300 bg-slate-50 p-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold text-slate-900">Edit company info (used as Payer)</h4>
+        <h4 className="text-sm font-semibold text-slate-900">
+          {t('generate1099.company.title')}
+        </h4>
         <button
           type="button"
           onClick={onClose}
           className="text-xs text-slate-500 underline hover:text-slate-700"
         >
-          cancel
+          {t('generate1099.company.cancel')}
         </button>
       </div>
       <p className="text-xs text-slate-500">
-        Editing <strong>{data.name}</strong> — these fields print on the 1099 Payer block.
+        <Trans
+          t={t}
+          i18nKey="generate1099.company.editingHint"
+          values={{ name: data.name }}
+          components={{ strong: <strong /> }}
+        />
       </p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <Field label="Legal name (optional)">
+        <Field label={t('generate1099.company.legalName')}>
           <input
             type="text"
             value={draft.legalName}
@@ -609,7 +607,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="EIN" required>
+        <Field label={t('generate1099.company.ein')} required>
           <input
             type="text"
             value={draft.ein}
@@ -619,7 +617,7 @@ function CompanySettingsInlineForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Phone">
+        <Field label={t('generate1099.company.phone')}>
           <input
             type="tel"
             value={draft.phone}
@@ -628,7 +626,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Street" required>
+        <Field label={t('generate1099.company.street')} required>
           <input
             type="text"
             value={draft.street1}
@@ -637,7 +635,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Street 2">
+        <Field label={t('generate1099.company.street2')}>
           <input
             type="text"
             value={draft.street2}
@@ -646,7 +644,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="City" required>
+        <Field label={t('generate1099.company.city')} required>
           <input
             type="text"
             value={draft.city}
@@ -655,7 +653,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="State" required>
+        <Field label={t('generate1099.company.state')} required>
           <input
             type="text"
             value={draft.state}
@@ -664,7 +662,7 @@ function CompanySettingsInlineForm({
             className={inputClass}
           />
         </Field>
-        <Field label="ZIP" required>
+        <Field label={t('generate1099.company.zip')} required>
           <input
             type="text"
             value={draft.postalCode}
@@ -680,11 +678,16 @@ function CompanySettingsInlineForm({
         disabled={mutation.isPending}
         className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
       >
-        {mutation.isPending ? 'Saving…' : 'Save & re-check'}
+        {mutation.isPending
+          ? t('generate1099.company.saving')
+          : t('generate1099.company.saveRecheck')}
       </button>
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, {
+            error: t('errors.label'),
+            fallback: t('errors.failed'),
+          })}
         </div>
       )}
     </div>
@@ -712,13 +715,13 @@ function SummaryCard({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

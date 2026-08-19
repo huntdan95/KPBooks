@@ -1,1 +1,276 @@
-{}
+{
+  "shared": {
+    "errorLabel": "Error",
+    "failed": "Failed.",
+    "failedToSave": "Failed to save.",
+    "failedToLoad": "Failed to load.",
+    "operationFailed": "Operation failed.",
+    "saving": "Saving…",
+    "saveChanges": "Save changes",
+    "downloadPdf": "Download PDF",
+    "generatingPdf": "Generating PDF…",
+    "pdfFailed": "PDF download failed.",
+    "addLine": "+ Add line",
+    "subtotal": "Subtotal",
+    "tax": "Tax",
+    "qty": "Qty",
+    "description": "Description",
+    "unitPrice": "Unit price",
+    "price": "Price",
+    "customer": "Customer",
+    "number": "Number",
+    "email": "Email",
+    "phone": "Phone",
+    "active": "Active",
+    "inactive": "(inactive)",
+    "noTax": "No tax",
+    "choose": "Choose…",
+    "net": "Net {{days}}",
+    "incomeAccount": "Income account",
+    "expenseAccount": "Expense account"
+  },
+  "customers": {
+    "title": "Customers",
+    "onFile_one": "{{count}} on file",
+    "onFile_other": "{{count}} on file",
+    "searchMatches_one": " · {{count}} match \"{{query}}\"",
+    "searchMatches_other": " · {{count}} match \"{{query}}\"",
+    "mergeDuplicates": "Merge duplicates…",
+    "newButton": "+ New customer",
+    "searchPlaceholder": "Search by name, company, account #, email, or phone…",
+    "searchAria": "Search customers",
+    "clearSearch": "Clear search",
+    "loadFailed": "Failed to load customers.",
+    "noMatch": "No customers match \"<0>{{query}}</0>\".",
+    "noContact": "no contact",
+    "form": {
+      "createTitle": "New customer",
+      "editTitle": "Edit customer",
+      "displayName": "Display name",
+      "companyName": "Company name",
+      "accountNumber": "Account number",
+      "defaultTerms": "Default terms (days)",
+      "taxExempt": "Tax-exempt (sales tax not charged)",
+      "saveCustomer": "Save customer"
+    },
+    "empty": {
+      "title": "No customers yet",
+      "description": "Add a customer to start sending estimates and invoices. You can also bulk-import via the IIF importer in Accounting.",
+      "action": "New customer"
+    },
+    "table": {
+      "accountNumber": "Account #",
+      "displayName": "Display name",
+      "terms": "Terms",
+      "openingBalance": "Opening balance"
+    }
+  },
+  "invoices": {
+    "title": "Invoices",
+    "onFile_one": "{{count}} on file",
+    "onFile_other": "{{count}} on file",
+    "newButton": "+ New invoice",
+    "loadFailed": "Failed to load invoices.",
+    "voidConfirm": "Void invoice {{number}}? A reversing journal entry will be posted.",
+    "empty": {
+      "title": "No invoices yet",
+      "description": "Create your first invoice to start billing customers. Posting an invoice automatically writes a balanced JE (DR A/R, CR Revenue).",
+      "action": "New invoice"
+    },
+    "table": {
+      "due": "Due",
+      "balance": "Balance"
+    },
+    "status": {
+      "open": "open",
+      "partial": "partial",
+      "paid": "paid",
+      "void": "void"
+    },
+    "new": {
+      "title": "New Invoice",
+      "needCustomer": "You need at least one active customer before creating an invoice. Add one in the Customers tab.",
+      "selectCustomer": "— select customer —",
+      "invoiceNumber": "Invoice #",
+      "dueDate": "Due date",
+      "dueDateHint": "Defaulting to {{date}} (customer's terms).",
+      "lines": "Lines",
+      "colItem": "Item",
+      "itemPickerTitle": "Pick an item to auto-fill description, price, account, taxable",
+      "pickItem": "— pick item —",
+      "descriptionPlaceholder": "Service rendered",
+      "selectAccount": "— account —",
+      "taxEnabledTitle": "Apply the selected tax rate to this line",
+      "taxDisabledTitle": "Pick a tax rate below to enable",
+      "removeLine": "Remove line",
+      "taxLine": "Tax ({{percent}}% of {{amount}})",
+      "salesTaxRate": "Sales tax rate",
+      "addNewRate": "+ Add new rate…",
+      "newRateName": "New rate name",
+      "newRateNamePlaceholder": "CA Sales Tax",
+      "percent": "Percent",
+      "saveRate": "Save rate",
+      "taxHint": "Tick the Tax box on each line that should be taxed; tax = sum of those × rate.",
+      "posting": "Posting…",
+      "submit": "Save & post invoice"
+    }
+  },
+  "invoiceDetail": {
+    "label": "Invoice",
+    "for": "For",
+    "issued": "Issued {{date}}",
+    "due": "Due {{date}}",
+    "voidedOn": "Voided on {{date}} (reversing JE posted; A/R restored).",
+    "balanceDue": "Balance due",
+    "totalAmount": "Total {{amount}}",
+    "voidConfirm": "Void invoice {{number}}? A reversing journal entry will be posted; the original entry stays intact for the audit trail.",
+    "voiding": "Voiding…",
+    "voidButton": "Void invoice",
+    "loadFailed": "Failed to load invoice."
+  },
+  "estimates": {
+    "title": "Estimates",
+    "blurb_one": "{{count}} on file. Quotes don't post to the ledger; once accepted, click \"Convert to invoice\" to create the corresponding A/R invoice in one shot.",
+    "blurb_other": "{{count}} on file. Quotes don't post to the ledger; once accepted, click \"Convert to invoice\" to create the corresponding A/R invoice in one shot.",
+    "newButton": "+ New estimate",
+    "emptyHint": "No estimates yet. Click \"+ New estimate\" above.",
+    "filter": {
+      "all": "All statuses",
+      "draft": "Draft",
+      "sent": "Sent",
+      "accepted": "Accepted",
+      "declined": "Declined",
+      "expired": "Expired",
+      "converted": "Converted"
+    },
+    "status": {
+      "draft": "draft",
+      "sent": "sent",
+      "accepted": "accepted",
+      "declined": "declined",
+      "expired": "expired",
+      "converted": "converted"
+    },
+    "table": {
+      "expires": "Expires"
+    },
+    "form": {
+      "title": "New estimate",
+      "estimateNumber": "Estimate #",
+      "expires": "Expires",
+      "taxRate": "Tax rate",
+      "lineItems": "Line items",
+      "descriptionPlaceholder": "Service description",
+      "remove": "Remove",
+      "taxLine": "Tax ({{percent}}%)",
+      "creating": "Creating…",
+      "submit": "Save estimate"
+    },
+    "detail": {
+      "label": "Estimate",
+      "forCustomer": "For {{name}}",
+      "expiresOn": "Expires {{date}}",
+      "invoiceId": "Invoice ID: {{id}}…",
+      "markSent": "Mark as sent",
+      "markAccepted": "Mark accepted",
+      "decline": "Decline",
+      "convert": "Convert to invoice",
+      "deleteConfirm": "Delete estimate {{number}}?"
+    },
+    "convert": {
+      "title": "Convert to invoice",
+      "description": "Creates a new posted A/R invoice (DR A/R, CR revenue per line) and locks this estimate from further edits. Estimate {{number}} · {{total}}",
+      "invoiceNumber": "Invoice #",
+      "invoiceDate": "Invoice date",
+      "dueDate": "Due date",
+      "converting": "Converting…",
+      "submit": "Convert"
+    }
+  },
+  "items": {
+    "title": "Items / services",
+    "countTotal_one": "{{count}} total.",
+    "countTotal_other": "{{count}} total.",
+    "countActive_one": "{{count}} active.",
+    "countActive_other": "{{count}} active.",
+    "blurb": "Items pre-fill the description, price, and GL account on invoice + bill lines so a 5-second line entry stays a 5-second line entry.",
+    "showInactive": "Show inactive",
+    "newButton": "+ New item",
+    "loadFailed": "Failed to load items.",
+    "emptyHint": "No items yet. Click \"+ New item\" above.",
+    "taxBadge": "tax",
+    "deactivate": "Deactivate",
+    "deactivateConfirm": "Deactivate \"{{name}}\"? Existing invoices/bills that used it stay intact.",
+    "form": {
+      "createTitle": "New item",
+      "editTitle": "Edit item",
+      "namePlaceholder": "Site visit",
+      "sku": "SKU (optional)",
+      "type": "Type",
+      "typeService": "Service",
+      "typeNonInventory": "Non-inventory",
+      "salesLegend": "Sales side (used on invoices)",
+      "notForSale": "— not for sale —",
+      "defaultPrice": "Default price",
+      "taxableDefault": "Taxable by default",
+      "salesDescription": "Sales description",
+      "salesDescriptionPlaceholder": "On-site service call (1-hour minimum)",
+      "purchaseLegend": "Purchase side (used on bills)",
+      "notPurchased": "— not purchased —",
+      "defaultCost": "Default cost",
+      "optionalPlaceholder": "optional",
+      "purchaseDescription": "Purchase description",
+      "saveItem": "Save item",
+      "accountHint": "At least one of <0>Income account</0> or <1>Expense account</1> is required so the item knows where to post."
+    },
+    "table": {
+      "sku": "SKU",
+      "type": "Type",
+      "incomeAccount": "Income acct.",
+      "salesPrice": "Sales price",
+      "expenseAccount": "Expense acct.",
+      "cost": "Cost"
+    }
+  },
+  "statements": {
+    "generate": "Generate statements",
+    "title": "Customer statements",
+    "description": "Generate a printable A/R statement of account per customer for the period below. Lists every active customer with non-zero activity in the period or a non-zero balance — preview the targets first, then download one or all as PDFs.",
+    "close": "close",
+    "periodStart": "Period start",
+    "periodEnd": "Period end",
+    "thisMonth": "This month",
+    "lastMonth": "Last month",
+    "loadingCandidates": "Loading candidates…",
+    "none": "No customers had activity or open balances in this period.",
+    "downloading": "Downloading…",
+    "bulkRunning_one": "Downloading {{count}} PDF…",
+    "bulkRunning_other": "Downloading {{count}} PDFs…",
+    "downloadAll_one": "Download all {{count}} statement",
+    "downloadAll_other": "Download all {{count}} statements",
+    "downloadHint": "Each statement opens as a separate file in your downloads. Allow multiple downloads in the browser prompt if it asks.",
+    "downloadFailed": "Download failed.",
+    "bulkFailed": "Bulk download failed.",
+    "table": {
+      "activityRows": "Activity rows",
+      "closingBalance": "Closing balance"
+    }
+  },
+  "taxRates": {
+    "title": "Tax rates",
+    "description": "Configure sales tax rates per jurisdiction. Each rate can be applied to invoice lines via the \"Taxable\" checkbox; the invoice posting service computes tax = sum(taxable lines) × (rate / 100) and credits Sales Tax Payable.",
+    "newButton": "+ New tax rate",
+    "empty": "No tax rates yet. Add one above.",
+    "form": {
+      "createTitle": "New tax rate",
+      "editTitle": "Edit tax rate",
+      "namePlaceholder": "CA Sales Tax",
+      "rate": "Rate (percent)",
+      "rateHint": "Enter as a percent: 8.75 means 8.75% (not 0.0875)",
+      "saveRate": "Save rate"
+    },
+    "table": {
+      "rate": "Rate"
+    }
+  }
+}

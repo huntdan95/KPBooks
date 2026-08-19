@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { InvoiceDetail } from './InvoiceDetail';
@@ -136,6 +138,7 @@ function formatUsd(s: string): string {
 }
 
 export function InvoicesList() {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'list' | 'new'>('list');
@@ -188,31 +191,37 @@ export function InvoicesList() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Invoices</h2>
-          <p className="text-sm text-slate-500">{list.length} on file</p>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('invoices.title')}
+          </h2>
+          <p className="text-sm text-slate-500">{t('invoices.onFile', { count: list.length })}</p>
         </div>
         <button
           type="button"
           onClick={() => setMode('new')}
           className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          + New invoice
+          {t('invoices.newButton')}
         </button>
       </div>
 
-      {invoicesQuery.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {invoicesQuery.isLoading && (
+        <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>
+      )}
       {invoicesQuery.isError && (
         <p className="text-sm text-rose-600">
-          {invoicesQuery.error instanceof Error ? invoicesQuery.error.message : 'Failed to load invoices.'}
+          {invoicesQuery.error instanceof Error
+            ? invoicesQuery.error.message
+            : t('invoices.loadFailed')}
         </p>
       )}
 
       {!invoicesQuery.isLoading && list.length === 0 && (
         <EmptyState
           icon="file-stack"
-          title="No invoices yet"
-          description="Create your first invoice to start billing customers. Posting an invoice automatically writes a balanced JE (DR A/R, CR Revenue)."
-          action={{ label: 'New invoice', onClick: () => setMode('new') }}
+          title={t('invoices.empty.title')}
+          description={t('invoices.empty.description')}
+          action={{ label: t('invoices.empty.action'), onClick: () => setMode('new') }}
         />
       )}
 
@@ -221,13 +230,15 @@ export function InvoicesList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Number</th>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Due</th>
-                <th className="px-4 py-2 text-left font-medium">Customer</th>
-                <th className="px-4 py-2 text-center font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">Balance</th>
+                <th className="px-4 py-2 text-left font-medium">{t('shared.number')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('date', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('invoices.table.due')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('shared.customer')}</th>
+                <th className="px-4 py-2 text-center font-medium">
+                  {t('status', { ns: 'common' })}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">{t('total', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('invoices.table.balance')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -249,7 +260,7 @@ export function InvoicesList() {
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_COLOR[inv.status]}`}
                     >
-                      {inv.status}
+                      {t(`invoices.status.${inv.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(inv.total)}</td>
@@ -263,9 +274,7 @@ export function InvoicesList() {
                         onClick={(e) => {
                           e.stopPropagation();
                           if (
-                            confirm(
-                              `Void invoice ${inv.invoiceNumber}? A reversing journal entry will be posted.`,
-                            )
+                            confirm(t('invoices.voidConfirm', { number: inv.invoiceNumber }))
                           ) {
                             voidMutation.mutate(inv.id);
                           }
@@ -273,7 +282,7 @@ export function InvoicesList() {
                         disabled={voidMutation.isPending}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                       >
-                        Void
+                        {t('void', { ns: 'common' })}
                       </button>
                     )}
                   </td>
@@ -286,7 +295,7 @@ export function InvoicesList() {
 
       {voidMutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(voidMutation.error)}
+          {formatError(voidMutation.error, t)}
         </div>
       )}
     </div>
@@ -302,6 +311,7 @@ function NewInvoice({
   onSaved: () => void;
   invoiceCount: number;
 }) {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
 
@@ -484,20 +494,20 @@ function NewInvoice({
   }
 
   if (customersQuery.isLoading || accountsQuery.isLoading) {
-    return <p className="text-sm text-slate-500">Loading…</p>;
+    return <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>;
   }
   if (customers.length === 0) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">New Invoice</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('invoices.new.title')}
+          </h2>
           <button type="button" onClick={onCancel} className="text-sm text-slate-600 hover:text-slate-900">
-            Cancel
+            {t('cancel', { ns: 'common' })}
           </button>
         </div>
-        <p className="text-sm text-slate-500">
-          You need at least one active customer before creating an invoice. Add one in the Customers tab.
-        </p>
+        <p className="text-sm text-slate-500">{t('invoices.new.needCustomer')}</p>
       </div>
     );
   }
@@ -505,21 +515,23 @@ function NewInvoice({
   return (
     <form onSubmit={onSubmit} className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">New Invoice</h2>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('invoices.new.title')}
+        </h2>
         <button type="button" onClick={onCancel} className="text-sm text-slate-600 hover:text-slate-900">
-          Cancel
+          {t('cancel', { ns: 'common' })}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Field label="Customer" required>
+        <Field label={t('shared.customer')} required>
           <select
             value={draft.customerId}
             onChange={(e) => setDraft({ ...draft, customerId: e.target.value })}
             required
             className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-900 focus:outline-none"
           >
-            <option value="">— select customer —</option>
+            <option value="">{t('invoices.new.selectCustomer')}</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.displayName}
@@ -527,7 +539,7 @@ function NewInvoice({
             ))}
           </select>
         </Field>
-        <Field label="Invoice #" required>
+        <Field label={t('invoices.new.invoiceNumber')} required>
           <input
             type="text"
             value={draft.invoiceNumber}
@@ -537,7 +549,7 @@ function NewInvoice({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </Field>
-        <Field label="Date" required>
+        <Field label={t('date', { ns: 'common' })} required>
           <input
             type="date"
             value={draft.invoiceDate}
@@ -546,7 +558,7 @@ function NewInvoice({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
         </Field>
-        <Field label="Due date">
+        <Field label={t('invoices.new.dueDate')}>
           <input
             type="date"
             value={draft.dueDate}
@@ -555,10 +567,12 @@ function NewInvoice({
             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
           />
           {!draft.dueDate && computedDueDate !== draft.invoiceDate && (
-            <p className="text-xs text-slate-500">Defaulting to {computedDueDate} (customer's terms).</p>
+            <p className="text-xs text-slate-500">
+              {t('invoices.new.dueDateHint', { date: computedDueDate })}
+            </p>
           )}
         </Field>
-        <Field label="Memo">
+        <Field label={t('memo', { ns: 'common' })}>
           <input
             type="text"
             value={draft.memo}
@@ -571,26 +585,26 @@ function NewInvoice({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-slate-700">Lines</h3>
+          <h3 className="text-sm font-medium text-slate-700">{t('invoices.new.lines')}</h3>
           <button
             type="button"
             onClick={addLine}
             className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
           >
-            + Add line
+            {t('shared.addLine')}
           </button>
         </div>
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">Item</th>
-                <th className="px-3 py-2 text-left font-medium">Description</th>
-                <th className="px-3 py-2 text-left font-medium">Account</th>
-                <th className="px-3 py-2 text-right font-medium">Qty</th>
-                <th className="px-3 py-2 text-right font-medium">Unit price</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-center font-medium">Tax</th>
+                <th className="px-3 py-2 text-left font-medium">{t('invoices.new.colItem')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('shared.description')}</th>
+                <th className="px-3 py-2 text-left font-medium">{t('account', { ns: 'common' })}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('shared.qty')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('shared.unitPrice')}</th>
+                <th className="px-3 py-2 text-right font-medium">{t('amount', { ns: 'common' })}</th>
+                <th className="px-3 py-2 text-center font-medium">{t('shared.tax')}</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -615,10 +629,10 @@ function NewInvoice({
                           taxable: draft.taxRateId ? it.taxable : line.taxable,
                         });
                       }}
-                      title="Pick an item to auto-fill description, price, account, taxable"
+                      title={t('invoices.new.itemPickerTitle')}
                       className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     >
-                      <option value="">— pick item —</option>
+                      <option value="">{t('invoices.new.pickItem')}</option>
                       {(itemsQuery.data?.items ?? []).map((it) => (
                         <option key={it.id} value={it.id}>
                           {it.sku ? `[${it.sku}] ` : ''}
@@ -633,7 +647,7 @@ function NewInvoice({
                       value={line.description}
                       onChange={(e) => updateLine(idx, { description: e.target.value })}
                       maxLength={500}
-                      placeholder="Service rendered"
+                      placeholder={t('invoices.new.descriptionPlaceholder')}
                       className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     />
                   </td>
@@ -644,7 +658,7 @@ function NewInvoice({
                       required
                       className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                     >
-                      <option value="">— account —</option>
+                      <option value="">{t('invoices.new.selectAccount')}</option>
                       {lineAccounts.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.code} — {a.name}
@@ -682,8 +696,8 @@ function NewInvoice({
                       disabled={!draft.taxRateId}
                       title={
                         draft.taxRateId
-                          ? 'Apply the selected tax rate to this line'
-                          : 'Pick a tax rate below to enable'
+                          ? t('invoices.new.taxEnabledTitle')
+                          : t('invoices.new.taxDisabledTitle')
                       }
                     />
                   </td>
@@ -693,7 +707,7 @@ function NewInvoice({
                       onClick={() => removeLine(idx)}
                       disabled={draft.lines.length <= 1}
                       className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-30"
-                      aria-label="Remove line"
+                      aria-label={t('invoices.new.removeLine')}
                     >
                       ✕
                     </button>
@@ -704,7 +718,7 @@ function NewInvoice({
             <tfoot className="bg-slate-50 text-sm font-medium">
               <tr>
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-600">
-                  Subtotal
+                  {t('shared.subtotal')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(subtotal)}</td>
                 <td colSpan={2}></td>
@@ -712,7 +726,10 @@ function NewInvoice({
               {selectedTaxRate && (
                 <tr>
                   <td colSpan={4} className="px-3 py-2 text-right text-slate-600">
-                    Tax ({Number(selectedTaxRate.ratePercent).toFixed(2)}% of {formatUsd(taxableSubtotal)})
+                    {t('invoices.new.taxLine', {
+                      percent: Number(selectedTaxRate.ratePercent).toFixed(2),
+                      amount: formatUsd(taxableSubtotal),
+                    })}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-900">
                     {formatUsd(taxAmount)}
@@ -722,7 +739,7 @@ function NewInvoice({
               )}
               <tr>
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-700">
-                  Total
+                  {t('total', { ns: 'common' })}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">{formatUsd(total)}</td>
                 <td colSpan={2}></td>
@@ -734,7 +751,7 @@ function NewInvoice({
         {/* ----------- Tax rate picker + inline create ------------- */}
         <div className="flex flex-wrap items-end gap-3 rounded-md border border-slate-200 bg-white p-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            <span>Sales tax rate</span>
+            <span>{t('invoices.new.salesTaxRate')}</span>
             <select
               value={draft.taxRateId}
               onChange={(e) => {
@@ -748,30 +765,30 @@ function NewInvoice({
               }}
               className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
             >
-              <option value="">No tax</option>
+              <option value="">{t('shared.noTax')}</option>
               {taxRates.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name} — {Number(r.ratePercent).toFixed(2)}%
                 </option>
               ))}
-              <option value="__add__">+ Add new rate…</option>
+              <option value="__add__">{t('invoices.new.addNewRate')}</option>
             </select>
           </label>
           {showNewRateForm && (
             <>
               <label className="flex flex-col gap-1 text-sm text-slate-600">
-                <span>New rate name</span>
+                <span>{t('invoices.new.newRateName')}</span>
                 <input
                   type="text"
                   value={newRateName}
                   onChange={(e) => setNewRateName(e.target.value)}
                   maxLength={120}
-                  placeholder="CA Sales Tax"
+                  placeholder={t('invoices.new.newRateNamePlaceholder')}
                   className="rounded-md border border-slate-300 px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm text-slate-600">
-                <span>Percent</span>
+                <span>{t('invoices.new.percent')}</span>
                 <input
                   type="text"
                   inputMode="decimal"
@@ -788,7 +805,7 @@ function NewInvoice({
                 disabled={!newRateName.trim() || !newRatePercent || createRateMutation.isPending}
                 className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
               >
-                {createRateMutation.isPending ? 'Saving…' : 'Save rate'}
+                {createRateMutation.isPending ? t('shared.saving') : t('invoices.new.saveRate')}
               </button>
               <button
                 type="button"
@@ -799,19 +816,17 @@ function NewInvoice({
                 }}
                 className="text-sm text-slate-600 hover:text-slate-900"
               >
-                Cancel
+                {t('cancel', { ns: 'common' })}
               </button>
               {createRateMutation.isError && (
                 <span className="text-xs text-rose-600">
-                  {formatError(createRateMutation.error)}
+                  {formatError(createRateMutation.error, t)}
                 </span>
               )}
             </>
           )}
           {selectedTaxRate && !showNewRateForm && (
-            <span className="text-xs text-slate-500">
-              Tick the Tax box on each line that should be taxed; tax = sum of those × rate.
-            </span>
+            <span className="text-xs text-slate-500">{t('invoices.new.taxHint')}</span>
           )}
         </div>
       </div>
@@ -822,20 +837,20 @@ function NewInvoice({
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {mutation.isPending ? 'Posting…' : 'Save & post invoice'}
+          {mutation.isPending ? t('invoices.new.posting') : t('invoices.new.submit')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('cancel', { ns: 'common' })}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, t)}
         </div>
       )}
     </form>
@@ -862,11 +877,11 @@ function Field({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<'sales'>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('shared.errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Operation failed.';
+  return err instanceof Error ? err.message : t('shared.operationFailed');
 }

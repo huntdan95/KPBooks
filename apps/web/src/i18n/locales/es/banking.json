@@ -1,1 +1,354 @@
-{}
+{
+  "list": {
+    "title": "Bancos",
+    "subtitle": "Importe un estado de cuenta bancario o de tarjeta de crédito en CSV, clasifique cada línea (Claude puede sugerir) y luego concilie contra el estado de cuenta mensual del banco.",
+    "tabs": {
+      "transactions": "Transacciones",
+      "reconcile": "Conciliación bancaria",
+      "rules": "Reglas"
+    },
+    "bankAccount": "Cuenta bancaria",
+    "selectPlaceholder": "— seleccione —",
+    "pickBankAccountFirst": "Seleccione primero una cuenta bancaria.",
+    "importing": "Importando…",
+    "importCsv": "Importar CSV",
+    "fileTooLarge": "El archivo pesa {{size}} MB; el límite es 2 MB.",
+    "imported_one": "Se importó {{count}} transacción nueva.",
+    "imported_other": "Se importaron {{count}} transacciones nuevas.",
+    "skippedDuplicates_one": " Se omitió {{count}} duplicado.",
+    "skippedDuplicates_other": " Se omitieron {{count}} duplicados.",
+    "preCategorized_one": " {{count}} clasificada previamente por reglas.",
+    "preCategorized_other": " {{count}} clasificadas previamente por reglas.",
+    "parserWarnings_one": "{{count}} advertencia del analizador",
+    "parserWarnings_other": "{{count}} advertencias del analizador",
+    "csvHint": "La mayoría de las exportaciones CSV de los bancos funcionan sin ajustes (Wells Fargo, Chase, BofA, Capital One). El analizador detecta automáticamente las columnas de Fecha / Descripción / Importe, o de Cargo + Abono.",
+    "statusAll": "Todos",
+    "askingClaude": "Consultando a Claude…",
+    "suggestSelected": "Sugerir categorías ({{n}} seleccionadas)",
+    "suggestNext": "Sugerir categorías para las próximas {{n}} sin clasificar",
+    "aiUnavailable": "La clasificación con IA requiere configurar el secreto ANTHROPIC_API_KEY en Cloud Run.",
+    "suggested": "✓ {{n}} sugeridas",
+    "suggestFailed": "; {{n}} fallidas",
+    "suggestError": " ({{error}})",
+    "aiError": "IA: {{error}}",
+    "empty": "Ninguna transacción coincide con este filtro.",
+    "columns": {
+      "description": "Descripción",
+      "suggestedAccount": "Cuenta sugerida"
+    },
+    "selectAndPost": "— seleccionar y contabilizar —",
+    "post": "Contabilizar",
+    "ignore": "Ignorar",
+    "postFailed": "Error al contabilizar: {{error}}",
+    "ignoreFailed": "Error al ignorar: {{error}}"
+  },
+  "rules": {
+    "title": "Reglas bancarias",
+    "subtitle": "Clasifique automáticamente las líneas bancarias al importar. Gana la primera regla que coincida (el número de prioridad más bajo); la clasificación con IA solo se ejecuta en las líneas que ninguna regla coincidió.",
+    "newRule": "+ Nueva regla",
+    "formTitleCreate": "Nueva regla",
+    "formTitleEdit": "Editar regla",
+    "fields": {
+      "priority": "Prioridad",
+      "matchType": "Tipo de coincidencia",
+      "matchValue": "Valor de coincidencia",
+      "amountSign": "Signo del importe",
+      "bankAccountScope": "Alcance de cuenta bancaria",
+      "categorizeAs": "Clasificar como",
+      "memoOverride": "Nota personalizada (opcional)"
+    },
+    "placeholders": {
+      "name": "Verizon -> Teléfono",
+      "matchValue": "verizon",
+      "memoOverride": "Déjelo en blanco para conservar la descripción del CSV"
+    },
+    "allBankAccounts": "Todas las cuentas bancarias",
+    "noEligibleAccounts": "No hay cuentas elegibles",
+    "saving": "Guardando…",
+    "saveRule": "Guardar regla",
+    "loadFailed": "No se pudieron cargar las reglas.",
+    "empty": "Aún no hay reglas. Cree una arriba; se ejecutará en cada importación de CSV a partir de ahora.",
+    "columns": {
+      "match": "Coincidencia",
+      "sign": "Signo",
+      "categorizeAs": "Clasificar como",
+      "hits": "Usos",
+      "active": "Activa"
+    },
+    "missingAccount": "cuenta faltante",
+    "deleteConfirm": "¿Eliminar la regla \"{{name}}\"?"
+  },
+  "matchType": {
+    "contains": "Contiene",
+    "starts_with": "Comienza con",
+    "ends_with": "Termina con",
+    "exact": "Exacto",
+    "regex": "Regex"
+  },
+  "amountSign": {
+    "any": "Cualquiera",
+    "positive": "Solo depósitos",
+    "negative": "Solo retiros"
+  },
+  "reconcile": {
+    "title": "Conciliación bancaria",
+    "subtitle": "Compare las transacciones bancarias contabilizadas contra el estado de cuenta del banco al cierre del mes. Cuando el total conciliado sea igual al saldo del estado de cuenta menos el saldo inicial, finalice para fijar el corte.",
+    "bankAccount": "Cuenta bancaria",
+    "selectPlaceholder": "— seleccione —",
+    "inProgressLabel": "Conciliación en curso:",
+    "startTitle": "Iniciar conciliación",
+    "statementDate": "Fecha del estado de cuenta",
+    "endingBalance": "Saldo final",
+    "starting": "Iniciando…",
+    "start": "Iniciar",
+    "past_one": "Conciliación anterior ({{count}})",
+    "past_other": "Conciliaciones anteriores ({{count}})",
+    "view": "Ver",
+    "completedTitle": "Conciliación completada",
+    "inProgressTitle": "En curso",
+    "headerMeta": "{{date}} · saldo final {{balance}}",
+    "stats": {
+      "beginning": "Saldo inicial",
+      "statement": "Estado de cuenta",
+      "cleared": "Conciliado",
+      "difference": "Diferencia"
+    },
+    "finalising": "Finalizando…",
+    "finalise": "Finalizar",
+    "offBy": "Diferencia de {{amount}}",
+    "locked": "✓ Bloqueada",
+    "reopenConfirm": "¿Reabrir esta conciliación? Las líneas conciliadas volverán a ser editables.",
+    "reopen": "Reabrir",
+    "columnDescription": "Descripción",
+    "noPostedTransactions": "No hay transacciones contabilizadas en o antes del {{date}}."
+  },
+  "imports": {
+    "title": "Importar desde QuickBooks",
+    "subtitle": "Suba una exportación .iif para traer su catálogo de cuentas, clientes, proveedores y transacciones históricas. De forma predeterminada, las transacciones se contabilizan en el libro mayor como asientos contables; NO contabilice además un asiento de saldos iniciales, o cada saldo se contará dos veces. Para traer únicamente los listados, desmarque “Importar transacciones” en la vista previa y contabilice un asiento de saldos iniciales en su lugar.",
+    "fileEmpty": "El archivo está vacío.",
+    "fileTooLarge": "El archivo pesa {{size}} MB. La importación acepta hasta 12 MB — exporte desde QuickBooks en bloques por rango de fechas (Archivo > Utilidades > Exportar) e importe cada uno. Volver a importar rangos traslapados es seguro para las transacciones sin cambios: las transacciones ya contabilizadas se omiten como duplicados. (Una transacción editada en QuickBooks después de una importación anterior se contabiliza de nuevo — la importación avisa cuando lo detecta.)",
+    "dropHint": "Suelte un archivo .iif o haga clic abajo para elegir uno.",
+    "parsing": "Analizando…",
+    "chooseFile": "Elegir archivo",
+    "previewFrom": "Vista previa de {{fileName}}",
+    "counts": "{{accounts}} cuentas · {{customers}} clientes · {{vendors}} proveedores · {{transactions}} transacciones contabilizables",
+    "nonPosting": " · {{n}} sin efecto contable (cotizaciones / órdenes)",
+    "excludedCount": "{{n}} excluidas (errores de datos — vea las advertencias)",
+    "missingToCreate": " · {{n}} cuentas faltantes por crear automáticamente",
+    "unrecognized": "Omitido (aún no compatible): {{sections}}",
+    "parserWarnings_one": "{{count}} advertencia del analizador",
+    "parserWarnings_other": "{{count}} advertencias del analizador",
+    "andMore": "… y {{n}} más",
+    "sections": {
+      "accounts": "Catálogo de cuentas",
+      "customers": "Clientes",
+      "vendors": "Proveedores"
+    },
+    "selectedOf": "({{included}} de {{total}} seleccionados)",
+    "selectAll": "Seleccionar todo",
+    "deselectAll": "Deseleccionar todo",
+    "columns": {
+      "code": "Código",
+      "type": "Tipo",
+      "qbType": "Tipo QB",
+      "displayName": "Nombre para mostrar",
+      "email": "Correo electrónico",
+      "phone": "Teléfono",
+      "terms": "Plazo",
+      "subtype": "Subtipo",
+      "usedIn": "Se usa en",
+      "mapsTo": "Se convierte en",
+      "count": "Cantidad"
+    },
+    "inactiveInQuickBooks": "inactivo en QuickBooks",
+    "netTerms": "Neto {{days}}",
+    "missing": {
+      "title": "Cuentas faltantes referenciadas por las transacciones",
+      "hint": "Estos nombres de cuenta aparecen en las transacciones del archivo, pero no están en su catálogo de cuentas ni se crearán desde la sección de cuentas de este archivo. Dedujimos un tipo/subtipo a partir de cada nombre — revíselos y edítelos, y luego confirme. Las cuentas creadas automáticamente se registran antes de contabilizar las transacciones, para que los asientos contables queden correctos.",
+      "occurrences_one": "{{count}} transacción",
+      "occurrences_other": "{{count}} transacciones"
+    },
+    "transactions": {
+      "title": "Transacciones",
+      "postableCount": "({{n}} contabilizables)",
+      "include": "Importar transacciones",
+      "excludedSuffix": " — {{excluded}} de {{total}} excluidas (error de datos; vea las advertencias)",
+      "hint": "Cada transacción contabilizable se convierte en un journal_entry. Regla de signos: importe positivo = cargo, negativo = abono. Las transacciones cuyas cuentas no estén en el catálogo de cuentas después del paso de listados se omiten y se reportan."
+    },
+    "importing": "Importando…",
+    "confirmImport": "Confirmar importación",
+    "done": {
+      "title": "Importación completada.",
+      "accountsCreated": "{{n}} cuentas creadas",
+      "customersCreated": "{{n}} clientes creados",
+      "vendorsCreated": "{{n}} proveedores creados",
+      "skippedSuffix": ", {{n}} omitidas",
+      "transactionsPosted": "{{n}} transacciones contabilizadas",
+      "paymentsLinked": ", {{n}} vinculadas a registros de pago de proveedor/cliente (1099, estados de cuenta)",
+      "duplicatesSkipped": ", {{n}} ya importadas (duplicados omitidos)",
+      "paymentsBackfilled": ", {{n}} registro(s) de pago completados para transacciones importadas anteriormente",
+      "voided": ", {{n}} anuladas (0.00 — nada que contabilizar)"
+    },
+    "notes": {
+      "importNotes_one": "{{count}} nota de la importación:",
+      "importNotes_other": "{{count}} notas de la importación:",
+      "listRowsSkipped_one": "{{count}} fila de listado omitida:",
+      "listRowsSkipped_other": "{{count}} filas de listado omitidas:",
+      "transactionsSkipped_one": "{{count}} transacción omitida:",
+      "transactionsSkipped_other": "{{count}} transacciones omitidas:",
+      "transactionNotes_one": "{{count}} nota de transacciones:",
+      "transactionNotes_other": "{{count}} notas de transacciones:"
+    },
+    "atRow": "en la fila {{row}}",
+    "conflictKind": {
+      "account": "cuenta",
+      "customer": "cliente",
+      "vendor": "proveedor"
+    },
+    "excluded": {
+      "title_one": "{{count}} bloque de transacciones del archivo NO se importó (se encontraron errores de datos antes de contabilizar):",
+      "title_other": "{{count}} bloques de transacciones del archivo NO se importaron (se encontraron errores de datos antes de contabilizar):",
+      "hint": "Corrija estas filas en el archivo y vuelva a importarlo — las transacciones ya contabilizadas se omiten como duplicados (siempre que no se hayan editado en QuickBooks desde la última importación; una transacción editada se contabiliza de nuevo como un asiento nuevo)."
+    },
+    "unlinked": {
+      "title_one": "{{count}} beneficiario se contabilizó solo en el libro mayor — no se escribió ningún registro de pago de proveedor/cliente:",
+      "title_other": "{{count}} beneficiarios se contabilizaron solo en el libro mayor — no se escribió ningún registro de pago de proveedor/cliente:",
+      "row_one": "{{count}} transacción por un total de {{total}}",
+      "row_other": "{{count}} transacciones por un total de {{total}}",
+      "hint": "Estos nombres no coincidieron con ningún proveedor ni cliente (revise la ortografía y la puntuación, los “Other Names” de QuickBooks o los empleados). Sus importes no aparecerán en los totales de 1099, en los registros de nómina ni en los estados de cuenta hasta que existan registros de pago correspondientes. Para corregirlo: cree el proveedor o cliente faltante (o corrija su ortografía) y vuelva a importar este archivo — las transacciones se omiten como duplicados y sus registros de pago se completan automáticamente."
+    },
+    "importAnother": "Importar otro archivo",
+    "detailFallbackPath": "solicitud",
+    "detailFallbackMessage": "inválido",
+    "andMoreDetails": " (+{{n}} más)"
+  },
+  "mileage": {
+    "title": "Millaje",
+    "subtitle": "Registre viajes de negocios con la tarifa estándar de millaje del IRS y luego contabilice por lote un rango de fechas en un asiento contable (CARGO a Gastos de vehículo/millaje, ABONO a Reembolso al propietario). La tarifa vigente al momento del registro queda fijada en el viaje — los cambios de tarifa del IRS no alterarán silenciosamente las deducciones anteriores.",
+    "postDisabledTitle": "No hay viajes registrados para contabilizar",
+    "postEnabledTitle": "Contabilizar un rango de fechas en un asiento contable",
+    "postMileage": "Contabilizar millaje…",
+    "newTrip": "Nuevo viaje",
+    "tiles": {
+      "loggedTrips": "Viajes registrados",
+      "loggedTripsHint": "listos para contabilizar",
+      "totalMiles": "Millas totales (registradas)",
+      "totalMilesHint": "en los viajes registrados",
+      "totalDeduction": "Deducción total",
+      "totalDeductionHint": "a las tarifas fijadas"
+    },
+    "loadFailed": "No se pudo cargar.",
+    "empty": {
+      "title": "Aún no hay viajes registrados",
+      "description": "Registre su primer viaje de negocios — el formulario se completa con la tarifa estándar de millaje del IRS vigente. Al contabilizar, todos los viajes registrados dentro de un rango de fechas se agrupan en un solo asiento contable."
+    },
+    "tables": {
+      "logged": "Registrados",
+      "posted": "Contabilizados",
+      "heading": "{{title}} ({{n}})"
+    },
+    "columns": {
+      "vehicle": "Vehículo",
+      "trip": "Viaje",
+      "purpose": "Propósito",
+      "miles": "Millas",
+      "rate": "Tarifa",
+      "deduction": "Deducción"
+    },
+    "tripStatus": {
+      "logged": "registrado",
+      "posted": "contabilizado"
+    },
+    "fields": {
+      "tripDate": "Fecha del viaje",
+      "ratePerMileDefault": "Tarifa por milla (predeterminada {{rate}})",
+      "ratePerMile": "Tarifa por milla",
+      "startLocation": "Origen",
+      "endLocation": "Destino",
+      "purpose": "Propósito",
+      "startOdometer": "Odómetro inicial (opcional)",
+      "endOdometer": "Odómetro final (opcional)",
+      "milesAuto": "Millas (automático: {{miles}})",
+      "miles": "Millas",
+      "fromDate": "Fecha inicial",
+      "toDate": "Fecha final",
+      "expenseAccount": "Cuenta de gastos (CARGO)",
+      "creditAccount": "Cuenta de abono (ABONO)",
+      "memoOptional": "Nota (opcional)"
+    },
+    "placeholders": {
+      "startLocation": "Oficina",
+      "endLocation": "Sitio del cliente",
+      "purpose": "Reunión de revisión del tercer trimestre",
+      "memo": "Reembolso de millaje: del {{from}} al {{to}}"
+    },
+    "preview": {
+      "label": "Deducción:",
+      "formula": "{{miles}} mi × {{rate}}",
+      "empty": "Complete las millas y la tarifa para ver la deducción."
+    },
+    "saving": "Guardando…",
+    "saveTrip": "Guardar viaje",
+    "edit": {
+      "title": "Editar viaje",
+      "deleteConfirm": "¿Eliminar este viaje?",
+      "deleting": "Eliminando…",
+      "saveChanges": "Guardar cambios"
+    },
+    "post": {
+      "title": "Contabilizar millaje en el libro mayor",
+      "hint": "Suma cada viaje <strong>registrado</strong> dentro del rango de fechas y escribe UN solo asiento contable: CARGO a {{debit}}, ABONO a {{credit}}. Cada viaje contabilizado queda marcado con el id del asiento y bloqueado para edición.",
+      "loggedCount_one": "{{count}} viaje registrado actualmente.",
+      "loggedCount_other": "{{count}} viajes registrados actualmente.",
+      "defaultExpenseAccount": "Gastos de vehículo/millaje",
+      "defaultCreditAccount": "Reembolso al propietario",
+      "pick": "Elegir…",
+      "posted_one": "✓ Se contabilizó {{count}} viaje: {{miles}} mi = {{amount}}.",
+      "posted_other": "✓ Se contabilizaron {{count}} viajes: {{miles}} mi = {{amount}}.",
+      "posting": "Contabilizando…",
+      "postButton": "Contabilizar millaje"
+    }
+  },
+  "txnStatus": {
+    "unmatched": "Sin clasificar",
+    "suggested": "Sugerido",
+    "posted": "Contabilizado",
+    "ignored": "Ignorado"
+  },
+  "confidence": {
+    "high": "alta",
+    "medium": "media",
+    "low": "baja"
+  },
+  "accountType": {
+    "asset": "activo",
+    "liability": "pasivo",
+    "equity": "capital",
+    "revenue": "ingresos",
+    "expense": "gastos"
+  },
+  "accountSubtype": {
+    "bank": "banco",
+    "accounts_receivable": "cuentas por cobrar",
+    "other_current_asset": "otro activo circulante",
+    "fixed_asset": "activo fijo",
+    "other_asset": "otro activo",
+    "accounts_payable": "cuentas por pagar",
+    "credit_card": "tarjeta de crédito",
+    "other_current_liability": "otro pasivo circulante",
+    "long_term_liability": "pasivo a largo plazo",
+    "equity": "capital",
+    "retained_earnings": "utilidades retenidas",
+    "income": "ingresos",
+    "other_income": "otros ingresos",
+    "expense": "gastos",
+    "cost_of_goods_sold": "costo de ventas",
+    "other_expense": "otros gastos"
+  },
+  "errors": {
+    "label": "Error",
+    "operationFailed": "La operación falló.",
+    "saveFailed": "No se pudo guardar.",
+    "failed": "Ocurrió un error."
+  }
+}

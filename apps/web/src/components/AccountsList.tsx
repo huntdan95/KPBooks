@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -15,14 +17,6 @@ interface Account {
   currency: string;
   isActive: boolean;
 }
-
-const TYPE_LABEL: Record<AccountType, string> = {
-  asset: 'Asset',
-  liability: 'Liability',
-  equity: 'Equity',
-  revenue: 'Revenue',
-  expense: 'Expense',
-};
 
 const TYPE_COLOR: Record<AccountType, string> = {
   asset: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
@@ -75,6 +69,7 @@ const emptyCreate: CreateDraft = {
 };
 
 export function AccountsList() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
@@ -157,12 +152,12 @@ export function AccountsList() {
   }
 
   if (query.isLoading) {
-    return <p className="text-sm text-slate-500">Loading accounts…</p>;
+    return <p className="text-sm text-slate-500">{t('accounts.loading')}</p>;
   }
   if (query.isError) {
     return (
       <p className="text-sm text-rose-600">
-        {query.error instanceof Error ? query.error.message : 'Failed to load accounts.'}
+        {query.error instanceof Error ? query.error.message : t('accounts.loadError')}
       </p>
     );
   }
@@ -182,9 +177,11 @@ export function AccountsList() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Chart of Accounts</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('accounts.title')}
+          </h2>
           <p className="text-sm text-slate-500">
-            {all.length} accounts
+            {t('accounts.count', { count: all.length })}
             {inactiveCount > 0 && (
               <>
                 {' '}
@@ -194,7 +191,9 @@ export function AccountsList() {
                   onClick={() => setShowInactive((v) => !v)}
                   className="underline hover:text-slate-700"
                 >
-                  {showInactive ? 'hide' : 'show'} {inactiveCount} inactive
+                  {showInactive
+                    ? t('accounts.hideInactive', { count: inactiveCount })
+                    : t('accounts.showInactive', { count: inactiveCount })}
                 </button>
               </>
             )}
@@ -205,7 +204,7 @@ export function AccountsList() {
           onClick={mode ? cancel : startCreate}
           className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          {mode ? 'Cancel' : '+ New account'}
+          {mode ? t('common:cancel') : t('accounts.newAccount')}
         </button>
       </div>
 
@@ -232,9 +231,9 @@ export function AccountsList() {
         />
       )}
 
-      {!mode && mutating && <p className="text-sm text-slate-500">Saving…</p>}
+      {!mode && mutating && <p className="text-sm text-slate-500">{t('saving')}</p>}
       {!mode && mutationErr && (
-        <p className="text-sm text-rose-600">{formatError(mutationErr)}</p>
+        <p className="text-sm text-rose-600">{formatError(mutationErr, t)}</p>
       )}
 
       {TYPE_ORDER.map((type) => {
@@ -242,7 +241,7 @@ export function AccountsList() {
         if (!group?.length) return null;
         return (
           <section key={type} className="space-y-2">
-            <h3 className="text-sm font-medium text-slate-700">{TYPE_LABEL[type]}</h3>
+            <h3 className="text-sm font-medium text-slate-700">{t(`accountTypes.${type}`)}</h3>
             <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
               {group.map((a) => (
                 <li
@@ -255,20 +254,22 @@ export function AccountsList() {
                   <div className="flex items-center gap-3">
                     <span className="font-mono text-slate-500">{a.code}</span>
                     <span className="font-medium text-slate-900">{a.name}</span>
-                    {!a.isActive && <span className="text-xs text-slate-500">(inactive)</span>}
+                    {!a.isActive && (
+                      <span className="text-xs text-slate-500">{t('accounts.inactiveTag')}</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${TYPE_COLOR[a.type]}`}
                     >
-                      {a.subtype.replace(/_/g, ' ')}
+                      {t(`subtypes.${a.subtype}`, { defaultValue: a.subtype.replace(/_/g, ' ') })}
                     </span>
                     <button
                       type="button"
                       onClick={() => startEdit(a)}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                     >
-                      Edit
+                      {t('common:edit')}
                     </button>
                   </div>
                 </li>
@@ -280,9 +281,7 @@ export function AccountsList() {
 
       {sorted.length === 0 && (
         <p className="text-sm text-slate-500">
-          {all.length === 0
-            ? 'No accounts yet. Try creating a new company.'
-            : 'No active accounts. Toggle "show inactive" above.'}
+          {all.length === 0 ? t('accounts.emptyNoAccounts') : t('accounts.emptyNoActive')}
         </p>
       )}
     </div>
@@ -304,12 +303,13 @@ function CreateAccountForm({
   isPending: boolean;
   error: unknown;
 }) {
+  const { t } = useTranslation(['reports', 'common']);
   const subtypes = SUBTYPES_BY_TYPE[draft.type];
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">New account</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('accounts.newAccountHeading')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Code" required>
+        <Field label={t('code')} required>
           <input
             type="text"
             value={draft.code}
@@ -321,18 +321,18 @@ function CreateAccountForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Name" required>
+        <Field label={t('common:name')} required>
           <input
             type="text"
             value={draft.name}
             onChange={(e) => onChange({ ...draft, name: e.target.value })}
             maxLength={120}
             required
-            placeholder="Meals & Entertainment"
+            placeholder={t('accounts.namePlaceholder')}
             className={inputClass + ' sm:col-span-2'}
           />
         </Field>
-        <Field label="Type" required>
+        <Field label={t('accounts.fields.type')} required>
           <select
             value={draft.type}
             onChange={(e) => {
@@ -342,14 +342,14 @@ function CreateAccountForm({
             }}
             className={inputClass}
           >
-            {TYPE_ORDER.map((t) => (
-              <option key={t} value={t}>
-                {TYPE_LABEL[t]}
+            {TYPE_ORDER.map((type) => (
+              <option key={type} value={type}>
+                {t(`accountTypes.${type}`)}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Subtype" required>
+        <Field label={t('accounts.fields.subtype')} required>
           <select
             value={draft.subtype}
             onChange={(e) => onChange({ ...draft, subtype: e.target.value })}
@@ -357,12 +357,12 @@ function CreateAccountForm({
           >
             {subtypes.map((s) => (
               <option key={s} value={s}>
-                {s.replace(/_/g, ' ')}
+                {t(`subtypes.${s}`, { defaultValue: s.replace(/_/g, ' ') })}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Currency">
+        <Field label={t('accounts.fields.currency')}>
           <input
             type="text"
             value={draft.currency}
@@ -371,7 +371,7 @@ function CreateAccountForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Description">
+        <Field label={t('accounts.fields.description')}>
           <input
             type="text"
             value={draft.description ?? ''}
@@ -388,20 +388,20 @@ function CreateAccountForm({
           disabled={!draft.code.trim() || !draft.name.trim() || isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? 'Saving…' : 'Save account'}
+          {isPending ? t('saving') : t('accounts.saveAccount')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       {error != null && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(error)}
+          {formatError(error, t)}
         </div>
       )}
     </form>
@@ -425,16 +425,22 @@ function EditAccountForm({
   isPending: boolean;
   error: unknown;
 }) {
+  const { t } = useTranslation(['reports', 'common']);
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-slate-700">Edit account</h3>
+        <h3 className="text-sm font-medium text-slate-700">{t('accounts.editAccountHeading')}</h3>
         <span className="text-xs text-slate-500">
-          Type/subtype locked: {TYPE_LABEL[original.type]} / {original.subtype.replace(/_/g, ' ')}
+          {t('accounts.typeLocked', {
+            type: t(`accountTypes.${original.type}`),
+            subtype: t(`subtypes.${original.subtype}`, {
+              defaultValue: original.subtype.replace(/_/g, ' '),
+            }),
+          })}
         </span>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Code" required>
+        <Field label={t('code')} required>
           <input
             type="text"
             value={draft.code}
@@ -445,7 +451,7 @@ function EditAccountForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Name" required>
+        <Field label={t('common:name')} required>
           <input
             type="text"
             value={draft.name}
@@ -455,7 +461,7 @@ function EditAccountForm({
             className={inputClass + ' sm:col-span-2'}
           />
         </Field>
-        <Field label="Currency">
+        <Field label={t('accounts.fields.currency')}>
           <input
             type="text"
             value={draft.currency}
@@ -464,7 +470,7 @@ function EditAccountForm({
             className={inputClass + ' font-mono'}
           />
         </Field>
-        <Field label="Description">
+        <Field label={t('accounts.fields.description')}>
           <input
             type="text"
             value={draft.description ?? ''}
@@ -482,7 +488,7 @@ function EditAccountForm({
           onChange={(e) => onChange({ ...draft, isActive: e.target.checked })}
           className="h-4 w-4 rounded border-slate-300"
         />
-        Active
+        {t('accounts.active')}
       </label>
 
       <div className="flex items-center gap-3">
@@ -491,20 +497,20 @@ function EditAccountForm({
           disabled={!draft.code.trim() || !draft.name.trim() || isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? 'Saving…' : 'Save changes'}
+          {isPending ? t('saving') : t('accounts.saveChanges')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
 
       {error != null && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(error)}
+          {formatError(error, t)}
         </div>
       )}
     </form>
@@ -534,11 +540,11 @@ function Field({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<['reports', 'common']>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string; details?: unknown } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed to save.';
+  return err instanceof Error ? err.message : t('accounts.saveError');
 }

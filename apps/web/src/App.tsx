@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { api, ApiError } from './lib/api';
 import { useAuth } from './lib/auth';
 import { AppShell } from './components/AppShell';
@@ -22,6 +23,7 @@ interface MeResponse {
 export function App() {
   // Hooks must run unconditionally, before the public-route early return.
   const auth = useAuth();
+  const { t } = useTranslation('shell');
 
   // The /w9-upload/<token> route is intentionally PUBLIC -- contractors
   // open it without an account to upload their W-9. Match it before any
@@ -33,7 +35,7 @@ export function App() {
   }
 
   if (auth.loading) {
-    return <Splash label="Starting up…" />;
+    return <Splash label={t('app.startingUp')} />;
   }
   if (!auth.user) {
     return <SignIn />;
@@ -42,25 +44,26 @@ export function App() {
 }
 
 function AuthedApp() {
+  const { t } = useTranslation('shell');
   const me = useQuery({
     queryKey: ['me'],
     queryFn: () => api<MeResponse>('/me'),
     retry: (count, err) => !(err instanceof ApiError && err.status === 401) && count < 2,
   });
 
-  if (me.isLoading) return <Splash label="Loading account…" />;
+  if (me.isLoading) return <Splash label={t('app.loadingAccount')} />;
   if (me.isError) {
     return (
       <Splash
         label={
           me.error instanceof Error
-            ? `Could not load account: ${me.error.message}`
-            : 'Could not load account.'
+            ? t('app.accountLoadFailed', { message: me.error.message })
+            : t('app.accountLoadFailedGeneric')
         }
       />
     );
   }
-  if (!me.data) return <Splash label="No data." />;
+  if (!me.data) return <Splash label={t('app.noData')} />;
 
   if (me.data.memberships.length === 0) {
     return <CreateCompany />;

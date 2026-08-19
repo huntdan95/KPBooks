@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { TFunction } from 'i18next';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+
+type Translate = TFunction<readonly ['banking', 'common']>;
 
 interface Account {
   id: string;
@@ -58,6 +62,7 @@ function formatUsd(s: string): string {
 }
 
 export function Reconcile() {
+  const { t } = useTranslation(['banking', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [bankAccountId, setBankAccountId] = useState<string>('');
@@ -169,18 +174,16 @@ export function Reconcile() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-base font-semibold tracking-tight text-slate-900">Reconcile</h3>
-        <p className="text-sm text-slate-500">
-          Match posted bank transactions against the bank's statement at month-end. When the
-          cleared total equals statement balance minus beginning balance, finalise to lock in
-          the snapshot.
-        </p>
+        <h3 className="text-base font-semibold tracking-tight text-slate-900">
+          {t('reconcile.title')}
+        </h3>
+        <p className="text-sm text-slate-500">{t('reconcile.subtitle')}</p>
       </div>
 
       <section className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="flex flex-col gap-1 text-sm text-slate-600">
-            <span>Bank account</span>
+            <span>{t('reconcile.bankAccount')}</span>
             <select
               value={bankAccountId}
               onChange={(e) => {
@@ -189,7 +192,7 @@ export function Reconcile() {
               }}
               className={inputClass}
             >
-              <option value="">— select —</option>
+              <option value="">{t('reconcile.selectPlaceholder')}</option>
               {bankAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.code} — {a.name}
@@ -203,7 +206,7 @@ export function Reconcile() {
           <>
             {inProgress && !activeReconciliationId && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                In-progress reconciliation:{' '}
+                {t('reconcile.inProgressLabel')}{' '}
                 <button
                   type="button"
                   onClick={() => setActiveReconciliationId(inProgress.id)}
@@ -216,10 +219,10 @@ export function Reconcile() {
 
             {!inProgress && !activeReconciliationId && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium text-slate-700">Start reconciliation</h4>
+                <h4 className="text-sm font-medium text-slate-700">{t('reconcile.startTitle')}</h4>
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="flex flex-col gap-1 text-sm text-slate-600">
-                    <span>Statement date</span>
+                    <span>{t('reconcile.statementDate')}</span>
                     <input
                       type="date"
                       value={draftStatementDate}
@@ -228,7 +231,7 @@ export function Reconcile() {
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-sm text-slate-600">
-                    <span>Ending balance</span>
+                    <span>{t('reconcile.endingBalance')}</span>
                     <input
                       type="text"
                       inputMode="decimal"
@@ -246,12 +249,12 @@ export function Reconcile() {
                     disabled={!draftStatementBalance || startMutation.isPending}
                     className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
                   >
-                    {startMutation.isPending ? 'Starting…' : 'Start'}
+                    {startMutation.isPending ? t('reconcile.starting') : t('reconcile.start')}
                   </button>
                 </div>
                 {startMutation.isError && (
                   <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                    {formatError(startMutation.error)}
+                    {formatError(startMutation.error, t)}
                   </div>
                 )}
               </div>
@@ -260,7 +263,9 @@ export function Reconcile() {
             {recs.filter((r) => r.status === 'completed').length > 0 && (
               <details className="text-sm">
                 <summary className="cursor-pointer text-slate-600">
-                  Past reconciliations ({recs.filter((r) => r.status === 'completed').length})
+                  {t('reconcile.past', {
+                    count: recs.filter((r) => r.status === 'completed').length,
+                  })}
                 </summary>
                 <ul className="mt-2 space-y-1 text-xs text-slate-700">
                   {recs
@@ -275,7 +280,7 @@ export function Reconcile() {
                           onClick={() => setActiveReconciliationId(r.id)}
                           className="text-slate-600 underline hover:text-slate-900"
                         >
-                          View
+                          {t('reconcile.view')}
                         </button>
                       </li>
                     ))}
@@ -290,9 +295,14 @@ export function Reconcile() {
         <section className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium text-slate-700">
-              {summary.status === 'completed' ? 'Completed reconciliation' : 'In progress'}
+              {summary.status === 'completed'
+                ? t('reconcile.completedTitle')
+                : t('reconcile.inProgressTitle')}
               <span className="ml-2 text-slate-500">
-                {summary.statementDate} · ending {formatUsd(summary.statementBalance)}
+                {t('reconcile.headerMeta', {
+                  date: summary.statementDate,
+                  balance: formatUsd(summary.statementBalance),
+                })}
               </span>
             </h4>
             <button
@@ -300,16 +310,16 @@ export function Reconcile() {
               onClick={() => setActiveReconciliationId(null)}
               className="text-sm text-slate-600 hover:text-slate-900"
             >
-              Close
+              {t('common:close')}
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-sm">
-            <Stat label="Beginning" value={formatUsd(summary.beginningBalance)} />
-            <Stat label="Statement" value={formatUsd(summary.statementBalance)} />
-            <Stat label="Cleared" value={formatUsd(summary.clearedTotal)} />
+            <Stat label={t('reconcile.stats.beginning')} value={formatUsd(summary.beginningBalance)} />
+            <Stat label={t('reconcile.stats.statement')} value={formatUsd(summary.statementBalance)} />
+            <Stat label={t('reconcile.stats.cleared')} value={formatUsd(summary.clearedTotal)} />
             <Stat
-              label="Difference"
+              label={t('reconcile.stats.difference')}
               value={formatUsd(summary.diff)}
               tone={summary.isBalanced ? 'good' : 'bad'}
             />
@@ -324,31 +334,33 @@ export function Reconcile() {
                 className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {finaliseMutation.isPending
-                  ? 'Finalising…'
+                  ? t('reconcile.finalising')
                   : summary.isBalanced
-                    ? 'Finalise'
-                    : `Off by ${formatUsd(summary.diff)}`}
+                    ? t('reconcile.finalise')
+                    : t('reconcile.offBy', { amount: formatUsd(summary.diff) })}
               </button>
               {finaliseMutation.isError && (
-                <span className="text-xs text-rose-600">{formatError(finaliseMutation.error)}</span>
+                <span className="text-xs text-rose-600">
+                  {formatError(finaliseMutation.error, t)}
+                </span>
               )}
             </div>
           )}
 
           {summary.status === 'completed' && (
             <div className="flex items-center gap-3">
-              <span className="text-xs text-emerald-700">✓ Locked</span>
+              <span className="text-xs text-emerald-700">{t('reconcile.locked')}</span>
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm('Reopen this reconciliation? Cleared rows will become editable again.')) {
+                  if (confirm(t('reconcile.reopenConfirm'))) {
                     reopenMutation.mutate();
                   }
                 }}
                 disabled={reopenMutation.isPending}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100 disabled:opacity-50"
               >
-                Reopen
+                {t('reconcile.reopen')}
               </button>
             </div>
           )}
@@ -358,38 +370,42 @@ export function Reconcile() {
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="w-10 px-3 py-2"></th>
-                  <th className="px-3 py-2 text-left font-medium">Date</th>
-                  <th className="px-3 py-2 text-left font-medium">Description</th>
-                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('common:date')}</th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    {t('reconcile.columnDescription')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">{t('common:amount')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {summary.transactions.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-3 py-3 text-sm text-slate-500">
-                      No posted transactions on or before {summary.statementDate}.
+                      {t('reconcile.noPostedTransactions', { date: summary.statementDate })}
                     </td>
                   </tr>
                 ) : (
-                  summary.transactions.map((t) => (
-                    <tr key={t.id} className={t.cleared ? 'bg-emerald-50/40' : ''}>
+                  summary.transactions.map((txn) => (
+                    <tr key={txn.id} className={txn.cleared ? 'bg-emerald-50/40' : ''}>
                       <td className="px-3 py-2 text-center">
                         <input
                           type="checkbox"
-                          checked={t.cleared}
+                          checked={txn.cleared}
                           disabled={summary.status === 'completed' || clearMutation.isPending}
-                          onChange={(e) => clearMutation.mutate({ id: t.id, cleared: e.target.checked })}
+                          onChange={(e) =>
+                            clearMutation.mutate({ id: txn.id, cleared: e.target.checked })
+                          }
                         />
                       </td>
-                      <td className="px-3 py-2 font-mono text-slate-700">{t.transactionDate}</td>
-                      <td className="px-3 py-2 text-slate-900">{t.description}</td>
+                      <td className="px-3 py-2 font-mono text-slate-700">{txn.transactionDate}</td>
+                      <td className="px-3 py-2 text-slate-900">{txn.description}</td>
                       <td
                         className={
                           'px-3 py-2 text-right font-mono ' +
-                          (t.amount.startsWith('-') ? 'text-rose-700' : 'text-emerald-700')
+                          (txn.amount.startsWith('-') ? 'text-rose-700' : 'text-emerald-700')
                         }
                       >
-                        {formatUsd(t.amount)}
+                        {formatUsd(txn.amount)}
                       </td>
                     </tr>
                   ))
@@ -399,7 +415,7 @@ export function Reconcile() {
           </div>
 
           {clearMutation.isError && (
-            <div className="text-xs text-rose-600">{formatError(clearMutation.error)}</div>
+            <div className="text-xs text-rose-600">{formatError(clearMutation.error, t)}</div>
           )}
         </section>
       )}
@@ -429,11 +445,11 @@ function Stat({
 const inputClass =
   'rounded-md border border-slate-300 bg-white px-2 py-1 text-sm focus:border-slate-900 focus:outline-none';
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: Translate): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('errors.label')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Operation failed.';
+  return err instanceof Error ? err.message : t('errors.operationFailed');
 }

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { signOut } from '../lib/firebase';
 import { NewCompanyForm } from './NewCompanyForm';
 
@@ -7,17 +8,16 @@ import { NewCompanyForm } from './NewCompanyForm';
  * escape hatch.
  */
 export function CreateCompany() {
+  const { t } = useTranslation(['shell', 'common']);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-md space-y-5 rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight text-slate-900">
-            Create your first client
+            {t('createCompany.title')}
           </h1>
-          <p className="text-sm text-slate-600">
-            Each client (a small business you serve) gets their own chart of accounts, customers,
-            vendors, and reports — fully isolated.
-          </p>
+          <p className="text-sm text-slate-600">{t('createCompany.description')}</p>
         </div>
         <NewCompanyForm />
         <button
@@ -25,7 +25,7 @@ export function CreateCompany() {
           onClick={() => void signOut()}
           className="w-full text-xs text-slate-500 hover:text-slate-700"
         >
-          Sign out
+          {t('common:signOut')}
         </button>
       </div>
     </div>

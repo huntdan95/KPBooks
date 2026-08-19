@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -23,6 +25,7 @@ interface Draft {
 const empty: Draft = { name: '', ratePercent: '', isActive: true };
 
 export function TaxRates() {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
@@ -79,38 +82,36 @@ export function TaxRates() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold tracking-tight text-slate-900">Tax rates</h3>
-          <p className="text-sm text-slate-500">
-            Configure sales tax rates per jurisdiction. Each rate can be applied to invoice lines
-            via the "Taxable" checkbox; the invoice posting service computes tax = sum(taxable
-            lines) × (rate / 100) and credits Sales Tax Payable.
-          </p>
+          <h3 className="text-base font-semibold tracking-tight text-slate-900">
+            {t('taxRates.title')}
+          </h3>
+          <p className="text-sm text-slate-500">{t('taxRates.description')}</p>
         </div>
         <button
           type="button"
           onClick={mode ? cancel : startCreate}
           className="shrink-0 whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
         >
-          {mode ? 'Cancel' : '+ New tax rate'}
+          {mode ? t('cancel', { ns: 'common' }) : t('taxRates.newButton')}
         </button>
       </div>
 
       {mode && (
         <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
           <h4 className="text-sm font-medium text-slate-700">
-            {mode.type === 'create' ? 'New tax rate' : 'Edit tax rate'}
+            {mode.type === 'create' ? t('taxRates.form.createTitle') : t('taxRates.form.editTitle')}
           </h4>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block space-y-1">
               <span className="text-sm font-medium text-slate-700">
-                Name <span className="text-rose-600">*</span>
+                {t('name', { ns: 'common' })} <span className="text-rose-600">*</span>
               </span>
               <input
                 type="text"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 maxLength={120}
-                placeholder="CA Sales Tax"
+                placeholder={t('taxRates.form.namePlaceholder')}
                 required
                 autoFocus
                 className={inputClass}
@@ -118,7 +119,7 @@ export function TaxRates() {
             </label>
             <label className="block space-y-1">
               <span className="text-sm font-medium text-slate-700">
-                Rate (percent) <span className="text-rose-600">*</span>
+                {t('taxRates.form.rate')} <span className="text-rose-600">*</span>
               </span>
               <input
                 type="text"
@@ -129,9 +130,7 @@ export function TaxRates() {
                 required
                 className={inputClass + ' font-mono'}
               />
-              <span className="text-xs text-slate-500">
-                Enter as a percent: 8.75 means 8.75% (not 0.0875)
-              </span>
+              <span className="text-xs text-slate-500">{t('taxRates.form.rateHint')}</span>
             </label>
           </div>
 
@@ -143,7 +142,7 @@ export function TaxRates() {
                 onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
                 className="h-4 w-4 rounded border-slate-300"
               />
-              Active
+              {t('shared.active')}
             </label>
           )}
 
@@ -153,28 +152,32 @@ export function TaxRates() {
               disabled={!draft.name.trim() || !draft.ratePercent || mutation.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {mutation.isPending ? 'Saving…' : mode.type === 'create' ? 'Save rate' : 'Save changes'}
+              {mutation.isPending
+                ? t('shared.saving')
+                : mode.type === 'create'
+                  ? t('taxRates.form.saveRate')
+                  : t('shared.saveChanges')}
             </button>
             <button
               type="button"
               onClick={cancel}
               className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
             >
-              Cancel
+              {t('cancel', { ns: 'common' })}
             </button>
           </div>
 
           {mutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(mutation.error)}
+              {formatError(mutation.error, t)}
             </div>
           )}
         </form>
       )}
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>}
       {!query.isLoading && rates.length === 0 && (
-        <p className="text-sm text-slate-500">No tax rates yet. Add one above.</p>
+        <p className="text-sm text-slate-500">{t('taxRates.empty')}</p>
       )}
 
       {rates.length > 0 && (
@@ -182,9 +185,9 @@ export function TaxRates() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-right font-medium">Rate</th>
-                <th className="px-4 py-2 text-center font-medium">Active</th>
+                <th className="px-4 py-2 text-left font-medium">{t('name', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('taxRates.table.rate')}</th>
+                <th className="px-4 py-2 text-center font-medium">{t('shared.active')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -193,7 +196,9 @@ export function TaxRates() {
                 <tr key={r.id} className={r.isActive ? '' : 'opacity-60'}>
                   <td className="px-4 py-2 text-slate-900">
                     {r.name}
-                    {!r.isActive && <span className="ml-2 text-xs text-slate-500">(inactive)</span>}
+                    {!r.isActive && (
+                      <span className="ml-2 text-xs text-slate-500">{t('shared.inactive')}</span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-700">
                     {Number(r.ratePercent).toFixed(2)}%
@@ -205,7 +210,7 @@ export function TaxRates() {
                       onClick={() => startEdit(r)}
                       className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                     >
-                      Edit
+                      {t('edit', { ns: 'common' })}
                     </button>
                   </td>
                 </tr>
@@ -221,11 +226,11 @@ export function TaxRates() {
 const inputClass =
   'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900';
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<'sales'>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('shared.errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed to save.';
+  return err instanceof Error ? err.message : t('shared.failedToSave');
 }

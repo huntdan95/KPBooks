@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -47,6 +48,7 @@ function formatTimestamp(iso: string): string {
 }
 
 export function Activity() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfMonth);
   const [to, setTo] = useState<string>(todayIso);
@@ -69,16 +71,14 @@ export function Activity() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold tracking-tight text-slate-900">Activity log</h2>
-        <p className="text-sm text-slate-500">
-          Append-only audit trail. Every posted journal entry (invoices, bills, payments,
-          payroll, depreciation, disposals, manual entries) writes a row here. Newest first.
-          Rows can never be edited or deleted — DB triggers enforce that.
-        </p>
+        <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+          {t('activity.title')}
+        </h2>
+        <p className="text-sm text-slate-500">{t('activity.description')}</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={from}
@@ -86,7 +86,7 @@ export function Activity() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={to}
@@ -94,36 +94,36 @@ export function Activity() {
             className={inputClass}
           />
         </Field>
-        <Field label="Action">
+        <Field label={t('activity.action')}>
           <input
             type="text"
             value={action}
             onChange={(e) => setAction(e.target.value)}
-            placeholder="e.g. posted_entry"
+            placeholder={t('activity.actionPlaceholder')}
             className={inputClass + ' min-w-[180px]'}
           />
         </Field>
-        <Field label="Entity type">
+        <Field label={t('activity.entityType')}>
           <input
             type="text"
             value={entityType}
             onChange={(e) => setEntityType(e.target.value)}
-            placeholder="e.g. journal_entry"
+            placeholder={t('activity.entityTypePlaceholder')}
             className={inputClass + ' min-w-[180px]'}
           />
         </Field>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load.'}
+          {query.error instanceof Error ? query.error.message : t('activity.loadError')}
         </p>
       )}
 
       {!query.isLoading && rows.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No activity in this range.
+          {t('activity.empty')}
         </p>
       )}
 
@@ -132,11 +132,11 @@ export function Activity() {
           <table className="kpb-sticky-thead w-full text-sm">
             <thead className="text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">When</th>
-                <th className="px-4 py-2 text-left font-medium">Action</th>
-                <th className="px-4 py-2 text-left font-medium">Entity</th>
-                <th className="px-4 py-2 text-left font-medium">Summary</th>
-                <th className="px-4 py-2 text-left font-medium">Actor</th>
+                <th className="px-4 py-2 text-left font-medium">{t('activity.columns.when')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('activity.columns.action')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('activity.columns.entity')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('activity.columns.summary')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('activity.columns.actor')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -165,7 +165,9 @@ export function Activity() {
                   </td>
                   <td className="px-4 py-2 text-slate-900">{r.summary}</td>
                   <td className="px-4 py-2 text-xs text-slate-600">
-                    {r.actorEmail ?? <span className="italic text-slate-400">system</span>}
+                    {r.actorEmail ?? (
+                      <span className="italic text-slate-400">{t('activity.system')}</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -174,10 +176,7 @@ export function Activity() {
         </div>
       )}
 
-      <p className="text-xs text-slate-500">
-        Showing up to 100 rows per query. Tighten the date range or add an action filter to
-        narrow further.
-      </p>
+      <p className="text-xs text-slate-500">{t('activity.limitNote')}</p>
     </div>
   );
 }

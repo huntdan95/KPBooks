@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -123,6 +125,7 @@ function emptyLine(accountId: string): DraftLine {
 }
 
 export function EstimatesList() {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<Status | ''>('');
@@ -168,10 +171,11 @@ export function EstimatesList() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight text-slate-900">Estimates</h2>
+          <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+            {t('estimates.title')}
+          </h2>
           <p className="text-sm text-slate-500">
-            {estimates.length} on file. Quotes don't post to the ledger; once accepted, click
-            "Convert to invoice" to create the corresponding A/R invoice in one shot.
+            {t('estimates.blurb', { count: estimates.length })}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -180,20 +184,20 @@ export function EstimatesList() {
             onChange={(e) => setStatusFilter(e.target.value as Status | '')}
             className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-slate-900 focus:outline-none"
           >
-            <option value="">All statuses</option>
-            <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            <option value="accepted">Accepted</option>
-            <option value="declined">Declined</option>
-            <option value="expired">Expired</option>
-            <option value="converted">Converted</option>
+            <option value="">{t('estimates.filter.all')}</option>
+            <option value="draft">{t('estimates.filter.draft')}</option>
+            <option value="sent">{t('estimates.filter.sent')}</option>
+            <option value="accepted">{t('estimates.filter.accepted')}</option>
+            <option value="declined">{t('estimates.filter.declined')}</option>
+            <option value="expired">{t('estimates.filter.expired')}</option>
+            <option value="converted">{t('estimates.filter.converted')}</option>
           </select>
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {showForm ? 'Cancel' : '+ New estimate'}
+            {showForm ? t('cancel', { ns: 'common' }) : t('estimates.newButton')}
           </button>
         </div>
       </div>
@@ -211,15 +215,17 @@ export function EstimatesList() {
         />
       )}
 
-      {estimatesQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {estimatesQ.isLoading && (
+        <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>
+      )}
       {estimatesQ.isError && (
         <p className="text-sm text-rose-600">
-          {estimatesQ.error instanceof Error ? estimatesQ.error.message : 'Failed to load.'}
+          {estimatesQ.error instanceof Error ? estimatesQ.error.message : t('shared.failedToLoad')}
         </p>
       )}
       {!estimatesQ.isLoading && estimates.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No estimates yet. Click "+ New estimate" above.
+          {t('estimates.emptyHint')}
         </p>
       )}
 
@@ -228,12 +234,12 @@ export function EstimatesList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Number</th>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Customer</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-left font-medium">Expires</th>
+                <th className="px-4 py-2 text-left font-medium">{t('shared.number')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('date', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('shared.customer')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('status', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('total', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('estimates.table.expires')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -253,7 +259,7 @@ export function EstimatesList() {
                         STATUS_COLOR[e.status]
                       }
                     >
-                      {e.status}
+                      {t(`estimates.status.${e.status}`)}
                     </span>
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
@@ -283,6 +289,7 @@ function NewEstimateForm({
   taxRates: TaxRate[];
   onCreated: (id: string) => void;
 }) {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState<Draft>(() => ({
     customerId: '',
@@ -329,7 +336,7 @@ function NewEstimateForm({
     }
     return sum;
   }, [draft.lines]);
-  const taxRate = taxRates.find((t) => t.id === draft.taxRateId);
+  const taxRate = taxRates.find((r) => r.id === draft.taxRateId);
   const taxableSubtotal = useMemo(
     () =>
       draft.lines.reduce((acc, l) => {
@@ -371,16 +378,16 @@ function NewEstimateForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">New estimate</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('estimates.form.title')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Customer" required>
+        <Field label={t('shared.customer')} required>
           <select
             value={draft.customerId}
             onChange={(e) => setDraft({ ...draft, customerId: e.target.value })}
             required
             className={inputClass}
           >
-            <option value="">Choose…</option>
+            <option value="">{t('shared.choose')}</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.displayName}
@@ -388,7 +395,7 @@ function NewEstimateForm({
             ))}
           </select>
         </Field>
-        <Field label="Estimate #" required>
+        <Field label={t('estimates.form.estimateNumber')} required>
           <input
             type="text"
             value={draft.estimateNumber}
@@ -398,7 +405,7 @@ function NewEstimateForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Date" required>
+        <Field label={t('date', { ns: 'common' })} required>
           <input
             type="date"
             value={draft.estimateDate}
@@ -407,7 +414,7 @@ function NewEstimateForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Expires">
+        <Field label={t('estimates.form.expires')}>
           <input
             type="date"
             value={draft.expirationDate}
@@ -415,23 +422,23 @@ function NewEstimateForm({
             className={inputClass}
           />
         </Field>
-        <Field label="Tax rate">
+        <Field label={t('estimates.form.taxRate')}>
           <select
             value={draft.taxRateId}
             onChange={(e) => setDraft({ ...draft, taxRateId: e.target.value })}
             className={inputClass}
           >
-            <option value="">No tax</option>
+            <option value="">{t('shared.noTax')}</option>
             {taxRates
-              .filter((t) => t.isActive)
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({Number(t.ratePercent).toFixed(2)}%)
+              .filter((r) => r.isActive)
+              .map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({Number(r.ratePercent).toFixed(2)}%)
                 </option>
               ))}
           </select>
         </Field>
-        <Field label="Memo">
+        <Field label={t('memo', { ns: 'common' })}>
           <input
             type="text"
             value={draft.memo}
@@ -444,25 +451,25 @@ function NewEstimateForm({
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-slate-700">Line items</h4>
+          <h4 className="text-sm font-medium text-slate-700">{t('estimates.form.lineItems')}</h4>
           <button
             type="button"
             onClick={addLine}
             className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
           >
-            + Add line
+            {t('shared.addLine')}
           </button>
         </div>
         <div className="overflow-x-auto rounded-md border border-slate-200">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2 text-left">Income account</th>
-                <th className="px-3 py-2 text-left">Description</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                <th className="px-3 py-2 text-right">Price</th>
-                <th className="px-3 py-2 text-center">Tax</th>
-                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2 text-left">{t('shared.incomeAccount')}</th>
+                <th className="px-3 py-2 text-left">{t('shared.description')}</th>
+                <th className="px-3 py-2 text-right">{t('shared.qty')}</th>
+                <th className="px-3 py-2 text-right">{t('shared.price')}</th>
+                <th className="px-3 py-2 text-center">{t('shared.tax')}</th>
+                <th className="px-3 py-2 text-right">{t('amount', { ns: 'common' })}</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
@@ -479,7 +486,7 @@ function NewEstimateForm({
                         onChange={(e) => setLine(idx, { accountId: e.target.value })}
                         className={inputClass + ' min-w-[180px]'}
                       >
-                        <option value="">Choose…</option>
+                        <option value="">{t('shared.choose')}</option>
                         {accounts.map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.code} — {a.name}
@@ -492,7 +499,7 @@ function NewEstimateForm({
                         type="text"
                         value={l.description}
                         onChange={(e) => setLine(idx, { description: e.target.value })}
-                        placeholder="Service description"
+                        placeholder={t('estimates.form.descriptionPlaceholder')}
                         maxLength={500}
                         className={inputClass + ' min-w-[200px]'}
                       />
@@ -535,7 +542,7 @@ function NewEstimateForm({
                           onClick={() => removeLine(idx)}
                           className="text-xs text-rose-600 hover:underline"
                         >
-                          Remove
+                          {t('estimates.form.remove')}
                         </button>
                       )}
                     </td>
@@ -546,7 +553,7 @@ function NewEstimateForm({
             <tfoot className="bg-slate-50 text-sm">
               <tr>
                 <td colSpan={5} className="px-3 py-2 text-right text-slate-600">
-                  Subtotal
+                  {t('shared.subtotal')}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">
                   {formatUsd(subtotal.toFixed(4))}
@@ -556,7 +563,9 @@ function NewEstimateForm({
               {taxRate && (
                 <tr>
                   <td colSpan={5} className="px-3 py-2 text-right text-slate-600">
-                    Tax ({Number(taxRate.ratePercent).toFixed(2)}%)
+                    {t('estimates.form.taxLine', {
+                      percent: Number(taxRate.ratePercent).toFixed(2),
+                    })}
                   </td>
                   <td className="px-3 py-2 text-right font-mono text-slate-900">
                     {formatUsd(taxAmount.toFixed(4))}
@@ -566,7 +575,7 @@ function NewEstimateForm({
               )}
               <tr className="font-semibold">
                 <td colSpan={5} className="px-3 py-2 text-right text-slate-900">
-                  Total
+                  {t('total', { ns: 'common' })}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-slate-900">
                   {formatUsd(total.toFixed(4))}
@@ -584,13 +593,13 @@ function NewEstimateForm({
           disabled={!canSubmit || mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Creating…' : 'Save estimate'}
+          {mutation.isPending ? t('estimates.form.creating') : t('estimates.form.submit')}
         </button>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, t)}
         </div>
       )}
     </form>
@@ -598,6 +607,7 @@ function NewEstimateForm({
 }
 
 function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [convertOpen, setConvertOpen] = useState(false);
@@ -636,7 +646,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back
+          ← {t('back', { ns: 'common' })}
         </button>
         {data && (
           <div className="flex items-center gap-2">
@@ -663,7 +673,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                   a.remove();
                   URL.revokeObjectURL(url);
                 } catch (err) {
-                  alert(err instanceof Error ? err.message : 'PDF download failed.');
+                  alert(err instanceof Error ? err.message : t('shared.pdfFailed'));
                 } finally {
                   setDownloading(false);
                 }
@@ -671,7 +681,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
               disabled={downloading}
               className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-50"
             >
-              {downloading ? 'Generating PDF…' : 'Download PDF'}
+              {downloading ? t('shared.generatingPdf') : t('shared.downloadPdf')}
             </button>
             {data.status === 'draft' && (
               <button
@@ -680,7 +690,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                 disabled={statusMutation.isPending}
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
               >
-                Mark as sent
+                {t('estimates.detail.markSent')}
               </button>
             )}
             {(data.status === 'draft' || data.status === 'sent') && (
@@ -691,7 +701,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                   disabled={statusMutation.isPending}
                   className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-100"
                 >
-                  Mark accepted
+                  {t('estimates.detail.markAccepted')}
                 </button>
                 <button
                   type="button"
@@ -699,7 +709,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                   disabled={statusMutation.isPending}
                   className="rounded-md border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm text-rose-800 hover:bg-rose-100"
                 >
-                  Decline
+                  {t('estimates.detail.decline')}
                 </button>
               </>
             )}
@@ -712,28 +722,35 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                 onClick={() => setConvertOpen(true)}
                 className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
               >
-                Convert to invoice
+                {t('estimates.detail.convert')}
               </button>
             )}
             {data.status !== 'converted' && (
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`Delete estimate ${data.estimateNumber}?`)) deleteMutation.mutate();
+                  if (
+                    confirm(
+                      t('estimates.detail.deleteConfirm', { number: data.estimateNumber }),
+                    )
+                  )
+                    deleteMutation.mutate();
                 }}
                 className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50"
               >
-                Delete
+                {t('delete', { ns: 'common' })}
               </button>
             )}
           </div>
         )}
       </div>
 
-      {detailQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {detailQ.isLoading && (
+        <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>
+      )}
       {detailQ.isError && (
         <p className="text-sm text-rose-600">
-          {detailQ.error instanceof Error ? detailQ.error.message : 'Failed to load.'}
+          {detailQ.error instanceof Error ? detailQ.error.message : t('shared.failedToLoad')}
         </p>
       )}
 
@@ -742,15 +759,20 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
           <div className="rounded-md border border-slate-200 bg-white p-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-xs uppercase tracking-wider text-slate-500">Estimate</div>
+                <div className="text-xs uppercase tracking-wider text-slate-500">
+                  {t('estimates.detail.label')}
+                </div>
                 <div className="text-2xl font-semibold tracking-tight text-slate-900">
                   {data.estimateNumber}
                 </div>
                 <div className="text-sm text-slate-600">
-                  For {data.customerName ?? '—'} · {data.estimateDate}
+                  {t('estimates.detail.forCustomer', { name: data.customerName ?? '—' })} ·{' '}
+                  {data.estimateDate}
                 </div>
                 {data.expirationDate && (
-                  <div className="text-xs text-slate-500">Expires {data.expirationDate}</div>
+                  <div className="text-xs text-slate-500">
+                    {t('estimates.detail.expiresOn', { date: data.expirationDate })}
+                  </div>
                 )}
                 {data.memo && (
                   <div className="mt-2 text-sm italic text-slate-600">"{data.memo}"</div>
@@ -763,11 +785,13 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                     STATUS_COLOR[data.status]
                   }
                 >
-                  {data.status}
+                  {t(`estimates.status.${data.status}`)}
                 </span>
                 {data.convertedInvoiceId && (
                   <div className="mt-1 text-xs text-slate-500">
-                    Invoice ID: {data.convertedInvoiceId.slice(0, 8)}…
+                    {t('estimates.detail.invoiceId', {
+                      id: data.convertedInvoiceId.slice(0, 8),
+                    })}
                   </div>
                 )}
               </div>
@@ -779,11 +803,13 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium">#</th>
-                  <th className="px-4 py-2 text-left font-medium">Description</th>
-                  <th className="px-4 py-2 text-right font-medium">Qty</th>
-                  <th className="px-4 py-2 text-right font-medium">Price</th>
-                  <th className="px-4 py-2 text-center font-medium">Tax</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  <th className="px-4 py-2 text-left font-medium">{t('shared.description')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('shared.qty')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('shared.price')}</th>
+                  <th className="px-4 py-2 text-center font-medium">{t('shared.tax')}</th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('amount', { ns: 'common' })}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -809,7 +835,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
               <tfoot className="bg-slate-50">
                 <tr>
                   <td colSpan={5} className="px-4 py-2 text-right text-slate-600">
-                    Subtotal
+                    {t('shared.subtotal')}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.subtotal)}
@@ -818,7 +844,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                 {Number(data.taxAmount) > 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-2 text-right text-slate-600">
-                      Tax
+                      {t('shared.tax')}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-900">
                       {formatUsd(data.taxAmount)}
@@ -827,7 +853,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
                 )}
                 <tr className="font-semibold">
                   <td colSpan={5} className="px-4 py-2 text-right text-slate-900">
-                    Total
+                    {t('total', { ns: 'common' })}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.total)}
@@ -839,7 +865,7 @@ function EstimateDetailView({ id, onBack }: { id: string; onBack: () => void }) 
 
           {(statusMutation.isError || deleteMutation.isError) && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(statusMutation.error ?? deleteMutation.error)}
+              {formatError(statusMutation.error ?? deleteMutation.error, t)}
             </div>
           )}
         </div>
@@ -870,6 +896,7 @@ function ConvertModal({
   onClose: () => void;
   onConverted: () => void;
 }) {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const [invoiceNumber, setInvoiceNumber] = useState(`INV-${estimate.estimateNumber}`);
   const [invoiceDate, setInvoiceDate] = useState(todayIso());
@@ -898,15 +925,17 @@ function ConvertModal({
       <div className="w-full max-w-md space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-lg">
         <div>
           <h3 className="text-lg font-semibold tracking-tight text-slate-900">
-            Convert to invoice
+            {t('estimates.convert.title')}
           </h3>
           <p className="text-xs text-slate-500">
-            Creates a new posted A/R invoice (DR A/R, CR revenue per line) and locks this estimate
-            from further edits. Estimate {estimate.estimateNumber} · {formatUsd(estimate.total)}
+            {t('estimates.convert.description', {
+              number: estimate.estimateNumber,
+              total: formatUsd(estimate.total),
+            })}
           </p>
         </div>
 
-        <Field label="Invoice #" required>
+        <Field label={t('estimates.convert.invoiceNumber')} required>
           <input
             type="text"
             value={invoiceNumber}
@@ -916,7 +945,7 @@ function ConvertModal({
             className={inputClass}
           />
         </Field>
-        <Field label="Invoice date" required>
+        <Field label={t('estimates.convert.invoiceDate')} required>
           <input
             type="date"
             value={invoiceDate}
@@ -925,7 +954,7 @@ function ConvertModal({
             className={inputClass}
           />
         </Field>
-        <Field label="Due date">
+        <Field label={t('estimates.convert.dueDate')}>
           <input
             type="date"
             value={dueDate}
@@ -941,20 +970,20 @@ function ConvertModal({
             disabled={!invoiceNumber.trim() || mutation.isPending}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
           >
-            {mutation.isPending ? 'Converting…' : 'Convert'}
+            {mutation.isPending ? t('estimates.convert.converting') : t('estimates.convert.submit')}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-100"
           >
-            Cancel
+            {t('cancel', { ns: 'common' })}
           </button>
         </div>
 
         {mutation.isError && (
           <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            {formatError(mutation.error)}
+            {formatError(mutation.error, t)}
           </div>
         )}
       </div>
@@ -971,13 +1000,13 @@ function defaultEstimateNumber(): string {
   return `EST-${y}${m}${day}-${seed}`;
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<'sales'>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('shared.errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : t('shared.failed');
 }
 
 const inputClass =

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -22,9 +23,9 @@ interface MergeResult {
   reassigned: Record<string, number>;
 }
 
-const KIND_LABEL: Record<MergeKind, { singular: string; plural: string; endpoint: string }> = {
-  customer: { singular: 'customer', plural: 'customers', endpoint: '/customers' },
-  vendor: { singular: 'vendor', plural: 'vendors', endpoint: '/vendors' },
+const KIND_ENDPOINT: Record<MergeKind, string> = {
+  customer: '/customers',
+  vendor: '/vendors',
 };
 
 /**
@@ -40,9 +41,10 @@ export function MergeDuplicatesModal({
   kind: MergeKind;
   onClose: () => void;
 }) {
+  const { t } = useTranslation(['purchases', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
-  const labels = KIND_LABEL[kind];
+  const endpoint = KIND_ENDPOINT[kind];
 
   const [loserId, setLoserId] = useState<string>('');
   const [winnerId, setWinnerId] = useState<string>('');
@@ -56,7 +58,7 @@ export function MergeDuplicatesModal({
     enabled: Boolean(companyId),
     queryFn: () =>
       api<{ rows?: Counterparty[]; customers?: Counterparty[]; vendors?: Counterparty[] } | Counterparty[]>(
-        labels.endpoint,
+        endpoint,
         { companyId },
       ),
   });
@@ -76,7 +78,7 @@ export function MergeDuplicatesModal({
 
   const mutation = useMutation({
     mutationFn: async () => {
-      return api<MergeResult>(`${labels.endpoint}/merge`, {
+      return api<MergeResult>(`${endpoint}/merge`, {
         method: 'POST',
         companyId,
         body: { loserId, winnerId },
@@ -118,18 +120,16 @@ export function MergeDuplicatesModal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-900">
-              Merge duplicate {labels.plural}
+              {t('merge.title', { plural: t(`merge.kind.${kind}`) })}
             </h2>
             <p className="text-xs text-slate-500">
-              Pick the duplicate to discard ("loser") and the one to keep ("winner"). All of the
-              loser's invoices, payments, bills, time entries, and recurring templates transfer
-              to the winner; then the loser is deleted. <strong>Irreversible.</strong>
+              <Trans t={t} i18nKey="merge.subtitle" components={{ strong: <strong /> }} />
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             ✕
@@ -139,11 +139,15 @@ export function MergeDuplicatesModal({
         {result ? (
           <div className="space-y-3">
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-              ✓ Merged <strong>{result.loserName}</strong> into{' '}
-              <strong>{result.winnerName}</strong>.
+              <Trans
+                t={t}
+                i18nKey="merge.mergedBanner"
+                values={{ loser: result.loserName, winner: result.winnerName }}
+                components={{ strong: <strong /> }}
+              />
             </div>
             <div className="rounded-md border border-slate-200 bg-white p-3">
-              <h4 className="text-sm font-medium text-slate-700">Records reassigned</h4>
+              <h4 className="text-sm font-medium text-slate-700">{t('merge.reassigned')}</h4>
               <ul className="mt-1 space-y-0.5 text-sm">
                 {Object.entries(result.reassigned).map(([table, count]) => (
                   <li key={table} className="flex justify-between font-mono text-xs text-slate-600">
@@ -159,14 +163,14 @@ export function MergeDuplicatesModal({
                 onClick={onClose}
                 className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
               >
-                Done
+                {t('merge.done')}
               </button>
             </div>
           </div>
         ) : (
           <>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label={`Loser (will be deleted)`} required>
+              <Field label={t('merge.loserLabel')} required>
                 <select
                   value={loserId}
                   onChange={(e) => {
@@ -176,16 +180,16 @@ export function MergeDuplicatesModal({
                   }}
                   className={inputClass}
                 >
-                  <option value="">Pick…</option>
+                  <option value="">{t('merge.pick')}</option>
                   {sorted.map((c) => (
                     <option key={c.id} value={c.id} disabled={c.id === winnerId}>
                       {c.displayName}
-                      {c.isActive ? '' : ' (inactive)'}
+                      {c.isActive ? '' : t('merge.inactiveSuffix')}
                     </option>
                   ))}
                 </select>
               </Field>
-              <Field label={`Winner (will keep all records)`} required>
+              <Field label={t('merge.winnerLabel')} required>
                 <select
                   value={winnerId}
                   onChange={(e) => {
@@ -194,11 +198,11 @@ export function MergeDuplicatesModal({
                   }}
                   className={inputClass}
                 >
-                  <option value="">Pick…</option>
+                  <option value="">{t('merge.pick')}</option>
                   {sorted.map((c) => (
                     <option key={c.id} value={c.id} disabled={c.id === loserId}>
                       {c.displayName}
-                      {c.isActive ? '' : ' (inactive)'}
+                      {c.isActive ? '' : t('merge.inactiveSuffix')}
                     </option>
                   ))}
                 </select>
@@ -210,7 +214,7 @@ export function MergeDuplicatesModal({
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="text-xs font-medium uppercase tracking-wider text-rose-600">
-                      Loser → discard
+                      {t('merge.loserHeading')}
                     </div>
                     <div className="mt-0.5 font-medium text-slate-900">{loser.displayName}</div>
                     {loser.companyName && (
@@ -221,7 +225,7 @@ export function MergeDuplicatesModal({
                   </div>
                   <div>
                     <div className="text-xs font-medium uppercase tracking-wider text-emerald-700">
-                      Winner → keep
+                      {t('merge.winnerHeading')}
                     </div>
                     <div className="mt-0.5 font-medium text-slate-900">{winner.displayName}</div>
                     {winner.companyName && (
@@ -245,7 +249,7 @@ export function MergeDuplicatesModal({
                   onClick={onClose}
                   className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
                 >
-                  Cancel
+                  {t('common:cancel')}
                 </button>
                 <button
                   type="button"
@@ -253,7 +257,7 @@ export function MergeDuplicatesModal({
                   disabled={!loserId || !winnerId || loserId === winnerId}
                   className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Continue
+                  {t('merge.continue')}
                 </button>
               </div>
             )}
@@ -261,11 +265,15 @@ export function MergeDuplicatesModal({
             {showConfirm && loser && (
               <div className="space-y-3 rounded-md border border-rose-200 bg-rose-50 p-3">
                 <div className="text-sm text-rose-900">
-                  <strong>This is irreversible.</strong> Type{' '}
-                  <code className="rounded bg-white px-1 font-mono text-rose-800">
-                    {loser.displayName}
-                  </code>{' '}
-                  below to confirm.
+                  <Trans
+                    t={t}
+                    i18nKey="merge.confirmPrompt"
+                    values={{ name: loser.displayName }}
+                    components={{
+                      strong: <strong />,
+                      code: <code className="rounded bg-white px-1 font-mono text-rose-800" />,
+                    }}
+                  />
                 </div>
                 <input
                   type="text"
@@ -284,7 +292,7 @@ export function MergeDuplicatesModal({
                     }}
                     className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100"
                   >
-                    Back
+                    {t('common:back')}
                   </button>
                   <button
                     type="button"
@@ -292,12 +300,15 @@ export function MergeDuplicatesModal({
                     disabled={!canSubmit || mutation.isPending}
                     className="rounded-md bg-rose-700 px-4 py-2 text-sm font-medium text-white hover:bg-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {mutation.isPending ? 'Merging…' : 'Merge — discard loser'}
+                    {mutation.isPending ? t('merge.merging') : t('merge.mergeCta')}
                   </button>
                 </div>
                 {mutation.isError && (
                   <div className="rounded-md border border-rose-300 bg-white px-3 py-2 text-sm text-rose-800">
-                    {formatError(mutation.error)}
+                    {formatError(mutation.error, {
+                      error: t('errors.label'),
+                      fallback: t('errors.failed'),
+                    })}
                   </div>
                 )}
               </div>
@@ -309,13 +320,13 @@ export function MergeDuplicatesModal({
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

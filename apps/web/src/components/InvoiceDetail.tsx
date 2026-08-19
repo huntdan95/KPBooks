@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -59,6 +61,7 @@ function formatQty(s: string): string {
 }
 
 export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }) {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [downloading, setDownloading] = useState(false);
@@ -107,7 +110,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'PDF download failed.');
+      alert(err instanceof Error ? err.message : t('shared.pdfFailed'));
     } finally {
       setDownloading(false);
     }
@@ -123,7 +126,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back
+          ← {t('back', { ns: 'common' })}
         </button>
         {data && (
           <div className="flex items-center gap-2">
@@ -133,33 +136,31 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
               disabled={downloading}
               className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {downloading ? 'Generating PDF…' : 'Download PDF'}
+              {downloading ? t('shared.generatingPdf') : t('shared.downloadPdf')}
             </button>
             {data.status !== 'void' && (
               <button
                 type="button"
                 onClick={() => {
-                  if (
-                    confirm(
-                      `Void invoice ${data.invoiceNumber}? A reversing journal entry will be posted; the original entry stays intact for the audit trail.`,
-                    )
-                  )
+                  if (confirm(t('invoiceDetail.voidConfirm', { number: data.invoiceNumber })))
                     voidMutation.mutate();
                 }}
                 disabled={voidMutation.isPending}
                 className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50"
               >
-                {voidMutation.isPending ? 'Voiding…' : 'Void invoice'}
+                {voidMutation.isPending ? t('invoiceDetail.voiding') : t('invoiceDetail.voidButton')}
               </button>
             )}
           </div>
         )}
       </div>
 
-      {detailQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {detailQ.isLoading && (
+        <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>
+      )}
       {detailQ.isError && (
         <p className="text-sm text-rose-600">
-          {detailQ.error instanceof Error ? detailQ.error.message : 'Failed to load invoice.'}
+          {detailQ.error instanceof Error ? detailQ.error.message : t('invoiceDetail.loadFailed')}
         </p>
       )}
 
@@ -170,42 +171,49 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <div className="text-xs uppercase tracking-wider text-slate-500">Invoice</div>
+                  <div className="text-xs uppercase tracking-wider text-slate-500">
+                    {t('invoiceDetail.label')}
+                  </div>
                   <span
                     className={
                       'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ' +
                       STATUS_COLOR[data.status]
                     }
                   >
-                    {data.status}
+                    {t(`invoices.status.${data.status}`)}
                   </span>
                 </div>
                 <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
                   {data.invoiceNumber}
                 </div>
                 <div className="text-sm text-slate-600">
-                  For <strong>{data.customerName}</strong>
+                  {t('invoiceDetail.for')} <strong>{data.customerName}</strong>
                   {data.customerEmail && (
                     <span className="text-slate-500"> · {data.customerEmail}</span>
                   )}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  Issued {data.invoiceDate}
-                  {data.dueDate && <span> · Due {data.dueDate}</span>}
-                  {data.termsDays !== null && <span> · Net {data.termsDays}</span>}
+                  {t('invoiceDetail.issued', { date: data.invoiceDate })}
+                  {data.dueDate && <span> · {t('invoiceDetail.due', { date: data.dueDate })}</span>}
+                  {data.termsDays !== null && (
+                    <span> · {t('shared.net', { days: data.termsDays })}</span>
+                  )}
                 </div>
                 {data.memo && (
                   <div className="mt-2 text-sm italic text-slate-600">"{data.memo}"</div>
                 )}
                 {data.status === 'void' && data.voidedAt && (
                   <div className="mt-2 rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-800">
-                    Voided on {new Date(data.voidedAt).toLocaleDateString()} (reversing JE
-                    posted; A/R restored).
+                    {t('invoiceDetail.voidedOn', {
+                      date: new Date(data.voidedAt).toLocaleDateString(),
+                    })}
                   </div>
                 )}
               </div>
               <div className="text-right">
-                <div className="text-xs uppercase tracking-wider text-slate-500">Balance due</div>
+                <div className="text-xs uppercase tracking-wider text-slate-500">
+                  {t('invoiceDetail.balanceDue')}
+                </div>
                 <div
                   className={
                     'mt-1 font-mono text-2xl font-bold ' +
@@ -214,7 +222,9 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
                 >
                   {formatUsd(data.balanceDue)}
                 </div>
-                <div className="mt-2 text-xs text-slate-500">Total {formatUsd(data.total)}</div>
+                <div className="mt-2 text-xs text-slate-500">
+                  {t('invoiceDetail.totalAmount', { amount: formatUsd(data.total) })}
+                </div>
               </div>
             </div>
           </div>
@@ -225,11 +235,13 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium">#</th>
-                  <th className="px-4 py-2 text-left font-medium">Description</th>
-                  <th className="px-4 py-2 text-right font-medium">Qty</th>
-                  <th className="px-4 py-2 text-right font-medium">Unit price</th>
-                  <th className="px-4 py-2 text-center font-medium">Tax</th>
-                  <th className="px-4 py-2 text-right font-medium">Amount</th>
+                  <th className="px-4 py-2 text-left font-medium">{t('shared.description')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('shared.qty')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('shared.unitPrice')}</th>
+                  <th className="px-4 py-2 text-center font-medium">{t('shared.tax')}</th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('amount', { ns: 'common' })}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -255,7 +267,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
               <tfoot className="bg-slate-50">
                 <tr>
                   <td colSpan={5} className="px-4 py-2 text-right text-slate-600">
-                    Subtotal
+                    {t('shared.subtotal')}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.subtotal)}
@@ -264,7 +276,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
                 {Number(data.taxAmount) > 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-2 text-right text-slate-600">
-                      Tax
+                      {t('shared.tax')}
                     </td>
                     <td className="px-4 py-2 text-right font-mono text-slate-900">
                       {formatUsd(data.taxAmount)}
@@ -273,7 +285,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
                 )}
                 <tr className="font-semibold">
                   <td colSpan={5} className="px-4 py-2 text-right text-slate-900">
-                    Total
+                    {t('total', { ns: 'common' })}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-slate-900">
                     {formatUsd(data.total)}
@@ -281,7 +293,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
                 </tr>
                 <tr className="font-semibold">
                   <td colSpan={5} className="px-4 py-2 text-right text-slate-900">
-                    Balance due
+                    {t('invoiceDetail.balanceDue')}
                   </td>
                   <td
                     className={
@@ -298,7 +310,7 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
 
           {voidMutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(voidMutation.error)}
+              {formatError(voidMutation.error, t)}
             </div>
           )}
         </div>
@@ -307,11 +319,11 @@ export function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<'sales'>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('shared.errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : t('shared.failed');
 }

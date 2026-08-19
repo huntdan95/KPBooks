@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { TFunction } from 'i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -81,6 +83,7 @@ function formatUsd(s: string | null | undefined): string {
 }
 
 export function ItemsList() {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<FormMode>(null);
@@ -174,12 +177,13 @@ export function ItemsList() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            Items / services
+            {t('items.title')}
           </h2>
           <p className="text-sm text-slate-500">
-            {items.length} {showInactive ? 'total' : 'active'}. Items pre-fill the description,
-            price, and GL account on invoice + bill lines so a 5-second line entry stays a
-            5-second line entry.
+            {showInactive
+              ? t('items.countTotal', { count: items.length })
+              : t('items.countActive', { count: items.length })}{' '}
+            {t('items.blurb')}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -190,14 +194,14 @@ export function ItemsList() {
               onChange={(e) => setShowInactive(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Show inactive
+            {t('items.showInactive')}
           </label>
           <button
             type="button"
             onClick={mode ? cancel : startCreate}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {mode ? 'Cancel' : '+ New item'}
+            {mode ? t('cancel', { ns: 'common' }) : t('items.newButton')}
           </button>
         </div>
       </div>
@@ -208,22 +212,22 @@ export function ItemsList() {
           className="space-y-4 rounded-md border border-slate-200 bg-white p-4"
         >
           <h3 className="text-sm font-medium text-slate-700">
-            {mode.type === 'create' ? 'New item' : 'Edit item'}
+            {mode.type === 'create' ? t('items.form.createTitle') : t('items.form.editTitle')}
           </h3>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Field label="Name" required>
+            <Field label={t('name', { ns: 'common' })} required>
               <input
                 type="text"
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                placeholder="Site visit"
+                placeholder={t('items.form.namePlaceholder')}
                 maxLength={120}
                 required
                 autoFocus
                 className={inputClass}
               />
             </Field>
-            <Field label="SKU (optional)">
+            <Field label={t('items.form.sku')}>
               <input
                 type="text"
                 value={draft.sku}
@@ -233,30 +237,30 @@ export function ItemsList() {
                 className={inputClass + ' font-mono'}
               />
             </Field>
-            <Field label="Type">
+            <Field label={t('items.form.type')}>
               <select
                 value={draft.itemType}
                 onChange={(e) => setDraft({ ...draft, itemType: e.target.value as ItemType })}
                 className={inputClass}
               >
-                <option value="service">Service</option>
-                <option value="non_inventory">Non-inventory</option>
+                <option value="service">{t('items.form.typeService')}</option>
+                <option value="non_inventory">{t('items.form.typeNonInventory')}</option>
               </select>
             </Field>
           </div>
 
           <fieldset className="space-y-3 rounded-md border border-slate-200 p-3">
             <legend className="px-1 text-xs font-medium uppercase tracking-wider text-slate-500">
-              Sales side (used on invoices)
+              {t('items.form.salesLegend')}
             </legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Income account">
+              <Field label={t('shared.incomeAccount')}>
                 <select
                   value={draft.salesAccountId}
                   onChange={(e) => setDraft({ ...draft, salesAccountId: e.target.value })}
                   className={inputClass}
                 >
-                  <option value="">— not for sale —</option>
+                  <option value="">{t('items.form.notForSale')}</option>
                   {revenueAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.code} — {a.name}
@@ -264,7 +268,7 @@ export function ItemsList() {
                   ))}
                 </select>
               </Field>
-              <Field label="Default price">
+              <Field label={t('items.form.defaultPrice')}>
                 <input
                   type="number"
                   step="0.01"
@@ -281,15 +285,15 @@ export function ItemsList() {
                   onChange={(e) => setDraft({ ...draft, taxable: e.target.checked })}
                   className="mb-2.5 h-4 w-4 rounded border-slate-300"
                 />
-                <span className="mb-1.5">Taxable by default</span>
+                <span className="mb-1.5">{t('items.form.taxableDefault')}</span>
               </label>
             </div>
-            <Field label="Sales description">
+            <Field label={t('items.form.salesDescription')}>
               <input
                 type="text"
                 value={draft.salesDescription}
                 onChange={(e) => setDraft({ ...draft, salesDescription: e.target.value })}
-                placeholder="On-site service call (1-hour minimum)"
+                placeholder={t('items.form.salesDescriptionPlaceholder')}
                 maxLength={500}
                 className={inputClass}
               />
@@ -298,16 +302,16 @@ export function ItemsList() {
 
           <fieldset className="space-y-3 rounded-md border border-slate-200 p-3">
             <legend className="px-1 text-xs font-medium uppercase tracking-wider text-slate-500">
-              Purchase side (used on bills)
+              {t('items.form.purchaseLegend')}
             </legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Expense account">
+              <Field label={t('shared.expenseAccount')}>
                 <select
                   value={draft.purchaseAccountId}
                   onChange={(e) => setDraft({ ...draft, purchaseAccountId: e.target.value })}
                   className={inputClass}
                 >
-                  <option value="">— not purchased —</option>
+                  <option value="">{t('items.form.notPurchased')}</option>
                   {expenseAccounts.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.code} — {a.name}
@@ -315,19 +319,19 @@ export function ItemsList() {
                   ))}
                 </select>
               </Field>
-              <Field label="Default cost">
+              <Field label={t('items.form.defaultCost')}>
                 <input
                   type="number"
                   step="0.01"
                   min={0}
                   value={draft.purchaseCost}
                   onChange={(e) => setDraft({ ...draft, purchaseCost: e.target.value })}
-                  placeholder="optional"
+                  placeholder={t('items.form.optionalPlaceholder')}
                   className={inputClass + ' font-mono'}
                 />
               </Field>
             </div>
-            <Field label="Purchase description">
+            <Field label={t('items.form.purchaseDescription')}>
               <input
                 type="text"
                 value={draft.purchaseDescription}
@@ -345,34 +349,37 @@ export function ItemsList() {
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               {createMutation.isPending || updateMutation.isPending
-                ? 'Saving…'
+                ? t('shared.saving')
                 : mode?.type === 'create'
-                  ? 'Save item'
-                  : 'Save changes'}
+                  ? t('items.form.saveItem')
+                  : t('shared.saveChanges')}
             </button>
             <p className="text-xs text-slate-500">
-              At least one of <strong>Income account</strong> or <strong>Expense account</strong>{' '}
-              is required so the item knows where to post.
+              <Trans
+                t={t}
+                i18nKey="items.form.accountHint"
+                components={[<strong key="income" />, <strong key="expense" />]}
+              />
             </p>
           </div>
 
           {(createMutation.isError || updateMutation.isError) && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(createMutation.error ?? updateMutation.error)}
+              {formatError(createMutation.error ?? updateMutation.error, t)}
             </div>
           )}
         </form>
       )}
 
-      {itemsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {itemsQ.isLoading && <p className="text-sm text-slate-500">{t('loading', { ns: 'common' })}</p>}
       {itemsQ.isError && (
         <p className="text-sm text-rose-600">
-          {itemsQ.error instanceof Error ? itemsQ.error.message : 'Failed to load items.'}
+          {itemsQ.error instanceof Error ? itemsQ.error.message : t('items.loadFailed')}
         </p>
       )}
       {!itemsQ.isLoading && items.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No items yet. Click "+ New item" above.
+          {t('items.emptyHint')}
         </p>
       )}
 
@@ -381,13 +388,17 @@ export function ItemsList() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Name</th>
-                <th className="px-4 py-2 text-left font-medium">SKU</th>
-                <th className="px-4 py-2 text-left font-medium">Type</th>
-                <th className="px-4 py-2 text-left font-medium">Income acct.</th>
-                <th className="px-4 py-2 text-right font-medium">Sales price</th>
-                <th className="px-4 py-2 text-left font-medium">Expense acct.</th>
-                <th className="px-4 py-2 text-right font-medium">Cost</th>
+                <th className="px-4 py-2 text-left font-medium">{t('name', { ns: 'common' })}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('items.table.sku')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('items.table.type')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('items.table.incomeAccount')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">{t('items.table.salesPrice')}</th>
+                <th className="px-4 py-2 text-left font-medium">
+                  {t('items.table.expenseAccount')}
+                </th>
+                <th className="px-4 py-2 text-right font-medium">{t('items.table.cost')}</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -407,11 +418,11 @@ export function ItemsList() {
                         {it.name}
                         {it.taxable && (
                           <span className="ml-2 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-700 ring-1 ring-amber-600/20">
-                            tax
+                            {t('items.taxBadge')}
                           </span>
                         )}
                         {!it.isActive && (
-                          <span className="ml-2 text-xs text-slate-500">(inactive)</span>
+                          <span className="ml-2 text-xs text-slate-500">{t('shared.inactive')}</span>
                         )}
                       </div>
                       {it.salesDescription && (
@@ -422,7 +433,9 @@ export function ItemsList() {
                       {it.sku ?? '—'}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-600">
-                      {it.itemType === 'service' ? 'Service' : 'Non-inventory'}
+                      {it.itemType === 'service'
+                        ? t('items.form.typeService')
+                        : t('items.form.typeNonInventory')}
                     </td>
                     <td className="px-4 py-2 text-xs text-slate-600">
                       {sa ? `${sa.code} — ${sa.name}` : '—'}
@@ -443,22 +456,18 @@ export function ItemsList() {
                           onClick={() => startEdit(it)}
                           className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
                         >
-                          Edit
+                          {t('edit', { ns: 'common' })}
                         </button>
                         {it.isActive && (
                           <button
                             type="button"
                             onClick={() => {
-                              if (
-                                confirm(
-                                  `Deactivate "${it.name}"? Existing invoices/bills that used it stay intact.`,
-                                )
-                              )
+                              if (confirm(t('items.deactivateConfirm', { name: it.name })))
                                 deactivateMutation.mutate(it.id);
                             }}
                             className="rounded-md border border-rose-200 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
                           >
-                            Deactivate
+                            {t('items.deactivate')}
                           </button>
                         )}
                       </div>
@@ -490,13 +499,13 @@ function buildBody(d: Draft): Record<string, unknown> {
   return body;
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, t: TFunction<'sales'>): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? t('shared.errorLabel')}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : t('shared.failed');
 }
 
 const inputClass =

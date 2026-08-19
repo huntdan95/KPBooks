@@ -1,1 +1,312 @@
-{}
+{
+  "code": "Código",
+  "totals": "Totales",
+  "saving": "Guardando…",
+  "errorLabel": "Error",
+  "tabs": {
+    "trialBalance": "Balanza de comprobación",
+    "pnl": "Estado de resultados",
+    "balanceSheet": "Balance general",
+    "cashFlows": "Flujos de efectivo",
+    "cashFlowForecast": "Pronóstico de flujo de efectivo",
+    "arAging": "Antigüedad de cuentas por cobrar",
+    "apAging": "Antigüedad de cuentas por pagar",
+    "payrollRegister": "Registro de nómina",
+    "workersComp": "Seguro de compensación laboral",
+    "salesTaxLiability": "Impuesto sobre ventas por pagar",
+    "periodClose": "Cerrar período",
+    "taxRates": "Tasas de impuesto"
+  },
+  "accountTypes": {
+    "asset": "Activo",
+    "liability": "Pasivo",
+    "equity": "Capital",
+    "revenue": "Ingresos",
+    "expense": "Gastos"
+  },
+  "subtypes": {
+    "bank": "banco",
+    "accounts_receivable": "cuentas por cobrar",
+    "other_current_asset": "otro activo circulante",
+    "fixed_asset": "activo fijo",
+    "other_asset": "otro activo",
+    "accounts_payable": "cuentas por pagar",
+    "credit_card": "tarjeta de crédito",
+    "other_current_liability": "otro pasivo circulante",
+    "long_term_liability": "pasivo a largo plazo",
+    "equity": "capital",
+    "retained_earnings": "utilidades retenidas",
+    "income": "ingresos",
+    "other_income": "otros ingresos",
+    "expense": "gastos",
+    "cost_of_goods_sold": "costo de ventas",
+    "other_expense": "otros gastos"
+  },
+  "frequencies": {
+    "weekly": "semanal",
+    "biweekly": "cada 2 semanas",
+    "monthly": "mensual",
+    "quarterly": "trimestral",
+    "annually": "anual"
+  },
+  "trialBalance": {
+    "title": "Balanza de comprobación",
+    "loadError": "No se pudo cargar la balanza de comprobación.",
+    "empty": "Sin movimientos hasta el {{asOf}}. Contabilice un asiento contable para ver los saldos aquí.",
+    "balanced": "✓ cuadrada",
+    "unbalanced": "✗ descuadrada"
+  },
+  "pnl": {
+    "basis": "Base",
+    "basisAccrual": "Devengado",
+    "basisCashSoon": "Efectivo (próximamente)",
+    "loadError": "No se pudo cargar el estado de resultados.",
+    "revenue": "Ingresos",
+    "expenses": "Gastos",
+    "noRevenue": "Sin ingresos en este rango.",
+    "noExpenses": "Sin gastos en este rango.",
+    "totalRevenue": "Total de ingresos",
+    "totalExpenses": "Total de gastos",
+    "netIncome": "Utilidad neta (base {{basis}})",
+    "basisName": {
+      "accrual": "devengado",
+      "cash": "efectivo"
+    }
+  },
+  "balanceSheet": {
+    "loadError": "No se pudo cargar el balance general.",
+    "sections": {
+      "assets": {
+        "label": "Activos",
+        "empty": "Sin saldos de activos a esta fecha.",
+        "total": "Total de activos"
+      },
+      "liabilities": {
+        "label": "Pasivos",
+        "empty": "Sin saldos de pasivos a esta fecha.",
+        "total": "Total de pasivos"
+      },
+      "equity": {
+        "label": "Capital",
+        "empty": "Sin saldos de capital a esta fecha.",
+        "total": "Total de capital"
+      }
+    },
+    "liabilitiesPlusEquity": "Pasivos + Capital",
+    "imbalance": "Descuadre (activos − (pasivos + capital))",
+    "balanced": "✓ Cuadrado"
+  },
+  "cashFlows": {
+    "method": "Método indirecto. Parte de la utilidad neta del período y luego recorre la variación de cada cuenta no monetaria del balance general (tomada de los asientos contables contabilizados) para conciliar con la variación real del efectivo. Se agrupa por subtipo de cuenta: los cambios de capital de trabajo van a operación; los activos fijos y otros activos, a inversión; los pasivos a largo plazo y el capital, a financiamiento.",
+    "loadError": "No se pudo cargar el estado.",
+    "imbalance": "El flujo de efectivo ({{netChange}}) no coincide con la variación de los saldos de las cuentas bancarias ({{endingCash}} − {{beginningCash}} = {{delta}}). Diferencia: {{difference}}. Esto normalmente indica asientos contables directos a utilidades retenidas u otras cuentas de capital que omiten los supuestos del método indirecto.",
+    "operating": "Actividades de operación",
+    "investing": "Actividades de inversión",
+    "financing": "Actividades de financiamiento",
+    "netIncome": "Utilidad neta",
+    "noOperating": "Sin ajustes de capital de trabajo.",
+    "noInvesting": "Sin actividad de inversión.",
+    "noFinancing": "Sin actividad de financiamiento.",
+    "totalOperating": "Efectivo neto de actividades de operación",
+    "totalInvesting": "Efectivo neto de actividades de inversión",
+    "totalFinancing": "Efectivo neto de actividades de financiamiento",
+    "beginningCash": "Efectivo al inicio del período",
+    "netChange": "Variación neta del efectivo",
+    "endingCash": "Efectivo al final del período"
+  },
+  "aging": {
+    "loadError": "No se pudo cargar el informe de antigüedad.",
+    "current": "Corriente",
+    "ar": {
+      "counterparty": "Cliente",
+      "empty": "Sin cuentas por cobrar pendientes a esta fecha."
+    },
+    "ap": {
+      "counterparty": "Proveedor",
+      "empty": "Sin cuentas por pagar pendientes a esta fecha."
+    }
+  },
+  "salesTax": {
+    "help": "Lo que adeuda a cada jurisdicción fiscal. <b>Cobrado</b> = impuesto sobre ventas abonado a la cuenta “Sales Tax Payable” en facturas contabilizadas. <b>Remitido</b> = cargos a la misma cuenta (sus pagos de remisión más los ajustes). <b>Saldo final</b> = lo que aún se adeuda a la fecha “Al”. El desglose por tasa proviene de las facturas no anuladas emitidas en el período: copie las columnas directamente en el formulario de remisión estatal o local.",
+    "loadError": "No se pudo cargar.",
+    "noAccount": "Aún no existe una cuenta llamada <code>Sales Tax Payable</code>. Cree una en el Catálogo de cuentas (pasivo / other_current_liability) antes de que puedan contabilizarse facturas con impuesto. El desglose por tasa sigue funcionando abajo.",
+    "tiles": {
+      "collected": "Cobrado (período)",
+      "remitted": "Remitido (período)",
+      "remittedHint": "Cargo a Sales Tax Payable",
+      "netChange": "Variación neta",
+      "liabilityGrew": "el pasivo aumentó",
+      "liabilityShrank": "el pasivo disminuyó",
+      "owed": "Adeudado al {{date}}",
+      "owedHint": "saldo acumulado del mayor"
+    },
+    "columns": {
+      "taxRate": "Tasa de impuesto",
+      "rate": "Tasa",
+      "invoices": "Facturas",
+      "taxableSales": "Ventas gravables",
+      "taxCollected": "Impuesto cobrado"
+    },
+    "noRates": "Sin tasas de impuesto activas en este período.",
+    "inactive": "inactiva",
+    "noRateLinked": "sin tasa vinculada",
+    "periodTotal": "Total del período (facturas emitidas)",
+    "tip": "<b>Consejo:</b> el total del período de “Impuesto cobrado” debe coincidir con el recuadro “Cobrado” del mayor que aparece arriba. Si difieren, busque asientos contables manuales que afecten directamente Sales Tax Payable: esos omiten el desglose por tasa."
+  },
+  "forecast": {
+    "title": "Pronóstico de flujo de efectivo",
+    "description": "Proyecta la posición de efectivo a partir de hoy usando los saldos bancarios actuales + las cuentas por cobrar pendientes + las cuentas por pagar pendientes + las plantillas recurrentes activas. El impuesto de las recurrentes se aproxima solo con el subtotal (totales de línea × cantidad); el asiento real al ejecutarse sí incluirá el impuesto. El pronóstico es una estimación: los pagos pueden llegar antes o después, y los eventos de efectivo no pronosticados (facturas por pagar ocasionales, corridas de nómina, depósitos) no se modelan.",
+    "horizon": "Horizonte",
+    "horizonOption": "{{days}} días",
+    "loadError": "No se pudo cargar.",
+    "tiles": {
+      "starting": "Saldo inicial",
+      "startingHint_one": "{{count}} cuenta de efectivo",
+      "startingHint_other": "{{count}} cuentas de efectivo",
+      "netChange": "Variación neta ({{days}} d)",
+      "netChangeHint": "+{{inflows}} / -{{outflows}}",
+      "ending": "Saldo final proyectado",
+      "endingHint": "al {{date}}",
+      "lowest": "Mínimo proyectado",
+      "lowestDeficit": "déficit de efectivo previsto",
+      "lowestMin": "mínimo durante el período"
+    },
+    "tabs": {
+      "summary": "Resumen semanal",
+      "ar": "Por cobrar ({{count}})",
+      "ap": "Por pagar ({{count}})",
+      "recurring": "Recurrentes ({{count}})"
+    },
+    "breakdown_one": "Desglose del saldo inicial ({{count}} cuenta)",
+    "breakdown_other": "Desglose del saldo inicial ({{count}} cuentas)",
+    "breakdownColumns": {
+      "type": "Tipo",
+      "balanceAsOf": "Saldo al {{date}}"
+    },
+    "weekly": {
+      "week": "Semana",
+      "weekN": "Semana {{n}}",
+      "opening": "Inicial",
+      "arDue": "Por cobrar",
+      "recurringIn": "Entradas recurrentes",
+      "apDue": "Por pagar",
+      "recurringOut": "Salidas recurrentes",
+      "net": "Neto",
+      "closing": "Final",
+      "start": "↑ inicio"
+    },
+    "ar": {
+      "empty": "Sin cuentas por cobrar pendientes en este período.",
+      "due": "Vence",
+      "customer": "Cliente",
+      "invoiceNumber": "N.º de factura",
+      "invoiceDate": "Fecha de la factura",
+      "balanceDue": "Saldo pendiente"
+    },
+    "ap": {
+      "empty": "Sin cuentas por pagar pendientes en este período.",
+      "due": "Vence",
+      "vendor": "Proveedor",
+      "billNumber": "N.º de factura por pagar",
+      "billDate": "Fecha de la factura por pagar",
+      "balanceDue": "Saldo pendiente"
+    },
+    "recurring": {
+      "empty": "Ninguna plantilla recurrente activa se ejecuta en este período.",
+      "type": "Tipo",
+      "template": "Plantilla",
+      "counterparty": "Contraparte",
+      "frequency": "Frecuencia",
+      "inflow": "entrada",
+      "outflow": "salida"
+    }
+  },
+  "journalEntry": {
+    "title": "Nuevo asiento contable",
+    "loadingAccounts": "Cargando cuentas…",
+    "noAccounts": "No hay cuentas activas contra las cuales contabilizar. Cree cuentas primero.",
+    "referencePlaceholder": "Opcional: n.º de factura, n.º de cheque, etc.",
+    "lines": "Líneas",
+    "addLine": "+ Agregar línea",
+    "lineN": "Línea {{n}}",
+    "removeLine": "Quitar línea",
+    "selectAccount": "— seleccione una cuenta —",
+    "side": "Naturaleza",
+    "drCr": "Cargo {{debit}} / Abono {{credit}}",
+    "balanced": "✓ cuadrado",
+    "offBy": "descuadre de {{amount}}",
+    "posting": "Contabilizando…",
+    "postEntry": "Contabilizar asiento",
+    "reset": "Restablecer",
+    "mustBalance": "Los cargos deben ser iguales a los abonos.",
+    "postError": "No se pudo contabilizar el asiento.",
+    "postedEntry": "✓ Asiento contabilizado",
+    "postAnother": "Contabilizar otro"
+  },
+  "accounts": {
+    "title": "Catálogo de cuentas",
+    "loading": "Cargando cuentas…",
+    "loadError": "No se pudieron cargar las cuentas.",
+    "count_one": "{{count}} cuenta",
+    "count_other": "{{count}} cuentas",
+    "showInactive_one": "mostrar {{count}} inactiva",
+    "showInactive_other": "mostrar {{count}} inactivas",
+    "hideInactive_one": "ocultar {{count}} inactiva",
+    "hideInactive_other": "ocultar {{count}} inactivas",
+    "newAccount": "+ Nueva cuenta",
+    "inactiveTag": "(inactiva)",
+    "newAccountHeading": "Nueva cuenta",
+    "editAccountHeading": "Editar cuenta",
+    "typeLocked": "Tipo/subtipo bloqueado: {{type}} / {{subtype}}",
+    "fields": {
+      "type": "Tipo",
+      "subtype": "Subtipo",
+      "currency": "Moneda",
+      "description": "Descripción"
+    },
+    "namePlaceholder": "Comidas y entretenimiento",
+    "saveAccount": "Guardar cuenta",
+    "saveChanges": "Guardar cambios",
+    "active": "Activa",
+    "emptyNoAccounts": "Aún no hay cuentas. Intente crear una empresa nueva.",
+    "emptyNoActive": "No hay cuentas activas. Use “mostrar inactivas” arriba.",
+    "saveError": "No se pudo guardar."
+  },
+  "periodClose": {
+    "title": "Cierre de período",
+    "description": "Bloquee la contabilidad hasta una fecha específica para que los asientos tardíos accidentales no alteren un estado de resultados ya finalizado. La contabilización en fechas iguales o anteriores a la fecha de cierre se rechaza en la capa de base de datos (la misma protección detecta los intentos por API y por SQL directo).",
+    "loadError": "No se pudo cargar la empresa.",
+    "currentState": "Estado actual",
+    "closedThrough": "Contabilidad cerrada hasta el",
+    "booksOpen": "La contabilidad está abierta",
+    "noCloseDate": "— sin fecha de cierre establecida",
+    "reopen": "Reabrir la contabilidad",
+    "moveCloseDate": "Mover la fecha de cierre",
+    "closeThrough": "Cerrar la contabilidad hasta el",
+    "updateCloseDate": "Actualizar la fecha de cierre",
+    "closeBooks": "Cerrar la contabilidad",
+    "tip": "Cierre de mes típico: elija el último día del mes después de revisar y conciliar. La reapertura desbloquea todos los períodos cerrados a la vez; en la v1 no hay granularidad por mes.",
+    "confirmClose": "¿Cerrar la contabilidad hasta el {{date}}? Se rechazarán los asientos con esa fecha o anteriores.",
+    "confirmReopen": "¿Reabrir la contabilidad? Cualquier persona con permiso podrá contabilizar asientos en períodos previamente cerrados.",
+    "updateError": "No se pudo actualizar."
+  },
+  "activity": {
+    "title": "Registro de actividad",
+    "description": "Pista de auditoría de solo adición. Cada asiento contable contabilizado (facturas, facturas por pagar, pagos, nómina, depreciación, bajas de activos, asientos manuales) escribe un registro aquí. Los más recientes primero. Los registros nunca se pueden editar ni eliminar: los disparadores de la base de datos lo garantizan.",
+    "action": "Acción",
+    "actionPlaceholder": "ej. posted_entry",
+    "entityType": "Tipo de entidad",
+    "entityTypePlaceholder": "ej. journal_entry",
+    "loadError": "No se pudo cargar.",
+    "empty": "Sin actividad en este rango.",
+    "columns": {
+      "when": "Cuándo",
+      "action": "Acción",
+      "entity": "Entidad",
+      "summary": "Resumen",
+      "actor": "Usuario"
+    },
+    "system": "sistema",
+    "limitNote": "Se muestran hasta 100 registros por consulta. Ajuste el rango de fechas o agregue un filtro de acción para reducir los resultados."
+  }
+}

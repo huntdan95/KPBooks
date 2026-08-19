@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { signOut } from '../lib/firebase';
@@ -22,6 +23,7 @@ import { Recurring } from './Recurring';
 import { TimeEntries } from './TimeEntries';
 import { PayrollRuns } from './PayrollRuns';
 import { JournalEntryForm } from './JournalEntryForm';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { Mileage } from './Mileage';
 import { NewCompanyForm } from './NewCompanyForm';
 import { NinetyNinePrep } from './NinetyNinePrep';
@@ -38,34 +40,41 @@ interface Membership {
   role: 'owner' | 'admin' | 'bookkeeper' | 'viewer';
 }
 
-const PAGE_META: Record<View, { title: string; subtitle?: string }> = {
-  dashboard: { title: 'Dashboard', subtitle: 'Today at a glance' },
-  chat: { title: 'Ask Claude', subtitle: 'AI bookkeeping assistant' },
-  estimates: { title: 'Estimates', subtitle: 'Quotes ready to convert to invoices' },
-  invoices: { title: 'Invoices', subtitle: 'Customer-facing A/R documents' },
-  customers: { title: 'Customers', subtitle: 'A/R counterparties' },
-  bills: { title: 'Bills', subtitle: 'Vendor-facing A/P documents' },
-  vendors: { title: 'Vendors', subtitle: 'A/P counterparties' },
-  mileage: { title: 'Mileage', subtitle: 'Business-use travel log' },
-  workers: { title: 'Workers / 1099', subtitle: 'Contractors, employees, W-9s' },
-  banking: { title: 'Banking', subtitle: 'Bank accounts + reconciliation' },
-  payments: { title: 'Payments', subtitle: 'Money in and money out' },
-  accounts: { title: 'Chart of Accounts', subtitle: 'Your ledger structure' },
-  'new-entry': { title: 'New journal entry', subtitle: 'Manual ledger posting' },
-  import: { title: 'Import from QuickBooks', subtitle: 'Drop an .iif file to seed your books' },
-  reports: { title: 'Reports', subtitle: 'Trial balance, P&L, A/R, A/P, and more' },
-  'tax-rates': { title: 'Tax rates', subtitle: 'Sales-tax rates applied to invoices' },
-  '1099-prep': { title: '1099 prep', subtitle: 'Year-end NEC + MISC pre-flight' },
-  recurring: { title: 'Recurring', subtitle: 'Monthly retainers + recurring bills' },
-  'time-entries': { title: 'Time entries', subtitle: 'Worker hours that flow into bills' },
-  items: { title: 'Items / services', subtitle: 'Saved fixtures for invoice + bill lines' },
-  'payroll-runs': { title: 'Pay runs', subtitle: 'Batch entry for paychecks' },
-  'fixed-assets': { title: 'Fixed assets', subtitle: 'Capitalized assets + depreciation' },
-  activity: { title: 'Activity log', subtitle: 'Append-only audit trail' },
-  documents: { title: 'Documents', subtitle: 'Tax returns, 1099s, receipts, statements' },
+/**
+ * Page chrome per view. Stored as i18n keys rather than literals: this map
+ * lives at module scope where hooks can't run, so AppShell resolves each key
+ * through t() at render time. It doubles as the allow-list of navigable
+ * views (see handleNavigate), so every View id must appear here.
+ */
+const PAGE_META: Record<View, { titleKey: string; subtitleKey?: string }> = {
+  dashboard: { titleKey: 'pages.dashboard.title', subtitleKey: 'pages.dashboard.subtitle' },
+  chat: { titleKey: 'pages.chat.title', subtitleKey: 'pages.chat.subtitle' },
+  estimates: { titleKey: 'pages.estimates.title', subtitleKey: 'pages.estimates.subtitle' },
+  invoices: { titleKey: 'pages.invoices.title', subtitleKey: 'pages.invoices.subtitle' },
+  customers: { titleKey: 'pages.customers.title', subtitleKey: 'pages.customers.subtitle' },
+  bills: { titleKey: 'pages.bills.title', subtitleKey: 'pages.bills.subtitle' },
+  vendors: { titleKey: 'pages.vendors.title', subtitleKey: 'pages.vendors.subtitle' },
+  mileage: { titleKey: 'pages.mileage.title', subtitleKey: 'pages.mileage.subtitle' },
+  workers: { titleKey: 'pages.workers.title', subtitleKey: 'pages.workers.subtitle' },
+  banking: { titleKey: 'pages.banking.title', subtitleKey: 'pages.banking.subtitle' },
+  payments: { titleKey: 'pages.payments.title', subtitleKey: 'pages.payments.subtitle' },
+  accounts: { titleKey: 'pages.accounts.title', subtitleKey: 'pages.accounts.subtitle' },
+  'new-entry': { titleKey: 'pages.new-entry.title', subtitleKey: 'pages.new-entry.subtitle' },
+  import: { titleKey: 'pages.import.title', subtitleKey: 'pages.import.subtitle' },
+  reports: { titleKey: 'pages.reports.title', subtitleKey: 'pages.reports.subtitle' },
+  'tax-rates': { titleKey: 'pages.tax-rates.title', subtitleKey: 'pages.tax-rates.subtitle' },
+  '1099-prep': { titleKey: 'pages.1099-prep.title', subtitleKey: 'pages.1099-prep.subtitle' },
+  recurring: { titleKey: 'pages.recurring.title', subtitleKey: 'pages.recurring.subtitle' },
+  'time-entries': { titleKey: 'pages.time-entries.title', subtitleKey: 'pages.time-entries.subtitle' },
+  items: { titleKey: 'pages.items.title', subtitleKey: 'pages.items.subtitle' },
+  'payroll-runs': { titleKey: 'pages.payroll-runs.title', subtitleKey: 'pages.payroll-runs.subtitle' },
+  'fixed-assets': { titleKey: 'pages.fixed-assets.title', subtitleKey: 'pages.fixed-assets.subtitle' },
+  activity: { titleKey: 'pages.activity.title', subtitleKey: 'pages.activity.subtitle' },
+  documents: { titleKey: 'pages.documents.title', subtitleKey: 'pages.documents.subtitle' },
 };
 
 export function AppShell({ memberships }: { memberships: Membership[] }) {
+  const { t } = useTranslation(['shell', 'common']);
   const { user } = useAuth();
   const { companyId, setCompanyId } = useCurrentCompany();
   const [view, setView] = useState<View>('dashboard');
@@ -178,13 +187,21 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
       )}
       <div
         className={
-          'fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-200 ease-out sm:hidden ' +
+          'fixed inset-y-0 left-0 z-50 flex w-64 transform flex-col transition-transform duration-200 ease-out sm:hidden ' +
           (drawerOpen ? 'translate-x-0' : '-translate-x-full')
         }
         role="dialog"
-        aria-label="Navigation"
+        aria-label={t('header.navigation')}
       >
-        <Sidebar activeView={view} onSelect={selectAndCloseDrawer} />
+        <div className="min-h-0 flex-1">
+          <Sidebar activeView={view} onSelect={selectAndCloseDrawer} />
+        </div>
+        <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-800 bg-slate-950 px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {t('common:language')}
+          </span>
+          <LanguageSwitcher compact />
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -195,7 +212,7 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
               type="button"
               onClick={() => setDrawerOpen(true)}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-100 sm:hidden"
-              aria-label="Open navigation"
+              aria-label={t('header.openNavigation')}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -215,11 +232,11 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
             <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
               <div className="min-w-0">
                 <h1 className="truncate text-base font-semibold tracking-tight text-slate-900">
-                  {meta.title}
+                  {t(meta.titleKey)}
                 </h1>
-                {meta.subtitle && (
+                {meta.subtitleKey && (
                   <p className="hidden truncate text-xs text-slate-500 sm:block">
-                    {meta.subtitle}
+                    {t(meta.subtitleKey)}
                   </p>
                 )}
               </div>
@@ -232,7 +249,13 @@ export function AppShell({ memberships }: { memberships: Membership[] }) {
                 activeRole={active?.role}
               />
             </div>
-            <UserMenu email={user?.email ?? null} />
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              {/* Desktop language toggle — on mobile it lives in the drawer */}
+              <div className="hidden sm:block">
+                <LanguageSwitcher compact />
+              </div>
+              <UserMenu email={user?.email ?? null} />
+            </div>
           </div>
         </header>
 
@@ -291,6 +314,8 @@ function NoActiveCompany({
   showNewCompanyModal: boolean;
   onCloseNewCompanyModal: () => void;
 }) {
+  const { t } = useTranslation('shell');
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 via-slate-50 to-emerald-50/30 p-6">
       <div className="kpb-pop-in w-full max-w-md space-y-5 rounded-xl border border-slate-200 bg-white p-7 shadow-xl shadow-slate-900/5">
@@ -301,7 +326,7 @@ function NoActiveCompany({
           <div>
             <div className="text-lg font-semibold tracking-tight text-slate-900">KPBooks</div>
             <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-              Accounting · simplified
+              {t('brand.tagline')}
             </div>
           </div>
         </div>
@@ -309,13 +334,13 @@ function NoActiveCompany({
         <div>
           <h2 className="text-base font-medium text-slate-900">
             {memberships.length === 0
-              ? 'Welcome — add your first client to get started'
-              : 'Pick a client to continue'}
+              ? t('noCompany.welcomeTitle')
+              : t('noCompany.pickTitle')}
           </h2>
           <p className="mt-1 text-xs text-slate-500">
             {memberships.length === 0
-              ? "We'll create a fresh chart of accounts and let you import an existing QuickBooks .iif file once the company exists."
-              : 'Each client has its own books, COA, and history. Switch any time from the dropdown in the page header.'}
+              ? t('noCompany.welcomeBody')
+              : t('noCompany.pickBody')}
           </p>
         </div>
 
@@ -342,7 +367,7 @@ function NoActiveCompany({
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium text-slate-900">{m.companyName}</div>
                       <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                        {m.role}
+                        {t(`roles.${m.role}`)}
                       </div>
                     </div>
                     <Icon
@@ -362,7 +387,7 @@ function NoActiveCompany({
           className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-600 transition-colors hover:border-slate-400 hover:bg-slate-50 hover:text-slate-900"
         >
           <Icon name="plus" className="h-4 w-4" strokeWidth={2.25} />
-          Add a new client
+          {t('noCompany.addNew')}
         </button>
       </div>
       {showNewCompanyModal && <NewCompanyModal onClose={onCloseNewCompanyModal} />}
@@ -383,6 +408,7 @@ function CompanyPicker({
   onAddNew: () => void;
   activeRole: Membership['role'] | undefined;
 }) {
+  const { t } = useTranslation('shell');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const active = memberships.find((m) => m.companyId === activeId);
@@ -428,11 +454,11 @@ function CompanyPicker({
           {initials}
         </span>
         <span className="max-w-[16ch] truncate font-medium text-slate-900">
-          {active?.companyName ?? 'Pick a client'}
+          {active?.companyName ?? t('companyPicker.pick')}
         </span>
         {activeRole && (
           <span className="hidden rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:inline">
-            {activeRole}
+            {t(`roles.${activeRole}`)}
           </span>
         )}
         <Icon
@@ -466,7 +492,7 @@ function CompanyPicker({
                   <div className="min-w-0">
                     <div className="truncate font-medium text-slate-900">{m.companyName}</div>
                     <div className="text-[11px] uppercase tracking-wider text-slate-400">
-                      {m.role}
+                      {t(`roles.${m.role}`)}
                     </div>
                   </div>
                   {isActive && (
@@ -485,7 +511,7 @@ function CompanyPicker({
             className="flex w-full items-center gap-2 border-t border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
           >
             <Icon name="plus" className="h-4 w-4" strokeWidth={2.25} />
-            New client
+            {t('companyPicker.newClient')}
           </button>
         </div>
       )}
@@ -494,6 +520,7 @@ function CompanyPicker({
 }
 
 function UserMenu({ email }: { email: string | null }) {
+  const { t } = useTranslation(['shell', 'common']);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -531,7 +558,7 @@ function UserMenu({ email }: { email: string | null }) {
         <div className="absolute right-0 top-full z-40 mt-1 w-60 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
           <div className="border-b border-slate-200 px-3 py-2">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Signed in as
+              {t('userMenu.signedInAs')}
             </div>
             <div className="truncate text-sm text-slate-900">{email ?? '—'}</div>
           </div>
@@ -541,7 +568,7 @@ function UserMenu({ email }: { email: string | null }) {
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
           >
             <Icon name="log-out" className="h-4 w-4 text-slate-400" />
-            Sign out
+            {t('common:signOut')}
           </button>
         </div>
       )}
@@ -550,6 +577,8 @@ function UserMenu({ email }: { email: string | null }) {
 }
 
 function NewCompanyModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation(['shell', 'common']);
+
   return (
     <div
       className="kpb-fade-in fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm"
@@ -560,15 +589,15 @@ function NewCompanyModal({ onClose }: { onClose: () => void }) {
       <div className="kpb-pop-in w-full max-w-md space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/10">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold tracking-tight text-slate-900">New client</h2>
-            <p className="text-xs text-slate-500">
-              Adds a new company you'll be the owner of, with its own seeded chart of accounts.
-            </p>
+            <h2 className="text-lg font-semibold tracking-tight text-slate-900">
+              {t('newCompanyModal.title')}
+            </h2>
+            <p className="text-xs text-slate-500">{t('newCompanyModal.description')}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common:close')}
             className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             ✕
@@ -581,6 +610,7 @@ function NewCompanyModal({ onClose }: { onClose: () => void }) {
 }
 
 function ReadyzSelfTest() {
+  const { t } = useTranslation('shell');
   const query = useQuery({
     queryKey: ['readyz'],
     queryFn: () => api<{ ok: boolean }>('/readyz'),
@@ -590,12 +620,12 @@ function ReadyzSelfTest() {
 
   return (
     <footer className="border-t border-slate-200 pt-4 text-xs text-slate-500">
-      API status:{' '}
+      {t('readyz.label')}{' '}
       {query.isLoading
-        ? 'checking…'
+        ? t('readyz.checking')
         : query.data?.ok
-          ? '✓ live (Cloud Run + Neon Postgres)'
-          : '✗ unreachable'}
+          ? t('readyz.live')
+          : t('readyz.unreachable')}
     </footer>
   );
 }

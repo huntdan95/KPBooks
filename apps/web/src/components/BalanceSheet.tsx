@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -33,6 +34,7 @@ function formatUsd(s: string): string {
 }
 
 export function BalanceSheet() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(todayIso);
 
@@ -66,7 +68,7 @@ export function BalanceSheet() {
   return (
     <div className="space-y-4">
       <div className="flex items-end gap-3">
-        <Field label="As of">
+        <Field label={t('common:asOf')}>
           <input
             type="date"
             value={asOf}
@@ -76,10 +78,10 @@ export function BalanceSheet() {
         </Field>
       </div>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load balance sheet.'}
+          {query.error instanceof Error ? query.error.message : t('balanceSheet.loadError')}
         </p>
       )}
 
@@ -88,24 +90,24 @@ export function BalanceSheet() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Code</th>
-                <th className="px-4 py-2 text-left font-medium">Account</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
+                <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('common:amount')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              <SectionRows label="Assets" rows={sortedAssets} total={data.totalAssets} />
+              <SectionRows section="assets" rows={sortedAssets} total={data.totalAssets} />
               <SectionRows
-                label="Liabilities"
+                section="liabilities"
                 rows={sortedLiabilities}
                 total={data.totalLiabilities}
               />
-              <SectionRows label="Equity" rows={sortedEquity} total={data.totalEquity} />
+              <SectionRows section="equity" rows={sortedEquity} total={data.totalEquity} />
             </tbody>
             <tfoot className="bg-slate-100 text-sm font-semibold">
               <tr>
                 <td colSpan={2} className="px-4 py-3 text-right text-slate-900">
-                  Liabilities + Equity
+                  {t('balanceSheet.liabilitiesPlusEquity')}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-900">
                   {formatUsd(
@@ -116,7 +118,7 @@ export function BalanceSheet() {
               {!balanced && (
                 <tr>
                   <td colSpan={2} className="px-4 py-2 text-right text-rose-700">
-                    Imbalance (assets − (liabilities + equity))
+                    {t('balanceSheet.imbalance')}
                   </td>
                   <td className="px-4 py-2 text-right font-mono text-rose-700">
                     {formatUsd(data.imbalance)}
@@ -126,7 +128,7 @@ export function BalanceSheet() {
               {balanced && (
                 <tr>
                   <td colSpan={3} className="px-4 py-2 text-right text-emerald-700">
-                    ✓ Balanced
+                    {t('balanceSheet.balanced')}
                   </td>
                 </tr>
               )}
@@ -139,25 +141,26 @@ export function BalanceSheet() {
 }
 
 function SectionRows({
-  label,
+  section,
   rows,
   total,
 }: {
-  label: string;
+  section: 'assets' | 'liabilities' | 'equity';
   rows: Section[];
   total: string;
 }) {
+  const { t } = useTranslation('reports');
   return (
     <>
       <tr className="bg-slate-50">
         <td colSpan={3} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-          {label}
+          {t(`balanceSheet.sections.${section}.label`)}
         </td>
       </tr>
       {rows.length === 0 ? (
         <tr>
           <td colSpan={3} className="px-4 py-2 text-slate-500">
-            No {label.toLowerCase()} balances as of this date.
+            {t(`balanceSheet.sections.${section}.empty`)}
           </td>
         </tr>
       ) : (
@@ -171,7 +174,7 @@ function SectionRows({
       )}
       <tr className="bg-slate-50 font-medium">
         <td colSpan={2} className="px-4 py-2 text-right text-slate-700">
-          Total {label.toLowerCase()}
+          {t(`balanceSheet.sections.${section}.total`)}
         </td>
         <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(total)}</td>
       </tr>

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -81,6 +82,7 @@ async function downloadStatement(opts: {
 }
 
 export function StatementsPanel() {
+  const { t } = useTranslation('sales');
   const { companyId } = useCurrentCompany();
   const [open, setOpen] = useState(false);
   const [periodStart, setPeriodStart] = useState(startOfMonthIso());
@@ -113,7 +115,7 @@ export function StatementsPanel() {
         companyId: companyId ?? null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed.');
+      setError(err instanceof Error ? err.message : t('statements.downloadFailed'));
     } finally {
       setDownloading((s) => {
         const next = new Set(s);
@@ -137,7 +139,7 @@ export function StatementsPanel() {
         });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Bulk download failed.');
+      setError(err instanceof Error ? err.message : t('statements.bulkFailed'));
     } finally {
       setBulkRunning(false);
     }
@@ -150,7 +152,7 @@ export function StatementsPanel() {
         onClick={() => setOpen(true)}
         className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
       >
-        Generate statements
+        {t('statements.generate')}
       </button>
     );
   }
@@ -159,24 +161,20 @@ export function StatementsPanel() {
     <div className="rounded-md border border-slate-200 bg-white p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Customer statements</h3>
-          <p className="text-xs text-slate-500">
-            Generate a printable A/R statement of account per customer for the period below.
-            Lists every active customer with non-zero activity in the period or a non-zero
-            balance — preview the targets first, then download one or all as PDFs.
-          </p>
+          <h3 className="text-sm font-semibold text-slate-900">{t('statements.title')}</h3>
+          <p className="text-xs text-slate-500">{t('statements.description')}</p>
         </div>
         <button
           type="button"
           onClick={() => setOpen(false)}
           className="text-xs text-slate-500 underline hover:text-slate-700"
         >
-          close
+          {t('statements.close')}
         </button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-end gap-3">
-        <Field label="Period start">
+        <Field label={t('statements.periodStart')}>
           <input
             type="date"
             value={periodStart}
@@ -184,7 +182,7 @@ export function StatementsPanel() {
             className={inputClass}
           />
         </Field>
-        <Field label="Period end">
+        <Field label={t('statements.periodEnd')}>
           <input
             type="date"
             value={periodEnd}
@@ -200,7 +198,7 @@ export function StatementsPanel() {
           }}
           className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-100"
         >
-          This month
+          {t('statements.thisMonth')}
         </button>
         <button
           type="button"
@@ -212,21 +210,23 @@ export function StatementsPanel() {
           }}
           className="rounded-md border border-slate-300 px-2 py-1.5 text-xs hover:bg-slate-100"
         >
-          Last month
+          {t('statements.lastMonth')}
         </button>
       </div>
 
-      {candidatesQ.isLoading && <p className="mt-3 text-sm text-slate-500">Loading candidates…</p>}
+      {candidatesQ.isLoading && (
+        <p className="mt-3 text-sm text-slate-500">{t('statements.loadingCandidates')}</p>
+      )}
       {candidatesQ.isError && (
         <p className="mt-3 text-sm text-rose-600">
           {candidatesQ.error instanceof ApiError
             ? candidatesQ.error.message
-            : 'Failed to load.'}
+            : t('shared.failedToLoad')}
         </p>
       )}
       {!candidatesQ.isLoading && candidates.length === 0 && (
         <p className="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          No customers had activity or open balances in this period.
+          {t('statements.none')}
         </p>
       )}
 
@@ -236,10 +236,14 @@ export function StatementsPanel() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Customer</th>
-                  <th className="px-3 py-2 text-left font-medium">Email</th>
-                  <th className="px-3 py-2 text-right font-medium">Activity rows</th>
-                  <th className="px-3 py-2 text-right font-medium">Closing balance</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('shared.customer')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('shared.email')}</th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('statements.table.activityRows')}
+                  </th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    {t('statements.table.closingBalance')}
+                  </th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -270,7 +274,9 @@ export function StatementsPanel() {
                           disabled={downloading.has(c.customerId) || bulkRunning}
                           className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
                         >
-                          {downloading.has(c.customerId) ? 'Downloading…' : 'Download'}
+                          {downloading.has(c.customerId)
+                            ? t('statements.downloading')
+                            : t('download', { ns: 'common' })}
                         </button>
                       </td>
                     </tr>
@@ -288,13 +294,10 @@ export function StatementsPanel() {
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
               {bulkRunning
-                ? `Downloading ${candidates.length} PDFs…`
-                : `Download all ${candidates.length} statements`}
+                ? t('statements.bulkRunning', { count: candidates.length })
+                : t('statements.downloadAll', { count: candidates.length })}
             </button>
-            <p className="text-xs text-slate-500">
-              Each statement opens as a separate file in your downloads. Allow multiple
-              downloads in the browser prompt if it asks.
-            </p>
+            <p className="text-xs text-slate-500">{t('statements.downloadHint')}</p>
           </div>
 
           {error && (

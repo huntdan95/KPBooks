@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -28,16 +29,17 @@ interface Turn {
   toolCalls?: ChatToolCall[];
 }
 
-const SUGGESTIONS = [
-  "What's my net income this month?",
-  'Who owes me the most money right now?',
-  'Show me bills due this week',
-  'What did I spend on office expenses last quarter?',
-  'Which customers are 60+ days overdue?',
-  'List my 1099 vendors',
+const SUGGESTION_KEYS = [
+  'netIncome',
+  'owesMost',
+  'billsDue',
+  'officeExpenses',
+  'overdue60',
+  'vendors1099',
 ];
 
 export function Chat() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
@@ -54,7 +56,7 @@ export function Chat() {
     mutationFn: async (text: string) => {
       // Conversation context = previous turns + the new user message.
       const messages: ChatMessage[] = [
-        ...turns.map((t) => ({ role: t.role, content: t.content })),
+        ...turns.map((turn) => ({ role: turn.role, content: turn.content })),
         { role: 'user' as const, content: text },
       ];
       return api<ChatResponse>('/chat', {
@@ -77,14 +79,14 @@ export function Chat() {
   });
 
   function send(text: string) {
-    const t = text.trim();
-    if (!t || askMutation.isPending) return;
+    const trimmed = text.trim();
+    if (!trimmed || askMutation.isPending) return;
     setInput('');
     setTurns((prev) => [
       ...prev,
-      { id: nextIdRef.current++, role: 'user', content: t },
+      { id: nextIdRef.current++, role: 'user', content: trimmed },
     ]);
-    askMutation.mutate(t);
+    askMutation.mutate(trimmed);
   }
 
   useEffect(() => {
@@ -101,11 +103,10 @@ export function Chat() {
     return (
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-          Chat with your books
+          {t('chat.title')}
         </h2>
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          ANTHROPIC_API_KEY is not configured on the API. Set the secret value and redeploy to
-          enable AI chat.
+          {t('chat.noApiKey')}
         </div>
       </div>
     );
@@ -116,12 +117,9 @@ export function Chat() {
       <div className="flex items-baseline justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-            Chat with your books
+            {t('chat.title')}
           </h2>
-          <p className="text-sm text-slate-500">
-            Ask questions in plain English. Claude looks up real data via tools and answers
-            from your books — read-only, scoped to this client.
-          </p>
+          <p className="text-sm text-slate-500">{t('chat.subtitle')}</p>
         </div>
         {turns.length > 0 && (
           <button
@@ -129,7 +127,7 @@ export function Chat() {
             onClick={reset}
             className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-100"
           >
-            New conversation
+            {t('chat.newConversation')}
           </button>
         )}
       </div>
@@ -140,16 +138,16 @@ export function Chat() {
       >
         {turns.length === 0 && !askMutation.isPending && (
           <div className="space-y-3">
-            <p className="text-sm text-slate-600">Try one of these:</p>
+            <p className="text-sm text-slate-600">{t('chat.tryOne')}</p>
             <div className="flex flex-wrap gap-2">
-              {SUGGESTIONS.map((s) => (
+              {SUGGESTION_KEYS.map((k) => (
                 <button
-                  key={s}
+                  key={k}
                   type="button"
-                  onClick={() => send(s)}
+                  onClick={() => send(t(`chat.suggestions.${k}`))}
                   className="rounded-full border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
                 >
-                  {s}
+                  {t(`chat.suggestions.${k}`)}
                 </button>
               ))}
             </div>
@@ -157,14 +155,14 @@ export function Chat() {
         )}
 
         <div className="space-y-4">
-          {turns.map((t) => (
-            <Bubble key={t.id} turn={t} />
+          {turns.map((turn) => (
+            <Bubble key={turn.id} turn={turn} />
           ))}
           {askMutation.isPending && (
             <div className="flex justify-start">
               <div className="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-600">
                 <span className="inline-flex items-center gap-1">
-                  Thinking
+                  {t('chat.thinking')}
                   <span className="animate-pulse">…</span>
                 </span>
               </div>
@@ -172,7 +170,10 @@ export function Chat() {
           )}
           {askMutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(askMutation.error)}
+              {formatError(askMutation.error, {
+                error: t('shell:errors.label'),
+                fallback: t('chat.requestFailed'),
+              })}
             </div>
           )}
         </div>
@@ -189,11 +190,7 @@ export function Chat() {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={
-            askMutation.isPending
-              ? 'Waiting for Claude…'
-              : 'Ask about revenue, expenses, customers, bills, anything in your books'
-          }
+          placeholder={askMutation.isPending ? t('chat.waiting') : t('chat.placeholder')}
           disabled={askMutation.isPending}
           className="flex-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
         />
@@ -202,7 +199,7 @@ export function Chat() {
           disabled={!input.trim() || askMutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          Send
+          {t('chat.send')}
         </button>
       </form>
     </div>
@@ -210,6 +207,7 @@ export function Chat() {
 }
 
 function Bubble({ turn }: { turn: Turn }) {
+  const { t } = useTranslation('payroll');
   const isUser = turn.role === 'user';
   return (
     <div className={isUser ? 'flex justify-end' : 'flex justify-start'}>
@@ -223,7 +221,7 @@ function Bubble({ turn }: { turn: Turn }) {
         {turn.toolCalls && turn.toolCalls.length > 0 && (
           <details className="mt-2 text-xs opacity-80">
             <summary className="cursor-pointer">
-              Looked up {turn.toolCalls.length} thing{turn.toolCalls.length === 1 ? '' : 's'}
+              {t('chat.lookedUp', { count: turn.toolCalls.length })}
             </summary>
             <ul className="mt-1 space-y-1">
               {turn.toolCalls.map((c, i) => (
@@ -248,11 +246,11 @@ function summariseInput(input: Record<string, unknown>): string {
   return s.length > 80 ? s.slice(0, 80) + '…' : s;
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Request failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }

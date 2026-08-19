@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -72,6 +73,7 @@ const STATUS_TONE: Record<AssetStatus, string> = {
 };
 
 export function FixedAssets() {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
@@ -102,12 +104,10 @@ export function FixedAssets() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold tracking-tight text-slate-900">
-            Fixed assets
+            {t('fixedAssets.title')}
           </h2>
           <p className="text-sm text-slate-500">
-            Capitalized assets (vehicles, equipment, computers) with monthly straight-line
-            depreciation. Each asset hooks to three GL accounts. "Run depreciation"
-            posts one JE per asset-month through the date you pick.
+            {t('fixedAssets.blurb', { action: t('fixedAssets.runDepr') })}
           </p>
         </div>
         <div className="flex gap-2">
@@ -116,14 +116,14 @@ export function FixedAssets() {
             onClick={() => setShowRunDepr((v) => !v)}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
           >
-            {showRunDepr ? 'Cancel' : 'Run depreciation…'}
+            {showRunDepr ? t('common:cancel') : t('fixedAssets.runDeprAction')}
           </button>
           <button
             type="button"
             onClick={() => setShowWizard((v) => !v)}
             className="whitespace-nowrap rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {showWizard ? 'Cancel' : '+ New asset'}
+            {showWizard ? t('common:cancel') : t('fixedAssets.newAssetAction')}
           </button>
         </div>
       </div>
@@ -143,30 +143,30 @@ export function FixedAssets() {
         />
       )}
 
-      {assetsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {assetsQ.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {assetsQ.isError && (
         <p className="text-sm text-rose-600">
-          {assetsQ.error instanceof Error ? assetsQ.error.message : 'Failed to load.'}
+          {assetsQ.error instanceof Error ? assetsQ.error.message : t('failedToLoad')}
         </p>
       )}
 
       {!assetsQ.isLoading && assets.length === 0 && (
         <p className="rounded-md border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
-          No fixed assets yet. Click "+ New asset" above to add one.
+          {t('fixedAssets.empty', { action: t('fixedAssets.newAssetAction') })}
         </p>
       )}
 
       {active.length > 0 && (
         <AssetTable
           rows={active}
-          title="Active"
+          title={t('fixedAssets.sections.active')}
           onPick={(id) => setDetailId(id)}
         />
       )}
       {disposed.length > 0 && (
         <AssetTable
           rows={disposed}
-          title="Disposed"
+          title={t('fixedAssets.sections.disposed')}
           onPick={(id) => setDetailId(id)}
         />
       )}
@@ -183,6 +183,7 @@ function AssetTable({
   title: string;
   onPick: (id: string) => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const totalCost = rows.reduce((acc, r) => acc + Number(r.cost), 0);
   const totalAccum = rows.reduce((acc, r) => acc + Number(r.accumulatedDepreciation), 0);
   const totalNbv = rows.reduce((acc, r) => acc + Number(r.netBookValue), 0);
@@ -196,14 +197,26 @@ function AssetTable({
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="px-4 py-2 text-left font-medium">Name</th>
-              <th className="px-4 py-2 text-left font-medium">Category</th>
-              <th className="px-4 py-2 text-left font-medium">In service</th>
-              <th className="px-4 py-2 text-right font-medium">Cost</th>
-              <th className="px-4 py-2 text-right font-medium">Accum. depr.</th>
-              <th className="px-4 py-2 text-right font-medium">NBV</th>
-              <th className="px-4 py-2 text-right font-medium">Mo. left</th>
-              <th className="px-4 py-2 text-left font-medium">Status</th>
+              <th className="px-4 py-2 text-left font-medium">{t('common:name')}</th>
+              <th className="px-4 py-2 text-left font-medium">
+                {t('fixedAssets.columns.category')}
+              </th>
+              <th className="px-4 py-2 text-left font-medium">
+                {t('fixedAssets.columns.inService')}
+              </th>
+              <th className="px-4 py-2 text-right font-medium">
+                {t('fixedAssets.columns.cost')}
+              </th>
+              <th className="px-4 py-2 text-right font-medium">
+                {t('fixedAssets.columns.accumDepr')}
+              </th>
+              <th className="px-4 py-2 text-right font-medium">
+                {t('fixedAssets.columns.nbv')}
+              </th>
+              <th className="px-4 py-2 text-right font-medium">
+                {t('fixedAssets.columns.monthsLeft')}
+              </th>
+              <th className="px-4 py-2 text-left font-medium">{t('common:status')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
@@ -235,7 +248,7 @@ function AssetTable({
                       STATUS_TONE[r.status]
                     }
                   >
-                    {r.status}
+                    {t(`fixedAssets.status.${r.status}`)}
                   </span>
                 </td>
               </tr>
@@ -244,7 +257,7 @@ function AssetTable({
           <tfoot className="bg-slate-100 text-sm font-semibold">
             <tr>
               <td colSpan={3} className="px-4 py-3 text-right text-slate-900">
-                Totals
+                {t('fixedAssets.totals')}
               </td>
               <td className="px-4 py-3 text-right font-mono text-slate-700">
                 {formatUsd(totalCost)}
@@ -295,6 +308,7 @@ const emptyDraft = (): WizardDraft => ({
 });
 
 function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [draft, setDraft] = useState<WizardDraft>(emptyDraft);
 
@@ -342,9 +356,9 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">New fixed asset</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('fixedAssets.newAsset')}</h3>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Name" required>
+        <Field label={t('common:name')} required>
           <input
             type="text"
             value={draft.name}
@@ -352,20 +366,20 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             required
             maxLength={200}
             className={inputClass}
-            placeholder="2024 Ford F-150"
+            placeholder={t('fixedAssets.placeholders.name')}
           />
         </Field>
-        <Field label="Category">
+        <Field label={t('fixedAssets.fields.category')}>
           <input
             type="text"
             value={draft.category}
             onChange={(e) => setDraft({ ...draft, category: e.target.value })}
             maxLength={100}
             className={inputClass}
-            placeholder="Vehicle"
+            placeholder={t('fixedAssets.placeholders.category')}
           />
         </Field>
-        <Field label="In-service date" required>
+        <Field label={t('fixedAssets.fields.inServiceDate')} required>
           <input
             type="date"
             value={draft.inServiceDate}
@@ -374,7 +388,7 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             className={inputClass}
           />
         </Field>
-        <Field label="Cost" required>
+        <Field label={t('fixedAssets.fields.cost')} required>
           <input
             type="text"
             inputMode="decimal"
@@ -385,7 +399,7 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             placeholder="45000.00"
           />
         </Field>
-        <Field label="Salvage value">
+        <Field label={t('fixedAssets.fields.salvageValue')}>
           <input
             type="text"
             inputMode="decimal"
@@ -395,7 +409,7 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             placeholder="0"
           />
         </Field>
-        <Field label="Useful life (months)" required>
+        <Field label={t('fixedAssets.fields.usefulLife')} required>
           <input
             type="number"
             min={1}
@@ -409,14 +423,14 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Field label="Asset account (DR at purchase)" required>
+        <Field label={t('fixedAssets.fields.assetAccount')} required>
           <select
             value={draft.assetAccountId}
             onChange={(e) => setDraft({ ...draft, assetAccountId: e.target.value })}
             required
             className={inputClass}
           >
-            <option value="">Pick…</option>
+            <option value="">{t('fixedAssets.pick')}</option>
             {assetAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -424,14 +438,14 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             ))}
           </select>
         </Field>
-        <Field label="Accumulated depreciation (CR each month)" required>
+        <Field label={t('fixedAssets.fields.accumDeprAccount')} required>
           <select
             value={draft.accumDeprAccountId}
             onChange={(e) => setDraft({ ...draft, accumDeprAccountId: e.target.value })}
             required
             className={inputClass}
           >
-            <option value="">Pick…</option>
+            <option value="">{t('fixedAssets.pick')}</option>
             {assetAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -439,14 +453,14 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
             ))}
           </select>
         </Field>
-        <Field label="Depreciation expense (DR each month)" required>
+        <Field label={t('fixedAssets.fields.deprExpenseAccount')} required>
           <select
             value={draft.deprExpenseAccountId}
             onChange={(e) => setDraft({ ...draft, deprExpenseAccountId: e.target.value })}
             required
             className={inputClass}
           >
-            <option value="">Pick…</option>
+            <option value="">{t('fixedAssets.pick')}</option>
             {expenseAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -456,18 +470,18 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
         </Field>
       </div>
 
-      <Field label="Description">
+      <Field label={t('fixedAssets.fields.description')}>
         <textarea
           value={draft.description}
           onChange={(e) => setDraft({ ...draft, description: e.target.value })}
           maxLength={2000}
           rows={2}
           className={inputClass}
-          placeholder="VIN, serial number, location, etc."
+          placeholder={t('fixedAssets.placeholders.description')}
         />
       </Field>
 
-      <Field label="Memo">
+      <Field label={t('common:memo')}>
         <input
           type="text"
           value={draft.memo}
@@ -483,17 +497,14 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
           disabled={mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Creating…' : 'Create asset'}
+          {mutation.isPending ? t('fixedAssets.creating') : t('fixedAssets.createAsset')}
         </button>
-        <p className="text-xs text-slate-500">
-          The original purchase entry is separate — record it as a journal entry or bill against
-          the same asset account.
-        </p>
+        <p className="text-xs text-slate-500">{t('fixedAssets.purchaseEntryHint')}</p>
       </div>
 
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </form>
@@ -503,6 +514,7 @@ function NewAssetWizard({ onCreated }: { onCreated: (id: string) => void }) {
 // --- Run depreciation panel ------------------------------------------------
 
 function RunDepreciationPanel({ onDone }: { onDone: () => void }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [throughDate, setThroughDate] = useState<string>(lastDayOfThisMonth());
@@ -534,14 +546,13 @@ function RunDepreciationPanel({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="space-y-3 rounded-md border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-700">Run depreciation (all active assets)</h3>
+      <h3 className="text-sm font-medium text-slate-700">{t('fixedAssets.runDeprAll')}</h3>
       <p className="text-xs text-slate-500">
-        Posts one JE per asset for every month from each asset's last-posted month through the
-        last day of <code>{throughDate.slice(0, 7)}</code>. Skips assets already posted up
-        to that month and assets at end of useful life. Idempotent.
+        {t('fixedAssets.runDeprAllBlurbBefore')} <code>{throughDate.slice(0, 7)}</code>
+        {t('fixedAssets.runDeprAllBlurbAfter')}
       </p>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Through date">
+        <Field label={t('fixedAssets.fields.throughDate')}>
           <input
             type="date"
             value={throughDate}
@@ -555,26 +566,28 @@ function RunDepreciationPanel({ onDone }: { onDone: () => void }) {
           disabled={mutation.isPending}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Posting…' : 'Run depreciation'}
+          {mutation.isPending ? t('fixedAssets.posting') : t('fixedAssets.runDepr')}
         </button>
         <button
           type="button"
           onClick={onDone}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          Close
+          {t('common:close')}
         </button>
       </div>
       {mutation.isSuccess && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          Posted {mutation.data.summary.totalEntriesPosted} JE(s) for{' '}
-          {mutation.data.summary.assetsWithPostings} asset(s) ·{' '}
-          {mutation.data.summary.totalMonthsPosted} month(s) total.
+          {t('fixedAssets.runDeprAllResult', {
+            entries: mutation.data.summary.totalEntriesPosted,
+            assets: mutation.data.summary.assetsWithPostings,
+            months: mutation.data.summary.totalMonthsPosted,
+          })}
         </div>
       )}
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </div>
@@ -590,6 +603,7 @@ function FixedAssetDetailView({
   assetId: string;
   onBack: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const queryClient = useQueryClient();
   const [showDispose, setShowDispose] = useState(false);
@@ -636,7 +650,7 @@ function FixedAssetDetailView({
   const [throughDate, setThroughDate] = useState<string>(lastDayOfThisMonth());
 
   if (!data && detailQ.isLoading) {
-    return <p className="text-sm text-slate-500">Loading…</p>;
+    return <p className="text-sm text-slate-500">{t('common:loading')}</p>;
   }
   if (detailQ.isError || !data) {
     return (
@@ -646,10 +660,10 @@ function FixedAssetDetailView({
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back
+          {t('fixedAssets.back')}
         </button>
         <p className="text-sm text-rose-600">
-          {detailQ.error instanceof Error ? detailQ.error.message : 'Failed to load.'}
+          {detailQ.error instanceof Error ? detailQ.error.message : t('failedToLoad')}
         </p>
       </div>
     );
@@ -673,7 +687,7 @@ function FixedAssetDetailView({
           onClick={onBack}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          ← Back to fixed assets
+          {t('fixedAssets.backToList')}
         </button>
         <div className="flex gap-2">
           {isActive && (
@@ -682,20 +696,20 @@ function FixedAssetDetailView({
               onClick={() => setShowDispose(true)}
               className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm text-amber-900 hover:bg-amber-100"
             >
-              Dispose…
+              {t('fixedAssets.disposeAction')}
             </button>
           )}
           {isActive && noHistory && (
             <button
               type="button"
               onClick={() => {
-                if (confirm('Delete this asset? Only allowed before any depreciation has posted.')) {
+                if (confirm(t('fixedAssets.confirmDelete'))) {
                   deleteMut.mutate();
                 }
               }}
               className="rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50"
             >
-              Delete
+              {t('common:delete')}
             </button>
           )}
         </div>
@@ -712,13 +726,16 @@ function FixedAssetDetailView({
                   STATUS_TONE[data.status]
                 }
               >
-                {data.status}
+                {t(`fixedAssets.status.${data.status}`)}
               </span>
             </div>
             <div className="text-xs text-slate-500">
               {data.category && <>{data.category} · </>}
-              In service {data.inServiceDate} · {data.usefulLifeMonths} months ·{' '}
-              {data.method.replace('_', '-')}
+              {t('fixedAssets.detailMeta', {
+                date: data.inServiceDate,
+                months: data.usefulLifeMonths,
+              })}{' '}
+              · {t(`fixedAssets.method.${data.method}`)}
             </div>
             {data.description && (
               <div className="mt-1 text-sm italic text-slate-600">{data.description}</div>
@@ -726,11 +743,15 @@ function FixedAssetDetailView({
           </div>
           <div className="grid grid-cols-2 gap-3 text-right">
             <div>
-              <div className="text-xs uppercase text-slate-500">Cost</div>
+              <div className="text-xs uppercase text-slate-500">
+                {t('fixedAssets.columns.cost')}
+              </div>
               <div className="font-mono text-lg text-slate-700">{formatUsd(data.cost)}</div>
             </div>
             <div>
-              <div className="text-xs uppercase text-slate-500">NBV</div>
+              <div className="text-xs uppercase text-slate-500">
+                {t('fixedAssets.columns.nbv')}
+              </div>
               <div className="font-mono text-lg font-semibold text-slate-900">
                 {formatUsd(data.netBookValue)}
               </div>
@@ -739,26 +760,36 @@ function FixedAssetDetailView({
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 sm:grid-cols-4">
-          <Stat label="Salvage" value={formatUsd(data.salvageValue)} />
-          <Stat label="Monthly depr." value={formatUsd(data.monthlyDepreciation)} />
-          <Stat label="Accum. depr." value={formatUsd(data.accumulatedDepreciation)} />
+          <Stat label={t('fixedAssets.stats.salvage')} value={formatUsd(data.salvageValue)} />
           <Stat
-            label="Months left"
+            label={t('fixedAssets.stats.monthlyDepr')}
+            value={formatUsd(data.monthlyDepreciation)}
+          />
+          <Stat
+            label={t('fixedAssets.columns.accumDepr')}
+            value={formatUsd(data.accumulatedDepreciation)}
+          />
+          <Stat
+            label={t('fixedAssets.stats.monthsLeft')}
             value={`${data.monthsRemaining} / ${data.usefulLifeMonths}`}
           />
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 text-xs sm:grid-cols-3">
           <div>
-            <div className="uppercase text-slate-500">Asset account</div>
+            <div className="uppercase text-slate-500">{t('fixedAssets.stats.assetAccount')}</div>
             <div className="text-slate-700">{acctLabel(data.assetAccountId)}</div>
           </div>
           <div>
-            <div className="uppercase text-slate-500">Accum. depr. account</div>
+            <div className="uppercase text-slate-500">
+              {t('fixedAssets.stats.accumDeprAccount')}
+            </div>
             <div className="text-slate-700">{acctLabel(data.accumDeprAccountId)}</div>
           </div>
           <div>
-            <div className="uppercase text-slate-500">Depr. expense account</div>
+            <div className="uppercase text-slate-500">
+              {t('fixedAssets.stats.deprExpenseAccount')}
+            </div>
             <div className="text-slate-700">{acctLabel(data.deprExpenseAccountId)}</div>
           </div>
         </div>
@@ -766,15 +797,15 @@ function FixedAssetDetailView({
         {data.status === 'disposed' && (
           <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-200 pt-4 text-xs sm:grid-cols-3">
             <div>
-              <div className="uppercase text-slate-500">Disposed on</div>
+              <div className="uppercase text-slate-500">{t('fixedAssets.stats.disposedOn')}</div>
               <div className="text-slate-700">{data.disposalDate ?? '—'}</div>
             </div>
             <div>
-              <div className="uppercase text-slate-500">Proceeds</div>
+              <div className="uppercase text-slate-500">{t('fixedAssets.stats.proceeds')}</div>
               <div className="font-mono text-slate-700">{formatUsd(data.disposalProceeds)}</div>
             </div>
             <div>
-              <div className="uppercase text-slate-500">Cash account</div>
+              <div className="uppercase text-slate-500">{t('fixedAssets.stats.cashAccount')}</div>
               <div className="text-slate-700">{acctLabel(data.disposalCashAccountId)}</div>
             </div>
           </div>
@@ -783,17 +814,16 @@ function FixedAssetDetailView({
 
       {isActive && (
         <div className="rounded-md border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-medium text-slate-700">Run depreciation</h3>
+          <h3 className="text-sm font-medium text-slate-700">{t('fixedAssets.runDepr')}</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Posts a JE for every missing month from{' '}
+            {t('fixedAssets.runDeprBlurbBefore')}{' '}
             {data.lastDepreciatedThrough
-              ? `after ${data.lastDepreciatedThrough}`
-              : `${data.inServiceDate}'s month-end`}{' '}
-            through the last day of the chosen month. Idempotent — re-running with the same
-            date does nothing.
+              ? t('fixedAssets.afterDate', { date: data.lastDepreciatedThrough })
+              : t('fixedAssets.monthEndOf', { date: data.inServiceDate })}{' '}
+            {t('fixedAssets.runDeprBlurbAfter')}
           </p>
           <div className="mt-3 flex flex-wrap items-end gap-3">
-            <Field label="Through date">
+            <Field label={t('fixedAssets.fields.throughDate')}>
               <input
                 type="date"
                 value={throughDate}
@@ -807,17 +837,20 @@ function FixedAssetDetailView({
               disabled={runMut.isPending}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
             >
-              {runMut.isPending ? 'Posting…' : 'Run'}
+              {runMut.isPending ? t('fixedAssets.posting') : t('fixedAssets.run')}
             </button>
             {runMut.isSuccess && (
               <span className="text-xs text-emerald-700">
-                Posted {runMut.data.monthsPosted} month(s) · {formatUsd(runMut.data.totalAmount)}
+                {t('fixedAssets.runResult', {
+                  count: runMut.data.monthsPosted,
+                  amount: formatUsd(runMut.data.totalAmount),
+                })}
               </span>
             )}
           </div>
           {runMut.isError && (
             <div className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-              {formatError(runMut.error)}
+              {formatError(runMut.error, { error: t('shell:errors.label'), fallback: t('failed') })}
             </div>
           )}
         </div>
@@ -838,14 +871,14 @@ function FixedAssetDetailView({
       {data.history.length > 0 && (
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
           <h3 className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
-            Posted journal entries ({data.history.length})
+            {t('fixedAssets.postedJEs', { count: data.history.length })}
           </h3>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Reference</th>
-                <th className="px-4 py-2 text-left font-medium">Memo</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:date')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:reference')}</th>
+                <th className="px-4 py-2 text-left font-medium">{t('common:memo')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -877,6 +910,7 @@ function DisposePanel({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation(['payroll', 'common']);
   const { companyId } = useCurrentCompany();
   const [disposalDate, setDisposalDate] = useState<string>(todayIso());
   const [proceeds, setProceeds] = useState<string>('0');
@@ -924,14 +958,10 @@ function DisposePanel({
 
   return (
     <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50/30 p-4">
-      <h3 className="text-sm font-medium text-slate-900">Dispose asset</h3>
-      <p className="text-xs text-slate-600">
-        First catches up depreciation through the disposal date, then posts ONE final JE: zeros
-        accumulated depreciation, removes the asset cost, records cash received (if any), and
-        plugs gain/loss to the account you pick. The asset becomes read-only after.
-      </p>
+      <h3 className="text-sm font-medium text-slate-900">{t('fixedAssets.disposeTitle')}</h3>
+      <p className="text-xs text-slate-600">{t('fixedAssets.disposeBlurb')}</p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Disposal date" required>
+        <Field label={t('fixedAssets.fields.disposalDate')} required>
           <input
             type="date"
             value={disposalDate}
@@ -941,7 +971,7 @@ function DisposePanel({
             className={inputClass}
           />
         </Field>
-        <Field label="Proceeds (0 for junk/donate)" required>
+        <Field label={t('fixedAssets.fields.proceeds')} required>
           <input
             type="text"
             inputMode="decimal"
@@ -951,14 +981,16 @@ function DisposePanel({
             className={inputClass}
           />
         </Field>
-        <Field label="Cash / bank account">
+        <Field label={t('fixedAssets.fields.cashAccount')}>
           <select
             value={cashAccountId}
             onChange={(e) => setCashAccountId(e.target.value)}
             disabled={proceedsN <= 0}
             className={inputClass}
           >
-            <option value="">{proceedsN > 0 ? 'Pick…' : 'N/A — no proceeds'}</option>
+            <option value="">
+              {proceedsN > 0 ? t('fixedAssets.pick') : t('fixedAssets.naNoProceeds')}
+            </option>
             {cashAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -966,14 +998,16 @@ function DisposePanel({
             ))}
           </select>
         </Field>
-        <Field label="Gain / loss account">
+        <Field label={t('fixedAssets.fields.gainLossAccount')}>
           <select
             value={gainLossAccountId}
             onChange={(e) => setGainLossAccountId(e.target.value)}
             disabled={gainLossN === 0}
             className={inputClass}
           >
-            <option value="">{gainLossN === 0 ? 'N/A — no gain/loss' : 'Pick…'}</option>
+            <option value="">
+              {gainLossN === 0 ? t('fixedAssets.naNoGainLoss') : t('fixedAssets.pick')}
+            </option>
             {gainLossAccts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.code} — {a.name}
@@ -982,28 +1016,34 @@ function DisposePanel({
           </select>
         </Field>
       </div>
-      <Field label="Memo">
+      <Field label={t('common:memo')}>
         <input
           type="text"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
           maxLength={500}
           className={inputClass}
-          placeholder="Sold to ABC Salvage"
+          placeholder={t('fixedAssets.placeholders.disposeMemo')}
         />
       </Field>
       <div className="grid grid-cols-3 gap-3 rounded-md bg-white p-3 text-sm">
         <div>
-          <div className="text-xs uppercase text-slate-500">Predicted NBV</div>
+          <div className="text-xs uppercase text-slate-500">
+            {t('fixedAssets.stats.predictedNbv')}
+          </div>
           <div className="font-mono text-slate-700">{formatUsd(asset.netBookValue)}</div>
         </div>
         <div>
-          <div className="text-xs uppercase text-slate-500">Proceeds</div>
+          <div className="text-xs uppercase text-slate-500">
+            {t('fixedAssets.stats.proceeds')}
+          </div>
           <div className="font-mono text-slate-700">{formatUsd(proceedsN)}</div>
         </div>
         <div>
           <div className="text-xs uppercase text-slate-500">
-            {gainLossN >= 0 ? 'Predicted gain' : 'Predicted loss'}
+            {gainLossN >= 0
+              ? t('fixedAssets.stats.predictedGain')
+              : t('fixedAssets.stats.predictedLoss')}
           </div>
           <div
             className={
@@ -1019,35 +1059,31 @@ function DisposePanel({
           </div>
         </div>
       </div>
-      <p className="text-xs text-slate-500">
-        Predicted figures use today's accumulated depreciation. The server will catch up through
-        the disposal month first, so the final numbers may shift if you haven't run depreciation
-        recently.
-      </p>
+      <p className="text-xs text-slate-500">{t('fixedAssets.predictedHint')}</p>
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => {
-            if (confirm(`Dispose "${asset.name}"? This is irreversible (creates a final JE).`)) {
+            if (confirm(t('fixedAssets.confirmDispose', { name: asset.name }))) {
               mutation.mutate();
             }
           }}
           disabled={mutation.isPending || !disposalDate}
           className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
         >
-          {mutation.isPending ? 'Disposing…' : 'Confirm disposal'}
+          {mutation.isPending ? t('fixedAssets.disposing') : t('fixedAssets.confirmDisposal')}
         </button>
         <button
           type="button"
           onClick={onCancel}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100"
         >
-          Cancel
+          {t('common:cancel')}
         </button>
       </div>
       {mutation.isError && (
         <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-          {formatError(mutation.error)}
+          {formatError(mutation.error, { error: t('shell:errors.label'), fallback: t('failed') })}
         </div>
       )}
     </div>
@@ -1065,13 +1101,13 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatError(err: unknown): string {
+function formatError(err: unknown, labels: { error: string; fallback: string }): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
-    if (body?.message) return `${body.error ?? 'Error'}: ${body.message}`;
+    if (body?.message) return `${body.error ?? labels.error}: ${body.message}`;
     if (body?.error) return body.error;
   }
-  return err instanceof Error ? err.message : 'Failed.';
+  return err instanceof Error ? err.message : labels.fallback;
 }
 
 const inputClass =

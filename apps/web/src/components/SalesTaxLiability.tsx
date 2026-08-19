@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Trans, useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 
@@ -40,6 +41,7 @@ function formatUsd(s: string | number | null | undefined): string {
 }
 
 export function SalesTaxLiability() {
+  const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfQuarter);
   const [to, setTo] = useState<string>(todayIso);
@@ -60,7 +62,7 @@ export function SalesTaxLiability() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="From">
+        <Field label={t('common:from')}>
           <input
             type="date"
             value={from}
@@ -68,7 +70,7 @@ export function SalesTaxLiability() {
             className={inputClass}
           />
         </Field>
-        <Field label="To">
+        <Field label={t('common:to')}>
           <input
             type="date"
             value={to}
@@ -79,26 +81,19 @@ export function SalesTaxLiability() {
       </div>
 
       <p className="text-xs text-slate-500">
-        What you owe each tax jurisdiction. <strong>Collected</strong> = sales tax credited to
-        the "Sales Tax Payable" account on posted invoices. <strong>Remitted</strong> = debits
-        to the same account (your remittance payments + adjustments).{' '}
-        <strong>Ending balance</strong> = what's still owed as of the To date. Per-rate breakdown
-        comes from non-void invoices billed in the period — fill the columns straight into the
-        state/local remittance form.
+        <Trans ns="reports" i18nKey="salesTax.help" components={{ b: <strong /> }} />
       </p>
 
-      {query.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+      {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
       {query.isError && (
         <p className="text-sm text-rose-600">
-          {query.error instanceof Error ? query.error.message : 'Failed to load.'}
+          {query.error instanceof Error ? query.error.message : t('salesTax.loadError')}
         </p>
       )}
 
       {data && !data.account && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          No account named <code>Sales Tax Payable</code> exists yet. Create one in Chart of
-          Accounts (liability / other_current_liability) before invoices with tax can post.
-          Per-rate breakdown still works below.
+          <Trans ns="reports" i18nKey="salesTax.noAccount" components={{ code: <code /> }} />
         </div>
       )}
 
@@ -106,27 +101,31 @@ export function SalesTaxLiability() {
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Tile
-              label="Collected (period)"
+              label={t('salesTax.tiles.collected')}
               value={formatUsd(data.collected)}
               hint={`${data.from} → ${data.to}`}
               tone="slate"
             />
             <Tile
-              label="Remitted (period)"
+              label={t('salesTax.tiles.remitted')}
               value={formatUsd(data.remitted)}
-              hint="DR to Sales Tax Payable"
+              hint={t('salesTax.tiles.remittedHint')}
               tone="slate"
             />
             <Tile
-              label="Net change"
+              label={t('salesTax.tiles.netChange')}
               value={formatUsd(data.netChange)}
-              hint={netChangeNum >= 0 ? 'liability grew' : 'liability shrank'}
+              hint={
+                netChangeNum >= 0
+                  ? t('salesTax.tiles.liabilityGrew')
+                  : t('salesTax.tiles.liabilityShrank')
+              }
               tone={netChangeNum > 0 ? 'rose' : 'emerald'}
             />
             <Tile
-              label={`Owed as of ${data.to}`}
+              label={t('salesTax.tiles.owed', { date: data.to })}
               value={formatUsd(data.endingBalance)}
-              hint="cumulative GL balance"
+              hint={t('salesTax.tiles.owedHint')}
               tone="slate"
             />
           </div>
@@ -135,11 +134,19 @@ export function SalesTaxLiability() {
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium">Tax rate</th>
-                  <th className="px-4 py-2 text-right font-medium">Rate</th>
-                  <th className="px-4 py-2 text-right font-medium">Invoices</th>
-                  <th className="px-4 py-2 text-right font-medium">Taxable sales</th>
-                  <th className="px-4 py-2 text-right font-medium">Tax collected</th>
+                  <th className="px-4 py-2 text-left font-medium">
+                    {t('salesTax.columns.taxRate')}
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">{t('salesTax.columns.rate')}</th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('salesTax.columns.invoices')}
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('salesTax.columns.taxableSales')}
+                  </th>
+                  <th className="px-4 py-2 text-right font-medium">
+                    {t('salesTax.columns.taxCollected')}
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -149,7 +156,7 @@ export function SalesTaxLiability() {
                       colSpan={5}
                       className="px-4 py-6 text-center text-sm text-slate-500"
                     >
-                      No active tax rates in this period.
+                      {t('salesTax.noRates')}
                     </td>
                   </tr>
                 )}
@@ -162,7 +169,7 @@ export function SalesTaxLiability() {
                       {r.name}
                       {!r.isActive && (
                         <span className="ml-2 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
-                          inactive
+                          {t('salesTax.inactive')}
                         </span>
                       )}
                     </td>
@@ -184,7 +191,7 @@ export function SalesTaxLiability() {
                   <tr className="bg-amber-50/50">
                     <td className="px-4 py-2 text-slate-900">
                       <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200">
-                        no rate linked
+                        {t('salesTax.noRateLinked')}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-right text-xs text-slate-400">—</td>
@@ -201,7 +208,7 @@ export function SalesTaxLiability() {
               <tfoot className="bg-slate-100 text-sm font-semibold">
                 <tr>
                   <td colSpan={3} className="px-4 py-3 text-right text-slate-900">
-                    Period total (invoices billed)
+                    {t('salesTax.periodTotal')}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-slate-700">
                     {formatUsd(
@@ -220,9 +227,7 @@ export function SalesTaxLiability() {
           </div>
 
           <p className="text-xs text-slate-500">
-            <strong>Tip:</strong> the period total of "Tax collected" should match the GL
-            "Collected" tile above. If they diverge, look for manual journal entries that hit
-            Sales Tax Payable directly — those bypass the per-rate breakdown.
+            <Trans ns="reports" i18nKey="salesTax.tip" components={{ b: <strong /> }} />
           </p>
         </>
       )}
