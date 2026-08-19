@@ -35,4 +35,9 @@ jobs:
 
       - run: pnpm typecheck
 
+      # Catches keys that exist in EN but not ES, mismatched {{vars}}, and
+      # t() calls referencing a namespace the component never declared —
+      # all of which render raw keys to the user but pass tsc.
+      - run: pnpm check:i18n
+
       - run: pnpm test
