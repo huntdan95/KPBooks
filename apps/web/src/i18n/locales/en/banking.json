@@ -126,6 +126,9 @@
     "title": "Import from QuickBooks",
     "subtitle": "Upload an .iif export to bring over your chart of accounts, customers, vendors, and historical transactions. Transactions post to the ledger as journal entries by default — do NOT also post an opening journal entry, or every balance will be double-counted. To bring over lists only, untick “Import transactions” in the preview and post an opening journal entry instead.",
     "fileEmpty": "File is empty.",
+    "emptyOrFolder": "That file is empty (0 bytes). If you dropped a folder, drop the .iif file inside it instead.",
+    "notAnIifFile": "{{name}} is not an IIF export — QuickBooks company files and backups (.qbw, .qbb, .qbm, .tlg) can't be imported. In QuickBooks: File > Utilities > Export > Lists to IIF Files.",
+    "readFailed": "Could not read {{name}} ({{message}}). If it is on a network drive or cloud folder, make sure the file is available offline, then choose it again.",
     "fileTooLarge": "File is {{size}} MB. The import accepts up to 12 MB — export from QuickBooks in date-range chunks (File > Utilities > Export) and import each one. Re-importing overlapping ranges is safe for unchanged transactions: already-posted transactions are skipped as duplicates. (A transaction edited in QuickBooks since an earlier import posts again — the import warns when it detects that.)",
     "dropHint": "Drop a .iif file or click below to choose one.",
     "parsing": "Parsing…",
@@ -173,10 +176,16 @@
       "postableCount": "({{n}} postable)",
       "include": "Import transactions",
       "excludedSuffix": " — {{excluded}} of {{total}} excluded (data error; see warnings)",
-      "hint": "Each posting transaction becomes one journal_entry. Sign rule: positive amount = debit, negative = credit. Transactions whose accounts aren't in the chart of accounts after the lists step are skipped and reported."
+      "hint": "Each posting transaction becomes one journal_entry. Sign rule: positive amount = debit, negative = credit. Transactions whose accounts aren't in the chart of accounts after the lists step are skipped and reported. Invoices, bills and customer payments post to the general ledger only — an IIF export doesn't say which invoice or bill each payment settled, so no A/R or A/P documents are created: the Trial Balance and Balance Sheet are complete, while A/R Aging, A/P Aging and customer statements show only documents entered in KPBooks."
     },
     "importing": "Importing…",
     "confirmImport": "Confirm import",
+    "partial": {
+      "title": "Part of this import already landed — it was not rolled back.",
+      "lists": "Lists: {{done}} of {{total}} batches committed — {{accounts}} accounts, {{customers}} customers, {{vendors}} vendors created.",
+      "transactions": "Transactions: {{done}} of {{total}} batches committed — {{posted}} posted, {{duplicates}} already imported.",
+      "hint": "Nothing was lost and nothing was double-booked. Click “Confirm import” again to resume: rows and transactions that already landed are skipped as duplicates. Do NOT export the file again from QuickBooks or post an opening journal entry — the batches above are already in the ledger."
+    },
     "done": {
       "title": "Import complete.",
       "accountsCreated": "{{n}} accounts created",
@@ -184,7 +193,7 @@
       "vendorsCreated": "{{n}} vendors created",
       "skippedSuffix": ", {{n}} skipped",
       "transactionsPosted": "{{n}} transactions posted",
-      "paymentsLinked": ", {{n}} linked to vendor/customer payment records (1099s, statements)",
+      "paymentsLinked": ", {{n}} linked to vendor payment records (1099s, payroll register)",
       "duplicatesSkipped": ", {{n}} already imported (duplicates skipped)",
       "paymentsBackfilled": ", {{n}} payment record(s) backfilled for previously imported transactions",
       "voided": ", {{n}} voided (0.00 — nothing to post)"
@@ -211,11 +220,11 @@
       "hint": "Fix these rows in the file and re-import it — already-posted transactions are skipped as duplicates (as long as they weren't edited in QuickBooks since the last import; an edited transaction posts again as a new entry)."
     },
     "unlinked": {
-      "title_one": "{{count}} payee posted to the ledger only — no vendor/customer payment record was written:",
-      "title_other": "{{count}} payees posted to the ledger only — no vendor/customer payment record was written:",
+      "title_one": "{{count}} payee posted to the ledger only — no vendor payment record was written:",
+      "title_other": "{{count}} payees posted to the ledger only — no vendor payment record was written:",
       "row_one": "{{count}} transaction totaling {{total}}",
       "row_other": "{{count}} transactions totaling {{total}}",
-      "hint": "These names didn't match any vendor or customer (check spelling/punctuation, QuickBooks “Other Names”, or employees). Their amounts won't appear in 1099 totals, payroll registers, or statements until matching payment records exist. To fix: create the missing vendor/customer (or correct its spelling) and re-import this file — the transactions are skipped as duplicates and their payment records are backfilled automatically."
+      "hint": "These names didn't match any vendor (check spelling/punctuation, QuickBooks “Other Names”, or employees). Their amounts won't appear in 1099 totals or payroll registers until matching payment records exist. To fix: create the missing vendor (or correct its spelling) and re-import this file — the transactions are skipped as duplicates and their payment records are backfilled automatically."
     },
     "importAnother": "Import another file",
     "detailFallbackPath": "request",

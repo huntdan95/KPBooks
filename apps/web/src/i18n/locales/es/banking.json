@@ -126,6 +126,9 @@
     "title": "Importar desde QuickBooks",
     "subtitle": "Suba una exportación .iif para traer su catálogo de cuentas, clientes, proveedores y transacciones históricas. De forma predeterminada, las transacciones se contabilizan en el libro mayor como asientos contables; NO contabilice además un asiento de saldos iniciales, o cada saldo se contará dos veces. Para traer únicamente los listados, desmarque “Importar transacciones” en la vista previa y contabilice un asiento de saldos iniciales en su lugar.",
     "fileEmpty": "El archivo está vacío.",
+    "emptyOrFolder": "Ese archivo está vacío (0 bytes). Si soltó una carpeta, suelte el archivo .iif que está dentro.",
+    "notAnIifFile": "{{name}} no es una exportación IIF — los archivos de empresa y las copias de seguridad de QuickBooks (.qbw, .qbb, .qbm, .tlg) no se pueden importar. En QuickBooks: Archivo > Utilidades > Exportar > Listas a archivos IIF.",
+    "readFailed": "No se pudo leer {{name}} ({{message}}). Si está en una unidad de red o carpeta en la nube, asegúrese de que el archivo esté disponible sin conexión y elíjalo de nuevo.",
     "fileTooLarge": "El archivo pesa {{size}} MB. La importación acepta hasta 12 MB — exporte desde QuickBooks en bloques por rango de fechas (Archivo > Utilidades > Exportar) e importe cada uno. Volver a importar rangos traslapados es seguro para las transacciones sin cambios: las transacciones ya contabilizadas se omiten como duplicados. (Una transacción editada en QuickBooks después de una importación anterior se contabiliza de nuevo — la importación avisa cuando lo detecta.)",
     "dropHint": "Suelte un archivo .iif o haga clic abajo para elegir uno.",
     "parsing": "Analizando…",
@@ -173,10 +176,16 @@
       "postableCount": "({{n}} contabilizables)",
       "include": "Importar transacciones",
       "excludedSuffix": " — {{excluded}} de {{total}} excluidas (error de datos; vea las advertencias)",
-      "hint": "Cada transacción contabilizable se convierte en un journal_entry. Regla de signos: importe positivo = cargo, negativo = abono. Las transacciones cuyas cuentas no estén en el catálogo de cuentas después del paso de listados se omiten y se reportan."
+      "hint": "Cada transacción contabilizable se convierte en un journal_entry. Regla de signos: importe positivo = cargo, negativo = abono. Las transacciones cuyas cuentas no estén en el catálogo de cuentas después del paso de listados se omiten y se reportan. Las facturas de venta, las facturas de proveedor y los pagos de clientes se contabilizan únicamente en el libro mayor — una exportación IIF no indica qué factura saldó cada pago, así que no se crean documentos de CxC ni de CxP: la balanza de comprobación y el balance general quedan completos, mientras que la antigüedad de CxC, la antigüedad de CxP y los estados de cuenta solo muestran documentos capturados en KPBooks."
     },
     "importing": "Importando…",
     "confirmImport": "Confirmar importación",
+    "partial": {
+      "title": "Una parte de esta importación ya se registró — no se revirtió.",
+      "lists": "Listados: {{done}} de {{total}} lotes confirmados — {{accounts}} cuentas, {{customers}} clientes, {{vendors}} proveedores creados.",
+      "transactions": "Transacciones: {{done}} de {{total}} lotes confirmados — {{posted}} contabilizadas, {{duplicates}} ya importadas.",
+      "hint": "No se perdió nada ni se duplicó ningún registro. Haga clic en “Confirmar importación” otra vez para continuar: las filas y transacciones que ya se registraron se omiten como duplicados. NO vuelva a exportar el archivo desde QuickBooks ni contabilice un asiento de saldos iniciales — los lotes anteriores ya están en el libro mayor."
+    },
     "done": {
       "title": "Importación completada.",
       "accountsCreated": "{{n}} cuentas creadas",
@@ -184,7 +193,7 @@
       "vendorsCreated": "{{n}} proveedores creados",
       "skippedSuffix": ", {{n}} omitidas",
       "transactionsPosted": "{{n}} transacciones contabilizadas",
-      "paymentsLinked": ", {{n}} vinculadas a registros de pago de proveedor/cliente (1099, estados de cuenta)",
+      "paymentsLinked": ", {{n}} vinculadas a registros de pago de proveedor (1099, registro de nómina)",
       "duplicatesSkipped": ", {{n}} ya importadas (duplicados omitidos)",
       "paymentsBackfilled": ", {{n}} registro(s) de pago completados para transacciones importadas anteriormente",
       "voided": ", {{n}} anuladas (0.00 — nada que contabilizar)"
@@ -211,11 +220,11 @@
       "hint": "Corrija estas filas en el archivo y vuelva a importarlo — las transacciones ya contabilizadas se omiten como duplicados (siempre que no se hayan editado en QuickBooks desde la última importación; una transacción editada se contabiliza de nuevo como un asiento nuevo)."
     },
     "unlinked": {
-      "title_one": "{{count}} beneficiario se contabilizó solo en el libro mayor — no se escribió ningún registro de pago de proveedor/cliente:",
-      "title_other": "{{count}} beneficiarios se contabilizaron solo en el libro mayor — no se escribió ningún registro de pago de proveedor/cliente:",
+      "title_one": "{{count}} beneficiario se contabilizó solo en el libro mayor — no se escribió ningún registro de pago de proveedor:",
+      "title_other": "{{count}} beneficiarios se contabilizaron solo en el libro mayor — no se escribió ningún registro de pago de proveedor:",
       "row_one": "{{count}} transacción por un total de {{total}}",
       "row_other": "{{count}} transacciones por un total de {{total}}",
-      "hint": "Estos nombres no coincidieron con ningún proveedor ni cliente (revise la ortografía y la puntuación, los “Other Names” de QuickBooks o los empleados). Sus importes no aparecerán en los totales de 1099, en los registros de nómina ni en los estados de cuenta hasta que existan registros de pago correspondientes. Para corregirlo: cree el proveedor o cliente faltante (o corrija su ortografía) y vuelva a importar este archivo — las transacciones se omiten como duplicados y sus registros de pago se completan automáticamente."
+      "hint": "Estos nombres no coincidieron con ningún proveedor (revise la ortografía y la puntuación, los “Other Names” de QuickBooks o los empleados). Sus importes no aparecerán en los totales de 1099 ni en los registros de nómina hasta que existan registros de pago correspondientes. Para corregirlo: cree el proveedor faltante (o corrija su ortografía) y vuelva a importar este archivo — las transacciones se omiten como duplicados y sus registros de pago se completan automáticamente."
     },
     "importAnother": "Importar otro archivo",
     "detailFallbackPath": "solicitud",

@@ -4,9 +4,12 @@
  * and the unrecognized-section reporting.
  */
 import { describe, expect, it } from 'vitest';
-import { parseIif } from '../src/modules/imports/iif.js';
+import { CommitIifSchema, parseIif, splitIifLine } from '../src/modules/imports/iif.js';
 
 const t = '\t';
+
+/** type/subtype of a parsed account, for readable per-name assertions. */
+const pick = (a: { type: string; subtype: string }) => ({ type: a.type, subtype: a.subtype });
 
 describe('parseIif', () => {
   it('parses a simple ACCNT section with mixed types', () => {
@@ -110,6 +113,45 @@ describe('parseIif', () => {
     // NONPOSTING check is case-insensitive too: the row is skipped entirely.
     expect(out.accounts.find((a) => a.name === 'No More Estimates')).toBeUndefined();
     expect(out.warnings.some((w) => /unknown ACCNTTYPE/.test(w))).toBe(false);
+  });
+
+  it('gives Retained Earnings the retained_earnings subtype even though QBD emits plain EQUITY', () => {
+    // IIF has no distinct code for Retained Earnings -- QBD writes EQUITY --
+    // but the subtype is load-bearing: the statement of cash flows skips
+    // retained_earnings (already counted via net income) while plain `equity`
+    // lands in financing. The transactions-only path infers it from the name,
+    // so without this the same account gets two different subtypes depending
+    // on which file the customer imported first, and account type/subtype
+    // cannot be edited after posting.
+    const text = [
+      `!ACCNT${t}NAME${t}ACCNTTYPE`,
+      `ACCNT${t}Retained Earnings${t}EQUITY`,
+      `ACCNT${t}Owner's Equity:Retained Earnings${t}EQUITY`,
+      `ACCNT${t}Retained Earnings - Prior Years${t}EQUITY`,
+      `ACCNT${t}Owner's Equity${t}EQUITY`,
+      `ACCNT${t}Owner's Draw${t}EQUITY`,
+    ].join('\n');
+    const out = parseIif(text);
+    const byName = new Map(out.accounts.map((a) => [a.name, a]));
+    for (const name of [
+      'Retained Earnings',
+      "Owner's Equity:Retained Earnings",
+      'Retained Earnings - Prior Years',
+    ]) {
+      expect({ name, ...pick(byName.get(name)!) }).toEqual({
+        name,
+        type: 'equity',
+        subtype: 'retained_earnings',
+      });
+    }
+    // Every other equity account keeps the plain equity subtype.
+    for (const name of ["Owner's Equity", "Owner's Draw"]) {
+      expect({ name, ...pick(byName.get(name)!) }).toEqual({
+        name,
+        type: 'equity',
+        subtype: 'equity',
+      });
+    }
   });
 
   it('parses CUST + VEND sections with terms and 1099 flag', () => {
@@ -428,5 +470,230 @@ describe('parseIif', () => {
     const out = parseIif(text);
     expect(out.accounts).toHaveLength(0);
     expect(out.warnings.some((w) => /missing NAME/.test(w))).toBe(true);
+  });
+
+  it('recovers every column after an unterminated quote instead of swallowing the row', () => {
+    // A stray opening quote in a free-text field (a bookkeeper typing
+    // `"see attached W-9`, or an Excel/Notepad round-trip) used to make the
+    // whole rest of the LINE one cell: the row still "parsed", so the vendor
+    // arrived with no 1099 flag, no TIN and no terms, warnings was empty, and
+    // the vendor silently dropped out of the January 1099-NEC run.
+    const header = `!VEND${t}NAME${t}ADDR1${t}NOTE${t}TAXID${t}TERMS${t}1099${t}HIDDEN`;
+    const row = `VEND${t}Joe Sub${t}123 Main${t}"called re invoice${t}12-3456789${t}Net 30${t}Y${t}N`;
+    // The splitter itself must keep all 8 columns.
+    expect(splitIifLine(row)).toHaveLength(8);
+
+    const out = parseIif([header, row].join('\r\n'));
+    const v = out.vendors[0]!;
+    expect(v.displayName).toBe('Joe Sub');
+    expect(v.is1099Vendor).toBe(true);
+    expect(v.taxId).toBe('12-3456789');
+    expect(v.defaultTermsDays).toBe(30);
+    // ...and the malformed quoting is disclosed rather than passing clean.
+    expect(out.warnings.some((w) => /row 2/.test(w) && /unterminated quote/.test(w))).toBe(true);
+
+    // Same shape on the real QBD !ACCNT header: HIDDEN and ACCNUM sit AFTER
+    // DESC, so both were lost -- a QBD-inactive account imported active with
+    // an invented account code, and a description full of raw tabs.
+    const accnt = parseIif(
+      [
+        `!ACCNT${t}NAME${t}REFNUM${t}TIMESTAMP${t}ACCNTTYPE${t}OBAMOUNT${t}DESC${t}ACCNUM${t}SCD${t}BANKNUM${t}EXTRA${t}HIDDEN${t}DELCOUNT`,
+        `ACCNT${t}Old Truck Loan${t}7${t}${t}LTLIAB${t}0.00${t}"paid off 2019${t}27100${t}${t}${t}${t}Y${t}0`,
+      ].join('\r\n'),
+    );
+    const a = accnt.accounts[0]!;
+    expect(a.isActive).toBe(false);
+    expect(a.suggestedCode).toBe('27100');
+    expect(a.description).toContain('paid off 2019');
+    expect(a.description).not.toContain('\t');
+    expect(accnt.warnings.some((w) => /unterminated quote/.test(w))).toBe(true);
+  });
+
+  it('still honours a properly closed quoted field containing tabs and "" escapes', () => {
+    // Guard for the recovery above: a WELL-FORMED quoted field must keep its
+    // embedded tab as data, not be re-split into columns.
+    const cells = splitIifLine(`ACCNT${t}"Repairs\tand Maintenance"${t}"He said ""hi"""${t}EXP`);
+    expect(cells).toEqual(['ACCNT', `Repairs${t}and Maintenance`, 'He said "hi"', 'EXP']);
+  });
+
+  it('discloses rows whose tag is not a section tag, and reads tags with stray whitespace', () => {
+    // Hand-edited and tool-converted files carry leading spaces and
+    // lower-cased tags. Those rows used to be dropped with no warning and no
+    // "skipped" entry -- the exact silent loss this module promises never to
+    // do. Note the "Skipped (not yet supported)" list must NOT fill up with
+    // junk like "Total assets": that would be its own lie.
+    const text = [
+      `!ACCNT${t}NAME${t}ACCNTTYPE`,
+      `ACCNT${t}Checking${t}BANK`,
+      ` ACCNT${t}Savings${t}BANK`,
+      `accnt${t}Petty Cash${t}BANK`,
+      `accnt${t}Cash Drawer${t}BANK`,
+      `Total assets${t}12345`,
+    ].join('\r\n');
+    const out = parseIif(text);
+    // The whitespace-padded tag is now recognised and imports.
+    expect(out.accounts.map((a) => a.name)).toEqual(['Checking', 'Savings']);
+    expect(out.unrecognizedSections).toEqual([]);
+    // One aggregated warning per distinct unknown tag (not one per row, so a
+    // whole-file corruption stays readable).
+    const lower = out.warnings.find((w) => /"accnt"/.test(w))!;
+    expect(lower).toMatch(/unrecognized row type/);
+    expect(lower).toMatch(/2 row\(s\)/);
+    expect(lower).toMatch(/first at row 4/);
+    expect(out.warnings.some((w) => /"Total assets"/.test(w))).toBe(true);
+  });
+
+  it('counts a TRNS block that precedes its !TRNS header instead of under-reporting the file', () => {
+    // A hand-trimmed or spliced transactions export can put data rows ahead
+    // of the header. The block cannot post -- but a free-text warning alone
+    // left the preview's per-type table and the completion screen reading
+    // "1 CHECK, 0 skipped, 0 excluded" for a file holding TWO checks, so the
+    // bank register came up short with nothing accounting for it.
+    const text = [
+      `TRNS${t}CHECK${t}5/1/2026${t}Checking${t}-100.00`,
+      `SPL${t}CHECK${t}5/1/2026${t}Office Expense${t}100.00`,
+      `ENDTRNS`,
+      `!TRNS${t}TRNSTYPE${t}DATE${t}ACCNT${t}AMOUNT`,
+      `!SPL${t}TRNSTYPE${t}DATE${t}ACCNT${t}AMOUNT`,
+      `!ENDTRNS`,
+      `TRNS${t}CHECK${t}5/2/2026${t}Checking${t}-200.00`,
+      `SPL${t}CHECK${t}5/2/2026${t}Office Expense${t}200.00`,
+      `ENDTRNS`,
+    ].join('\r\n');
+    const out = parseIif(text);
+    expect(out.transactions).toHaveLength(1);
+    // Both blocks are accounted for: one posted, one excluded as UNKNOWN
+    // (without the header the TRNSTYPE column position is unknowable).
+    expect(out.transactionCounts).toEqual({ CHECK: 1, UNKNOWN: 1 });
+    expect(out.excludedTransactions).toHaveLength(1);
+    expect(out.excludedTransactions[0]).toMatchObject({ rowNumber: 1, qbType: 'UNKNOWN' });
+    expect(out.excludedTransactions[0]?.reason).toMatch(/before its !TRNS header/);
+    expect(out.warnings.some((w) => /TRNS row before TRNS header/.test(w))).toBe(true);
+  });
+
+  it('tells the user a lists-only file leaves QBD opening balances behind', () => {
+    // OBAMOUNT is deliberately never imported (QuickBooks records opening
+    // balances as real transactions, so importing the column too would
+    // double-book them) -- but a customer who runs only the documented first
+    // step, File > Utilities > Export > Lists to IIF, otherwise gets a
+    // complete chart, zero warnings, and no hint that the balances are still
+    // sitting in the other file.
+    const header = `!ACCNT${t}NAME${t}REFNUM${t}TIMESTAMP${t}ACCNTTYPE${t}OBAMOUNT${t}DESC${t}ACCNUM${t}SCD${t}BANKNUM${t}EXTRA${t}HIDDEN${t}DELCOUNT`;
+    const withBalances = parseIif(
+      [
+        header,
+        `ACCNT${t}Checking${t}1${t}${t}BANK${t}18,450.22${t}${t}10100${t}${t}${t}${t}N${t}0`,
+        `ACCNT${t}Sales${t}2${t}${t}INC${t}0.00${t}${t}${t}${t}${t}${t}N${t}0`,
+      ].join('\r\n'),
+    );
+    const note = withBalances.warnings.find((w) => /opening balance/i.test(w))!;
+    expect(note).toBeTruthy();
+    expect(note).toMatch(/1 account\(s\)/);
+    expect(note).toMatch(/transactions IIF export/);
+
+    // No noise on the common case: a lists file whose balances are all zero
+    // (QBD writes 0.00 for accounts opened through transactions) says nothing.
+    const allZero = parseIif(
+      [
+        header,
+        `ACCNT${t}Checking${t}1${t}${t}BANK${t}0.00${t}${t}10100${t}${t}${t}${t}N${t}0`,
+      ].join('\r\n'),
+    );
+    expect(allZero.warnings).toEqual([]);
+  });
+});
+
+describe('parseIif over-long contact fields', () => {
+  // CommitCustomer/CommitVendor cap phone and taxId at 40 chars. An
+  // over-cap value used to sail through preview with ZERO warnings and then
+  // throw a ZodError at commit, which the API turns into a 400 for the WHOLE
+  // 500-row chunk -- and because the lists leg runs before the transactions
+  // leg, that killed the transactions import entirely, identically on every
+  // retry, reporting a chunk-relative path ("customers.37.phone") the user
+  // could not map back to a file row.
+  const longPhone = '(512) 555-1234 ext. 4471 / cell (512) 555-9999';
+  const longTaxId = '12-3456789 (per W-9 received 2025-11-02, see file)';
+
+  it('truncates phone/taxId with a warning instead of 400ing the whole commit', () => {
+    const text = [
+      `!CUST${t}NAME${t}PHONE1${t}EMAIL`,
+      `CUST${t}Smith Construction${t}${longPhone}${t}ap@smith.example`,
+      `!VEND${t}NAME${t}PHONE1${t}TAXID${t}1099`,
+      `VEND${t}Joe Subcontractor${t}${longPhone}${t}${longTaxId}${t}Y`,
+    ].join('\r\n');
+    const out = parseIif(text);
+
+    expect(out.customers[0]?.phone).toHaveLength(40);
+    expect(out.customers[0]?.phone).toBe(longPhone.slice(0, 40));
+    expect(out.vendors[0]?.phone).toHaveLength(40);
+    expect(out.vendors[0]?.taxId).toHaveLength(40);
+    // Truncating a 1099 vendor's TIN silently would be worse than not
+    // importing it, so every truncation is disclosed at preview.
+    expect(out.warnings.filter((w) => /truncated/.test(w))).toHaveLength(3);
+    expect(out.warnings.some((w) => /customer "Smith Construction" phone/.test(w))).toBe(true);
+    expect(out.warnings.some((w) => /vendor "Joe Subcontractor" tax ID/.test(w))).toBe(true);
+
+    // The whole point: the preview payload now survives the commit schema.
+    const parsed = CommitIifSchema.safeParse({
+      accounts: [],
+      customers: out.customers,
+      vendors: out.vendors,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('leaves normal-length values (and their warning list) untouched', () => {
+    const out = parseIif(
+      [
+        `!CUST${t}NAME${t}PHONE1`,
+        `CUST${t}Acme Corp${t}(512) 555-1234`,
+        `!VEND${t}NAME${t}PHONE1${t}TAXID`,
+        `VEND${t}Joe Subcontractor${t}555-9876${t}12-3456789`,
+      ].join('\r\n'),
+    );
+    expect(out.customers[0]?.phone).toBe('(512) 555-1234');
+    expect(out.vendors[0]?.taxId).toBe('12-3456789');
+    expect(out.warnings).toEqual([]);
+  });
+});
+
+describe('parseIif rows with an empty first column', () => {
+  it('discloses a data row whose section tag is missing instead of dropping it', () => {
+    // A spreadsheet round-trip (the Excel/Notepad edit this parser already
+    // accommodates elsewhere) can shift a row one column left. The row still
+    // carries real content -- a line of nothing but tabs is consumed by the
+    // blank-line guard -- so dropping it silently left the customer with a
+    // clean, zero-warning preview and an account simply gone from the chart,
+    // surfacing much later as per-row "account not found" commit failures.
+    const out = parseIif(
+      [
+        `!ACCNT${t}NAME${t}ACCNTTYPE${t}ACCNUM`,
+        `ACCNT${t}Checking${t}BANK${t}1010`,
+        `${t}Savings${t}BANK${t}1020`,
+      ].join('\r\n'),
+    );
+    expect(out.accounts.map((a) => a.name)).toEqual(['Checking']);
+    const note = out.warnings.find((w) => /empty first column/.test(w));
+    expect(note).toBeTruthy();
+    expect(note).toMatch(/1 row\(s\)/);
+    expect(note).toMatch(/first at row 3/);
+  });
+
+  it('aggregates repeats into one warning and stays silent on blank lines', () => {
+    const out = parseIif(
+      [
+        `!ACCNT${t}NAME${t}ACCNTTYPE`,
+        `ACCNT${t}Checking${t}BANK`,
+        '',
+        `${t}${t}`,
+        `   `,
+        `${t}Savings${t}BANK`,
+        `${t}Payroll Account${t}BANK`,
+      ].join('\r\n'),
+    );
+    const notes = out.warnings.filter((w) => /empty first column/.test(w));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatch(/2 row\(s\)/);
+    expect(notes[0]).toMatch(/first at row 6/);
   });
 });

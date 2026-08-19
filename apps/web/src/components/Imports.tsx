@@ -4,15 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
-import { decodeIifBuffer } from '../lib/decode-iif';
+import { checkIifFileMeta, decodeIifBuffer } from '../lib/decode-iif';
 import {
+  type PartialCommitProgress,
   assertCommitCompanyUnchanged,
-  chunkListsForCommit,
-  chunkTransactionsForCommit,
-  mergeListsCommitResults,
-  mergeTransactionCommitResults,
+  runChunkedCommit,
 } from '../lib/iif-commit';
-import { mapsToLabel } from '../lib/iif-preview';
+import { mapsToLabel, orderWarningsForDisplay } from '../lib/iif-preview';
 
 type Translate = TFunction<readonly ['banking', 'common']>;
 
@@ -169,6 +167,12 @@ export function Imports() {
   const [parseError, setParseError] = useState<string | null>(null);
   const [committed, setCommitted] = useState<CommitResult | null>(null);
   const [committedTxns, setCommittedTxns] = useState<TransactionCommitResult | null>(null);
+  // What actually landed when the chunked commit fails partway. The commit
+  // is a sequence of independent requests, each its own server-side DB
+  // transaction, so "the import failed" is almost never the whole truth --
+  // this is what the error panel needs to say how much is already on the
+  // ledger and that clicking Confirm again resumes instead of double-booking.
+  const [partialCommit, setPartialCommit] = useState<PartialCommitProgress | null>(null);
   // Per-row include flags so users can opt rows out before commit.
   const [accountInclude, setAccountInclude] = useState<boolean[]>([]);
   // Editable code per !ACCNT row -- the suggestion may clash with the
@@ -252,61 +256,39 @@ export function Imports() {
       const vendors = preview.vendors
         .filter((_, i) => vendorInclude[i])
         .map((v) => stripUndef(v));
-      // Step 1: lists (accounts/customers/vendors). Has to land before
-      // transactions so the by-name account lookup resolves. Chunked like
-      // the transactions leg below: the server awaits one INSERT per row,
-      // so a 12-year company file's lists (thousands of customers/vendors)
-      // in ONE request would blow the same 60s Cloud Run / Firebase rewrite
-      // caps and roll the whole commit back on every retry. Skip-on-name-
-      // conflict makes a mid-sequence failure resumable: clicking Confirm
-      // again skips the chunks that already landed.
-      const listResults: CommitResult[] = [];
-      for (const chunk of chunkListsForCommit({ accounts, customers, vendors })) {
-        listResults.push(
-          await api<CommitResult>('/imports/iif/commit', {
+      // Both legs go out one chunk per request (see runChunkedCommit): lists
+      // first, so the transactions leg's by-name account lookup resolves.
+      // Cloud Run and the Firebase Hosting rewrite cap any single request at
+      // 60s while the server writes rows one at a time, so a 12-year company
+      // file sent whole times out with a bare "API 504" and rolls back on
+      // every retry. Each chunk commits independently, which also means a
+      // mid-sequence failure leaves earlier chunks on the ledger -- onPartial
+      // captures exactly that so the UI can say so instead of looking
+      // untouched.
+      const { listsResult, txResult } = await runChunkedCommit({
+        lists: { accounts, customers, vendors },
+        transactions:
+          includeTransactions && preview.transactions.length > 0 ? preview.transactions : [],
+        sendLists: (chunk) =>
+          api<CommitResult>('/imports/iif/commit', {
             method: 'POST',
             companyId: committedCompanyId,
             body: chunk,
           }),
-        );
-      }
-      const listsResult: CommitResult = mergeListsCommitResults(listResults);
-
-      // Step 2: transactions. Optional via the includeTransactions toggle.
-      let txResult: TransactionCommitResult = {
-        posted: 0,
-        skipped: 0,
-        duplicates: 0,
-        voided: 0,
-        paymentsLinked: 0,
-        paymentsBackfilled: 0,
-        warnings: [],
-        unlinkedPayees: [],
-        errors: [],
-      };
-      if (includeTransactions && preview.transactions.length > 0) {
-        // One request per chunk: Cloud Run and the Firebase Hosting rewrite
-        // cap any single request at 60s, and the server posts blocks one at
-        // a time -- a multi-year export in one POST times out with a bare
-        // "API 504" after silently posting an unknown fraction. Bounded
-        // chunks keep every request fast, and the server's duplicate scan
-        // makes a mid-sequence failure resumable: clicking Confirm again
-        // skips the chunks that already landed.
-        const chunkResults: TransactionCommitResult[] = [];
-        for (const chunk of chunkTransactionsForCommit(preview.transactions)) {
-          chunkResults.push(
-            await api<TransactionCommitResult>('/imports/iif/commit-transactions', {
-              method: 'POST',
-              companyId: committedCompanyId,
-              body: { transactions: chunk },
-            }),
-          );
-        }
-        txResult = { ...txResult, ...mergeTransactionCommitResults(chunkResults) };
-      }
+        sendTransactions: (chunk) =>
+          api<TransactionCommitResult>('/imports/iif/commit-transactions', {
+            method: 'POST',
+            companyId: committedCompanyId,
+            body: { transactions: chunk },
+          }),
+        onPartial: setPartialCommit,
+      });
 
       return { listsResult, txResult, committedCompanyId };
     },
+    // A retry after a partial failure starts from a clean slate: the panel
+    // below must describe THIS attempt, not the previous one.
+    onMutate: () => setPartialCommit(null),
     onSuccess: ({ listsResult, txResult, committedCompanyId }) => {
       // A company switch mid-commit already reset the flow (the import
       // itself still landed in the company it was previewed under); don't
@@ -333,6 +315,7 @@ export function Imports() {
     setParseError(null);
     setCommitted(null);
     setCommittedTxns(null);
+    setPartialCommit(null);
     setAccountInclude([]);
     setAccountCodes([]);
     setCustomerInclude([]);
@@ -379,11 +362,44 @@ export function Imports() {
   async function handleFile(file: File) {
     setFileName(file.name);
     setParseError(null);
+    // Name/size are judged BEFORE the read: the post-decode checks below only
+    // fire once the whole file has been materialised as an ArrayBuffer and
+    // decoded again as text, so a company-file backup dragged in by mistake
+    // froze the tab for seconds and then reported the wrong problem entirely
+    // (see checkIifFileMeta).
+    const problem = checkIifFileMeta(file);
+    if (problem) {
+      setParseError(
+        problem.kind === 'notAnIifFile'
+          ? t('imports.notAnIifFile', { name: file.name })
+          : problem.kind === 'emptyOrFolder'
+            ? t('imports.emptyOrFolder')
+            : t('imports.fileTooLarge', { size: problem.sizeMb }),
+      );
+      return;
+    }
     // QuickBooks Desktop exports are typically Windows-1252, not UTF-8, and
     // Excel "Unicode Text" re-saves are UTF-16 -- decodeIifBuffer sniffs
     // BOMs and falls back appropriately so neither silently scrambles the
     // parse (see lib/decode-iif.ts).
-    const buffer = await file.arrayBuffer();
+    // file.arrayBuffer() rejects on its own (a file moved or re-exported
+    // since it was picked, a disconnected network share, an on-demand
+    // OneDrive placeholder). Both call sites fire this as `void handleFile`,
+    // so an uncaught rejection would leave the filename on screen with no
+    // error, no spinner and no state change -- indistinguishable from the
+    // click doing nothing.
+    let buffer: ArrayBuffer;
+    try {
+      buffer = await file.arrayBuffer();
+    } catch (err) {
+      setParseError(
+        t('imports.readFailed', {
+          name: file.name,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return;
+    }
     const decoded = decodeIifBuffer(buffer);
     if ('error' in decoded) {
       setParseError(decoded.error);
@@ -405,6 +421,13 @@ export function Imports() {
   // commit, so both the preview table and the completion screen must
   // disclose them from the preview payload.
   const excludedTxns = preview?.excludedTransactions ?? [];
+
+  // File-level disclosures (inactive accounts, opening balances, unrecognized
+  // rows) are appended AFTER the per-row warnings, so rendering the raw first
+  // 100 dropped exactly the notes the user must act on before committing.
+  const { shown: shownWarnings, hidden: hiddenWarnings } = orderWarningsForDisplay(
+    preview?.warnings ?? [],
+  );
 
   return (
     <div className="space-y-6">
@@ -440,6 +463,15 @@ export function Imports() {
             type="file"
             accept=".iif,text/plain"
             className="hidden"
+            // Clear before the picker opens, or re-selecting the SAME path
+            // fires no change event and nothing happens: every failure path
+            // here (encoding, empty, too large, preview error) tells the user
+            // to fix the file and try again, and the fix is almost always a
+            // re-save over the same path. Only reset() cleared this before,
+            // and it isn't reachable from the upload stage.
+            onClick={(e) => {
+              e.currentTarget.value = '';
+            }}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) void handleFile(file);
@@ -503,12 +535,10 @@ export function Imports() {
                   {t('imports.parserWarnings', { count: preview.warnings.length })}
                 </summary>
                 <ul className="mt-1 max-h-40 list-disc space-y-0.5 overflow-y-auto pl-5 text-xs text-slate-600">
-                  {preview.warnings.slice(0, 100).map((w, i) => (
+                  {shownWarnings.map((w, i) => (
                     <li key={i}>{w}</li>
                   ))}
-                  {preview.warnings.length > 100 && (
-                    <li>{t('imports.andMore', { n: preview.warnings.length - 100 })}</li>
-                  )}
+                  {hiddenWarnings > 0 && <li>{t('imports.andMore', { n: hiddenWarnings })}</li>}
                 </ul>
               </details>
             )}
@@ -902,6 +932,38 @@ export function Imports() {
           {commitMutation.isError && (
             <div className="rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
               {formatError(commitMutation.error, t)}
+            </div>
+          )}
+
+          {/* A failed commit is not an untouched ledger: the chunks that ran
+              before the failure are already committed server-side. Say what
+              landed and how to resume, or the CPA re-exports from QuickBooks
+              (or gives up) with half the file already in the books. */}
+          {partialCommit && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">{t('imports.partial.title')}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                <li>
+                  {t('imports.partial.lists', {
+                    done: partialCommit.listChunksDone,
+                    total: partialCommit.listChunksTotal,
+                    accounts: partialCommit.lists.accountsCreated,
+                    customers: partialCommit.lists.customersCreated,
+                    vendors: partialCommit.lists.vendorsCreated,
+                  })}
+                </li>
+                {partialCommit.txnChunksTotal > 0 && (
+                  <li>
+                    {t('imports.partial.transactions', {
+                      done: partialCommit.txnChunksDone,
+                      total: partialCommit.txnChunksTotal,
+                      posted: partialCommit.txns.posted,
+                      duplicates: partialCommit.txns.duplicates,
+                    })}
+                  </li>
+                )}
+              </ul>
+              <p className="mt-1 text-xs">{t('imports.partial.hint')}</p>
             </div>
           )}
         </div>

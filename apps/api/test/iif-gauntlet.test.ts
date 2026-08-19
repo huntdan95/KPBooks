@@ -13,8 +13,10 @@
  *     the outer transaction
  *   - vendor checks / customer payments also land in the payments subledger
  *     (1099 totals, payroll register, statements)
- *   - colon-path sub-accounts get parent_id links; customer:job flattening
- *     is disclosed via a warning
+ *   - colon-path sub-accounts get parent_id links -- including a child that
+ *     already exists unparented from a transactions-first import, which no
+ *     later import or API call could otherwise repair; customer:job
+ *     flattening is disclosed via a warning
  *   - HIDDEN=Y (inactive-in-QBD) rows commit as inactive
  *   - vendor/customer addresses persist; 1099 vendors without one warn
  *   - the duplicate pre-scan chunks its inArray so a huge re-import can't
@@ -23,14 +25,19 @@
  *   - duplicate skips backfill missing payments links (fix-and-re-import)
  *     and still-unlinked duplicates keep the per-payee disclosure alive
  *   - a posted block sharing date+reference with a different existing entry
- *     warns (transaction edited in QBD after an earlier import)
+ *     warns (transaction edited in QBD after an earlier import), as does the
+ *     same content re-posted on a corrected DATE and a reference-less
+ *     DEPOSIT/TRANSFER re-categorised in QBD (no DOCNUM to match on)
  *   - pre-existing case-twin account names resolve exact-cased or fail
  *     per-row -- never by unordered-scan luck
  *   - DB-inactive accounts referenced by a transactions-only file are
  *     disclosed at preview (the two-file lists-then-transactions migration)
- *   - upload decoding (UTF-16 re-saves), client commit chunking/merging, and
- *     the preview's "Maps to" label (shared web helpers, tested here with
- *     the parser/committer they feed)
+ *   - upload decoding (UTF-16 re-saves), the pre-read name/size guard (a
+ *     dragged .QBB must not be read at all), warning display order (the
+ *     file-level disclosures are appended last and must survive the render
+ *     cap), client commit chunking/merging, and the preview's "Maps to"
+ *     label (shared web helpers, tested here with the parser/committer they
+ *     feed)
  *   - a file-content source_id stamped on every posted entry makes duplicate
  *     detection survive account renames between imports (the accountId
  *     fingerprint alone re-posted the whole file after a rename)
@@ -66,7 +73,7 @@ import {
   warnInactiveAccountRefs,
 } from '../src/modules/imports/iif.js';
 import { PreviewBody } from '../src/routes/imports.js';
-import { decodeIifBuffer } from '../../web/src/lib/decode-iif';
+import { checkIifFileMeta, decodeIifBuffer } from '../../web/src/lib/decode-iif';
 import {
   assertCommitCompanyUnchanged,
   chunkListsForCommit,
@@ -74,7 +81,7 @@ import {
   mergeListsCommitResults,
   mergeTransactionCommitResults,
 } from '../../web/src/lib/iif-commit';
-import { mapsToLabel } from '../../web/src/lib/iif-preview';
+import { mapsToLabel, orderWarningsForDisplay } from '../../web/src/lib/iif-preview';
 
 const ctx = {
   companyId: 'c0000000-0000-4000-8000-000000000001',
@@ -717,7 +724,12 @@ describe('commitIifTransactions payments subledger linkage', () => {
     expect(payRows[0]?.postedJournalEntryId).toBeTruthy();
   });
 
-  it('writes a customer_received payments row for a PAYMENT whose NAME matches a customer', async () => {
+  it('keeps a customer PAYMENT GL-only -- a payments row without its invoice is a phantom credit', async () => {
+    // An IIF transaction export carries no invoice<->payment linkage, so the
+    // A/R document side cannot be built. Customer statements compute the
+    // balance as SUM(invoices.total) - SUM(payments.amount), so a lone
+    // payments row would show every imported customer a credit balance they
+    // do not have. The gap is disclosed in warnings instead.
     const { tx, inserted } = makeStubTx({
       accounts: chartRows,
       customers: [{ id: CUSTOMER_ID, name: 'Acme Corp' }],
@@ -740,15 +752,12 @@ describe('commitIifTransactions payments subledger linkage', () => {
     });
     const result = await commitIifTransactions(tx, ctx, input);
     expect(result.posted).toBe(1);
-    expect(result.paymentsLinked).toBe(1);
-    const payRows = inserted.get(paymentsTable)!;
-    expect(payRows[0]).toMatchObject({
-      paymentType: 'customer_received',
-      customerId: CUSTOMER_ID,
-      vendorId: null,
-      amount: '500.0000',
-      bankAccountId: CHECKING_ID,
-    });
+    expect(result.paymentsLinked).toBe(0);
+    expect(inserted.get(paymentsTable)).toBeUndefined();
+    // Money IN from a customer is not an unlinked PAYEE either -- that list
+    // exists for 1099/payroll shortfalls on money-out blocks.
+    expect(result.unlinkedPayees).toEqual([]);
+    expect(result.warnings.some((w) => /A\/R/.test(w))).toBe(true);
   });
 
   it('stays GL-only when the NAME matches nobody or the type is not a money movement', async () => {
@@ -940,6 +949,69 @@ describe('upload decoding (web decodeIifBuffer)', () => {
   });
 });
 
+describe('upload pre-read guard (web checkIifFileMeta)', () => {
+  it('rejects a QuickBooks company file or backup by NAME, before it is read', () => {
+    // The .iif export sits next to the company file and its backups, and the
+    // drop zone is not filtered by the input's `accept`. Read as bytes, a
+    // 400 MB .QBB is materialised whole, decoded again as text, and only
+    // then judged -- a multi-second main-thread freeze ending in the WRONG
+    // message ("this looks like a UTF-16 re-save"), which sends the customer
+    // off re-saving a binary backup in Notepad.
+    for (const name of ['acme.QBB', 'Acme Co.qbw', 'acme.qbm', 'acme.TLG', 'acme.nd']) {
+      expect({ name, ...checkIifFileMeta({ name, size: 400_000_000 }) }).toEqual({
+        name,
+        kind: 'notAnIifFile',
+      });
+    }
+  });
+
+  it('rejects a zero-byte entry (a dropped folder) with its own message', () => {
+    expect(checkIifFileMeta({ name: 'QB Exports', size: 0 })).toEqual({ kind: 'emptyOrFolder' });
+  });
+
+  it('rejects oversize files by byte count and reports the size', () => {
+    expect(checkIifFileMeta({ name: 'lists.iif', size: 400_000_000 })).toEqual({
+      kind: 'tooLarge',
+      sizeMb: '400.0',
+    });
+  });
+
+  it('lets a real export through, including a UTF-16 re-save of a 12 MB file', () => {
+    expect(checkIifFileMeta({ name: 'lists.iif', size: 8_400_000 })).toBeNull();
+    // The byte ceiling carries 2x headroom so a "Unicode Text" re-save (two
+    // bytes per character) is still judged on its CONTENT by the 12 MB
+    // character cap, not rejected for its size.
+    expect(checkIifFileMeta({ name: 'transactions.IIF', size: 23_000_000 })).toBeNull();
+  });
+});
+
+describe('preview warning display order (web orderWarningsForDisplay)', () => {
+  it('keeps the file-level disclosures when row warnings overflow the limit', () => {
+    // Every file-level disclosure is appended AFTER the per-row ones -- the
+    // parser pushes the unrecognized-row and opening-balance notes after the
+    // row loop, and the preview route appends the inactive-account note last
+    // of all. Rendering the raw first 100 therefore dropped exactly the
+    // notes the user must act on BEFORE committing, while the boxes that
+    // could have compensated (errors, excluded transactions) only render on
+    // the post-commit screen.
+    const warnings = [
+      ...Array.from({ length: 140 }, (_, i) => `row ${i + 2}: customer "C${i}" email is not valid`),
+      '320 transaction(s) reference account(s) that exist in your chart but are inactive',
+    ];
+    const { shown, hidden } = orderWarningsForDisplay(warnings);
+    expect(shown[0]).toMatch(/inactive/);
+    expect(shown).toHaveLength(100);
+    expect(hidden).toBe(41);
+    expect(shown.filter((w) => /^row /.test(w))).toHaveLength(99);
+  });
+
+  it('preserves order and reports nothing hidden when everything fits', () => {
+    const warnings = ['file ended with an unclosed TRNS block (no ENDTRNS)', 'row 4: memo truncated'];
+    expect(orderWarningsForDisplay(warnings)).toEqual({ shown: warnings, hidden: 0 });
+    expect(orderWarningsForDisplay([])).toEqual({ shown: [], hidden: 0 });
+  });
+});
+
 describe("preview per-type 'Maps to' label (web mapsToLabel)", () => {
   it('labels posting and non-posting types from the sample transaction', () => {
     expect(mapsToLabel({ posts: true, sourceType: 'bank_transaction' }, 0)).toBe(
@@ -1015,6 +1087,69 @@ describe('commitIifImport hierarchy', () => {
     expect(
       result.warnings.some((w) => /Payroll Expenses:Wages/.test(w) && /parent/.test(w)),
     ).toBe(true);
+  });
+
+  it('links a sub-account that already exists unparented (transactions-first migration)', async () => {
+    // The order the UI allows: transactions IIF first, so
+    // "Utilities:Gas & Electric" was auto-created from missingAccounts with
+    // parent_id NULL ("Utilities" has no direct postings, so nothing
+    // referenced it and it was never created). The lists IIF then creates
+    // "Utilities" but SKIPS the child as "name already exists" -- and the
+    // linking pass only looked at rows created by this request, so the chart
+    // stayed permanently flat with no trace beyond a benign skip. Nothing in
+    // the API can repair it afterwards: UpdateAccount deliberately refuses
+    // parentId, and every later re-import skips the same way.
+    const EXISTING_CHILD_ID = 'a0000000-0000-4000-8000-0000000000c1';
+    const { tx, updated } = makeStubTx({
+      accounts: [
+        {
+          id: EXISTING_CHILD_ID,
+          code: '5020',
+          name: 'Utilities:Gas & Electric',
+          type: 'expense',
+          subtype: 'expense',
+          parentId: null,
+        },
+      ],
+    });
+    const input = CommitIifSchema.parse({
+      accounts: [
+        { name: 'Utilities', type: 'expense', subtype: 'expense', code: '5010' },
+        { name: 'Utilities:Gas & Electric', type: 'expense', subtype: 'expense', code: '5020' },
+      ],
+    });
+    const result = await commitIifImport(tx, ctx, input);
+    expect(result.accountsCreated).toBe(1);
+    expect(result.accountsSkipped).toBe(1);
+    const patches = updated.get(accountsTable) ?? [];
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.parentId).toBe('e0000000-0000-4000-8000-000000000001');
+  });
+
+  it('never re-points a sub-account whose parent link already exists', async () => {
+    // Linking is a one-way repair for a NULL parent. An account already
+    // parented (by an earlier import or by hand) must not be moved by a
+    // later file that happens to name the same colon path.
+    const { tx, updated } = makeStubTx({
+      accounts: [
+        {
+          id: 'a0000000-0000-4000-8000-0000000000c2',
+          code: '5020',
+          name: 'Utilities:Gas & Electric',
+          type: 'expense',
+          subtype: 'expense',
+          parentId: 'a0000000-0000-4000-8000-0000000000c9',
+        },
+      ],
+    });
+    const input = CommitIifSchema.parse({
+      accounts: [
+        { name: 'Utilities', type: 'expense', subtype: 'expense', code: '5010' },
+        { name: 'Utilities:Gas & Electric', type: 'expense', subtype: 'expense', code: '5020' },
+      ],
+    });
+    await commitIifImport(tx, ctx, input);
+    expect(updated.get(accountsTable)).toBeUndefined();
   });
 
   it('discloses customer:job flattening in the commit warnings', async () => {
@@ -1205,6 +1340,123 @@ describe('commitIifTransactions edited-transaction disclosure', () => {
     expect(result.duplicates).toBe(1);
     expect(result.posted).toBe(0);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('warns when the same reference posts again on a DIFFERENT date (date corrected in QBD)', async () => {
+    // Check #1044 was imported dated 5/1; the CPA finds it cleared 5/2 and
+    // fixes the date in QuickBooks, then re-imports the range. Every
+    // duplicate identity embeds the entry date -- the content fingerprint,
+    // the file-content source_id stamp, and the date+reference index -- so
+    // the corrected block used to post a second copy in complete silence and
+    // the month's bank rec came up short by the check amount with nothing in
+    // warnings and nothing in errors.
+    const { tx } = makeStubTx({ accounts: chartRows, ...prior1250 });
+    const input = CommitIifTransactionsSchema.parse({
+      transactions: [{ ...check('1250.0000'), date: '2026-05-02' }],
+    });
+    const result = await commitIifTransactions(tx, ctx, input);
+    expect(result.posted).toBe(1);
+    expect(result.duplicates).toBe(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/ref "1044"/);
+    expect(result.warnings[0]).toMatch(/2026-05-01/);
+    expect(result.warnings[0]).toMatch(/date was\s+corrected in QuickBooks/);
+  });
+
+  it('does not fire the moved-date warning for a recurring payment already imported', async () => {
+    // A verbatim monthly payment under one reference is not an edit: the
+    // April copy in this same file matches the prior entry as a duplicate and
+    // consumes it, so the new May copy has nothing left to warn about.
+    const { tx } = makeStubTx({ accounts: chartRows, ...prior1250 });
+    const input = CommitIifTransactionsSchema.parse({
+      transactions: [check('1250.0000'), { ...check('1250.0000'), date: '2026-06-01' }],
+    });
+    const result = await commitIifTransactions(tx, ctx, input);
+    expect(result.duplicates).toBe(1);
+    expect(result.posted).toBe(1);
+    expect(result.warnings).toEqual([]);
+  });
+});
+
+describe('commitIifTransactions edited-transaction disclosure without a reference', () => {
+  // QBD writes no DOCNUM for DEPOSIT, TRANSFER or most CCARD blocks -- which
+  // are exactly the ones a bookkeeper re-categorises -- so parseTrnsRow
+  // leaves `reference` undefined and the date+reference index can never fire.
+  // A $12,000 deposit whose income line is moved to another account changes
+  // BOTH duplicate identities (resolved accountIds and file account names),
+  // so it posts as a brand-new entry: Checking then shows $24,000 of deposits
+  // for one real $12,000 deposit, with result.warnings empty.
+  const SALES_ID = 'a0000000-0000-4000-8000-000000000021';
+  const CONSULTING_ID = 'a0000000-0000-4000-8000-000000000022';
+  const PRIOR_ID = 'e1111111-0000-4000-8000-000000000003';
+  const chartRows: Row[] = [
+    { id: CHECKING_ID, name: 'Checking', isActive: true, companyId: ctx.companyId, currency: 'USD' },
+    { id: SALES_ID, name: 'Sales', isActive: true, companyId: ctx.companyId, currency: 'USD' },
+    {
+      id: CONSULTING_ID,
+      name: 'Consulting Income',
+      isActive: true,
+      companyId: ctx.companyId,
+      currency: 'USD',
+    },
+  ];
+  const priorDeposit = {
+    journalEntries: [
+      { id: PRIOR_ID, entryDate: '2026-03-15', memo: null, reference: null },
+    ] as Row[],
+    journalLines: [
+      { entryId: PRIOR_ID, accountId: CHECKING_ID, debit: '12000.0000', credit: '0' },
+      { entryId: PRIOR_ID, accountId: SALES_ID, debit: '0', credit: '12000.0000' },
+    ] as Row[],
+  };
+  const deposit = (incomeAccount: string, date = '2026-03-15') => ({
+    rowNumber: 7,
+    qbType: 'DEPOSIT',
+    sourceType: 'bank_transaction' as const,
+    posts: true,
+    date,
+    lines: [
+      { account: 'Checking', amount: '12000.0000' },
+      { account: incomeAccount, amount: '-12000.0000' },
+    ],
+  });
+
+  it('warns when a reference-less block re-posts against an identical bank-side line', async () => {
+    const { tx } = makeStubTx({ accounts: chartRows, ...priorDeposit });
+    const input = CommitIifTransactionsSchema.parse({
+      transactions: [deposit('Consulting Income')],
+    });
+    const result = await commitIifTransactions(tx, ctx, input);
+    expect(result.posted).toBe(1);
+    expect(result.duplicates).toBe(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toMatch(/DEPOSIT on 2026-03-15/);
+    expect(result.warnings[0]).toMatch(/carries no reference number/);
+    expect(result.warnings[0]).toMatch(/review and reverse/);
+  });
+
+  it('stays silent on a byte-identical re-import and on a different date', async () => {
+    const identical = makeStubTx({ accounts: chartRows, ...priorDeposit });
+    const dupResult = await commitIifTransactions(
+      identical.tx,
+      ctx,
+      CommitIifTransactionsSchema.parse({ transactions: [deposit('Sales')] }),
+    );
+    expect(dupResult.duplicates).toBe(1);
+    expect(dupResult.warnings).toEqual([]);
+
+    // A genuinely new deposit on another day shares nothing with the prior
+    // entry's key, so the bank-side index must not fire.
+    const otherDay = makeStubTx({ accounts: chartRows, ...priorDeposit });
+    const newResult = await commitIifTransactions(
+      otherDay.tx,
+      ctx,
+      CommitIifTransactionsSchema.parse({
+        transactions: [deposit('Consulting Income', '2026-03-16')],
+      }),
+    );
+    expect(newResult.posted).toBe(1);
+    expect(newResult.warnings).toEqual([]);
   });
 });
 

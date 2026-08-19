@@ -54,3 +54,32 @@ export function mapsToLabel(
   if (excludedOfType > 0) return labels.excluded;
   return labels.skipped;
 }
+
+/** How many warnings the preview renders before collapsing the rest. */
+export const WARNING_DISPLAY_LIMIT = 100;
+
+/**
+ * Choose which parser warnings the preview renders, and in what order.
+ *
+ * Per-row warnings ("row 42: ...") are unbounded -- a real QBD lists export
+ * with multi-address EMAIL cells or non-posting accounts easily produces
+ * hundreds -- while the FILE-level disclosures are appended last, by the
+ * parser (unrecognized row types, opening balances not imported, HIDDEN
+ * accounts) and by the preview route (transactions referencing inactive
+ * accounts). Rendering the raw first N therefore dropped precisely the notes
+ * the user must act on before committing, and the boxes that would have
+ * compensated (errors, excluded transactions) only appear after Confirm.
+ *
+ * File-level notes are bounded and go first; the remaining budget goes to
+ * row detail. `hidden` is what the "and N more" line reports.
+ */
+export function orderWarningsForDisplay(
+  warnings: readonly string[],
+  limit: number = WARNING_DISPLAY_LIMIT,
+): { shown: string[]; hidden: number } {
+  const isRowWarning = (w: string) => /^row \d+:/.test(w);
+  const fileLevel = warnings.filter((w) => !isRowWarning(w));
+  const rows = warnings.filter(isRowWarning);
+  const shown = [...fileLevel, ...rows.slice(0, Math.max(0, limit - fileLevel.length))];
+  return { shown, hidden: warnings.length - shown.length };
+}

@@ -26,10 +26,13 @@ import { PostingError, postEntry } from '../ledger/posting.service.js';
  *   !VEND   ...columns...    -- vendors
  *
  * Transaction sections (!TRNS/!SPL/!ENDTRNS) are parsed into posting blocks
- * and committed as journal entries by commitIifTransactions; money-movement
- * blocks that name a known vendor/customer also land in the payments
- * subledger so 1099 totals, payroll registers, and statements see imported
- * history. Sub-account colon paths keep the full path as the account NAME
+ * and committed as journal entries by commitIifTransactions; money-OUT blocks
+ * that name a known vendor also land in the payments subledger so 1099
+ * totals and payroll registers see imported history. The A/R side gets no
+ * subledger rows at all (no invoices, and therefore no customer payments
+ * either -- see derivePaymentLink), and the commit result says so.
+ *
+ * Sub-account colon paths keep the full path as the account NAME
  * (transactions resolve by full path); commitIifImport additionally links
  * parent_id so report rollups survive the migration. Customer:job paths
  * still import flat -- the customers table has no hierarchy column yet; the
@@ -397,14 +400,19 @@ export function normaliseAmount(raw: string): string | null {
  * literal quote characters, rejects quoted amounts like "1,234.56", and lets
  * an embedded tab shift every later column. Only fields that START with a
  * quote are treated as quoted; everything else is taken verbatim.
+ *
+ * `problems` collects per-line parse complaints (currently only a never-closed
+ * quote) so the caller can surface them as row warnings.
  */
-export function splitIifLine(raw: string): string[] {
+export function splitIifLine(raw: string, problems?: string[]): string[] {
   const cells: string[] = [];
   let i = 0;
   for (;;) {
     if (raw[i] === '"') {
       // Quoted field: consume to the closing quote, honouring "" escapes.
+      const openedAt = i;
       let value = '';
+      let closed = false;
       i++;
       while (i < raw.length) {
         if (raw[i] === '"') {
@@ -414,10 +422,31 @@ export function splitIifLine(raw: string): string[] {
             continue;
           }
           i++;
+          closed = true;
           break;
         }
         value += raw[i];
         i++;
+      }
+      if (!closed) {
+        // The quote is never closed on this line -- a bookkeeper's stray `"`
+        // in a free-text NOTE/DESC/MEMO, or an Excel/Notepad round-trip.
+        // Consuming to end-of-line made the rest of the row ONE cell, so
+        // every later column silently read as empty: a VEND row lost its
+        // 1099 flag, tax ID and terms, an ACCNT row lost HIDDEN and ACCNUM,
+        // and the row still "parsed" with no warning anywhere. The tabs in
+        // the remainder are real column separators, so re-read the cell as
+        // unquoted (verbatim, stray quote and all) and every later field
+        // survives.
+        problems?.push(
+          'unterminated quote (") -- the rest of the row was read as plain tab-separated text',
+        );
+        i = openedAt;
+        const tab = raw.indexOf('\t', i);
+        cells.push(raw.slice(i, tab === -1 ? raw.length : tab));
+        if (tab === -1) return cells;
+        i = tab + 1;
+        continue;
       }
       // Keep any (malformed) trailing chars before the tab rather than lose data.
       const tab = raw.indexOf('\t', i);
@@ -448,6 +477,33 @@ function truncateMemo(raw: string, rowNo: number, warnings: string[]): string | 
   if (raw.length <= MAX_MEMO_LENGTH) return raw;
   warnings.push(`row ${rowNo}: memo longer than ${MAX_MEMO_LENGTH} chars; truncated`);
   return raw.slice(0, MAX_MEMO_LENGTH);
+}
+
+/**
+ * CommitCustomer/CommitVendor cap phone and taxId at 40 chars. QBD's own UI
+ * stays well under that, but hand-edited and conversion-tool files carry
+ * notes in those cells ("(512) 555-1234 ext. 4471 / cell ..."), and an
+ * over-cap value that sailed through preview would 400 the ENTIRE commit
+ * with a ZodError -- taking every other row in the chunk and the whole
+ * transactions leg with it. Truncate loudly instead (mirrors the ACCNUM cap
+ * and sanitiseEmail); a silently shortened 1099 TIN would be worse than a
+ * noisy one.
+ */
+const MAX_CONTACT_FIELD_LENGTH = 40;
+
+function truncateContactField(
+  raw: string,
+  rowNo: number,
+  label: string,
+  field: string,
+  warnings: string[],
+): string | undefined {
+  if (!raw) return undefined;
+  if (raw.length <= MAX_CONTACT_FIELD_LENGTH) return raw;
+  warnings.push(
+    `row ${rowNo}: ${label} ${field} "${raw}" is longer than ${MAX_CONTACT_FIELD_LENGTH} chars; truncated`,
+  );
+  return raw.slice(0, MAX_CONTACT_FIELD_LENGTH);
 }
 
 const EmailCheck = z.string().email().max(200);
@@ -515,6 +571,15 @@ export function parseIif(
   const warnings: string[] = [];
   const excludedTransactions: IifPreview['excludedTransactions'] = [];
   const seenSections = new Set<string>();
+  // Rows whose first cell isn't a section tag we can even name (lower-cased
+  // tags from a conversion tool, a spreadsheet's "Total assets" summary row).
+  // Aggregated per distinct tag so a whole-file corruption reports one line
+  // instead of one per row -- see the disclosure after the loop.
+  const unknownTagRows = new Map<string, { count: number; firstRow: number }>();
+  // How many ACCNT rows carry a non-zero QBD opening balance (OBAMOUNT).
+  // Never imported -- see parseAccountRow -- but counted so a lists-only file
+  // can say where the balances actually are.
+  const obStats = { withOpeningBalance: 0 };
 
   // Maps section tag -> column index map.
   const headers: Record<string, Record<string, number>> = {};
@@ -611,8 +676,13 @@ export function parseIif(
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i] ?? '';
     if (!raw.trim()) continue;
-    const cells = splitIifLine(raw);
-    const tag = cells[0] ?? '';
+    const lineProblems: string[] = [];
+    const cells = splitIifLine(raw, lineProblems);
+    for (const p of lineProblems) warnings.push(`row ${i + 1}: ${p}`);
+    // Trimmed to match the header-column path below: a single leading or
+    // trailing space (hand-edited files, spreadsheet round-trips) otherwise
+    // made the whole row unrecognizable and it was dropped without a trace.
+    const tag = (cells[0] ?? '').trim();
 
     if (tag.startsWith('!')) {
       // Header row. Build column map for this section.
@@ -626,7 +696,19 @@ export function parseIif(
       continue;
     }
 
-    if (!tag) continue;
+    // A data row whose first cell is empty still carries real content in the
+    // later cells -- a line of nothing but tabs/spaces was already consumed by
+    // the !raw.trim() guard above -- so the usual cause is a spreadsheet
+    // round-trip that shifted one row a column left. Dropping it without a
+    // trace was the one hole in this module's "nothing disappears silently"
+    // contract, so route it through the same aggregation the unknown-tag rows
+    // use rather than one warning per row.
+    if (!tag) {
+      const blank = unknownTagRows.get('');
+      if (blank) blank.count++;
+      else unknownTagRows.set('', { count: 1, firstRow: i + 1 });
+      continue;
+    }
 
     if (tag === 'ACCNT') {
       const cols = headers.ACCNT;
@@ -634,7 +716,7 @@ export function parseIif(
         warnings.push(`row ${i + 1}: ACCNT row before ACCNT header; skipping`);
         continue;
       }
-      const account = parseAccountRow(cells, cols, i + 1, warnings);
+      const account = parseAccountRow(cells, cols, i + 1, warnings, obStats);
       if (account) accounts.push(account);
       continue;
     }
@@ -665,6 +747,20 @@ export function parseIif(
       const cols = headers.TRNS;
       if (!cols) {
         warnings.push(`row ${i + 1}: TRNS row before TRNS header; skipping`);
+        // Track the block structurally, exactly like the TRNS-parse-failure
+        // branch below. Without the header the TRNSTYPE column position is
+        // unknown, so it counts as UNKNOWN -- the same shape parseTrnsRow
+        // uses for a TRNS row carrying no TRNSTYPE. A free-text warning alone
+        // left the preview's per-type table and the completion screen reading
+        // "0 skipped / 0 excluded" while the bank register came up short.
+        transactionCounts.UNKNOWN = (transactionCounts.UNKNOWN ?? 0) + 1;
+        excludedTransactions.push({
+          rowNumber: i + 1,
+          qbType: 'UNKNOWN',
+          reason: 'TRNS row appeared before its !TRNS header row, so the block could not be read',
+        });
+        // Its SPL rows belong to a block that is already accounted for.
+        inExcludedBlock = true;
         continue;
       }
       // Implicit ENDTRNS for any pending transaction without one.
@@ -738,7 +834,17 @@ export function parseIif(
     // what got dropped (e.g., INVITEM, CLASS, EMP).
     if (/^[A-Z][A-Z0-9_]*$/.test(tag)) {
       seenSections.add(tag);
+      continue;
     }
+    // Everything else is a row being dropped. The regex filter above stays --
+    // listing junk like "Total assets" as a skipped SECTION would be its own
+    // lie -- but the drop still has to be disclosed: a file whose tags were
+    // lower-cased by a conversion tool used to import as zero records with an
+    // empty warnings list and an empty "skipped" list, which is exactly the
+    // silent loss this module promises never to do.
+    const known = unknownTagRows.get(tag);
+    if (known) known.count++;
+    else unknownTagRows.set(tag, { count: 1, firstRow: i + 1 });
   }
 
   // Flush a trailing transaction if the file ended without ENDTRNS.
@@ -750,6 +856,40 @@ export function parseIif(
   for (const tag of seenSections) {
     const friendly = SECTION_FRIENDLY_NAMES[tag] ?? tag;
     if (!unrecognizedSections.includes(friendly)) unrecognizedSections.push(friendly);
+  }
+
+  for (const [tag, info] of unknownTagRows) {
+    if (tag === '') {
+      warnings.push(
+        `${info.count} row(s) have an empty first column (first at row ${info.firstRow}); ` +
+          `those rows were skipped -- every IIF row starts with its section tag ` +
+          `(ACCNT, CUST, TRNS), so this usually means the row was shifted a column ` +
+          `when the file was edited or converted after it was exported`,
+      );
+      continue;
+    }
+    const label = tag.length > 40 ? `${tag.slice(0, 40)}...` : tag;
+    warnings.push(
+      `unrecognized row type "${label}" on ${info.count} row(s) (first at row ${info.firstRow}); ` +
+        `those rows were skipped -- QuickBooks writes section tags in capitals (ACCNT, CUST, TRNS), ` +
+        `so this usually means the file was edited or converted after it was exported`,
+    );
+  }
+
+  // QBD's "Lists to IIF" export carries each account's opening balance in
+  // OBAMOUNT, and we deliberately never import it (QuickBooks records those
+  // balances as real transactions against Opening Balance Equity, which come
+  // over with the TRANSACTIONS export -- importing both would double-book
+  // every one). Say so, or a customer who runs only the documented first step
+  // gets a complete chart of accounts, zero warnings, and no hint that the
+  // balances are still sitting in the other file.
+  if (accounts.length > 0 && transactions.length === 0 && obStats.withOpeningBalance > 0) {
+    warnings.push(
+      `${obStats.withOpeningBalance} account(s) in this file carry a QuickBooks opening balance ` +
+        `(OBAMOUNT), and this file has no transactions. Opening balances are NOT imported from a ` +
+        `lists file -- QuickBooks records them as transactions -- so the accounts will start at ` +
+        `zero until you also import your transactions IIF export.`,
+    );
   }
 
   // IIF DATE fields follow the exporting machine's Windows short-date locale.
@@ -853,6 +993,34 @@ export function parseIif(
 }
 
 /**
+ * Expense-side qualifiers that must beat a balance-sheet or income keyword
+ * found elsewhere in the same account name. QBD's stock chart is full of
+ * names that pair a noun this heuristic keys on with an expense qualifier --
+ * "Bank Service Charges", "Credit Card Processing Fees", "Auto and Truck
+ * Expenses", "Payroll Service Fees", "Cost of Sales" -- and every one of them
+ * belongs on the P&L. The payroll rule below has always carried a guard of
+ * this shape; the credit-card, fixed-asset and income rules did not, which is
+ * how stock QBD EXPENSE accounts ended up as balance-sheet accounts (net
+ * income overstated by the whole balance) or as revenue (revenue and expenses
+ * both understated, so neither ties to the QuickBooks P&L).
+ */
+// "discount" is deliberately absent: QBD's "Sales Discounts" is a
+// contra-REVENUE account that belongs in the income section, and the fee
+// accounts it would have caught ("Amex Discount Fees") are already fee-worded.
+const EXPENSE_WORDED = /\b(expenses?|cost of|charges?|fees?|processing|penalt(?:y|ies))\b/;
+
+/**
+ * Extra expense wording specific to the fixed-asset rule: names that mention
+ * the asset but describe the cost of running it ("Equipment Rental", "Vehicle
+ * Repairs & Maintenance", "Truck Fuel", "Small Tools and Equipment"). These
+ * are operating expenses -- capitalising them overstates total assets AND net
+ * income by the full balance, and puts accounts holding pure expense into the
+ * fixed-asset section of the balance sheet with no depreciation schedule.
+ */
+const ASSET_USE_EXPENSE_WORDED =
+  /\b(rentals?|rent|repairs?|maintenance|insurance|fuel|gas|lease[sd]?|supplies|mileage|registration|parts|tools?)\b/;
+
+/**
  * Heuristic: guess (type, subtype) from an account name. Used when an IIF
  * transaction references an account that isn't in the company's chart of
  * accounts AND wasn't included in the file's own !ACCNT section.
@@ -870,8 +1038,42 @@ export function inferAccountType(name: string): {
   if (/\b(checking|savings|money market|petty cash|cash on hand|operating account)\b/.test(n)) {
     return { type: 'asset', subtype: 'bank' };
   }
-  // Credit card / line-of-credit.
-  if (/\b(credit card|ccard|visa|amex|mastercard|discover)\b/.test(n)) {
+  // A dedicated payroll bank account is standard for the payroll clients this
+  // platform serves, and its name often carries none of the tokens above
+  // ("Payroll Account", "Payroll Bank Account", "Payroll Cash"). Those fell
+  // through to the payroll rule below and were created as Other Current
+  // Liabilities: cash understated by the payroll balance, the liability
+  // section negative by the same amount, and the account absent from the
+  // bank-reconciliation picker (which lists bank/credit-card subtypes only),
+  // so it could never be reconciled. Expense wording still wins ("Payroll
+  // Service Fees"), as does explicit liability wording ("Payroll Liabilities",
+  // "Payroll Taxes Payable") and the wage/tax expense accounts.
+  if (
+    /\bpayroll\b/.test(n) &&
+    /\b(bank|account|acct|cash)\b/.test(n) &&
+    !EXPENSE_WORDED.test(n) &&
+    !/\b(liabilit(?:y|ies)|payable|withholding|wages?|salar(?:y|ies)|tax(?:es)?)\b/.test(n)
+  ) {
+    return { type: 'asset', subtype: 'bank' };
+  }
+  // Credit card / line-of-credit. Merchant-processing EXPENSE accounts carry
+  // the same card tokens ("Credit Card Processing Fees", "Visa Merchant
+  // Fees", "Amex Discount Fees") but belong on the P&L: created as a card
+  // LIABILITY they carry a debit (contra) balance on the balance sheet and
+  // mis-bucket into operating cash flow.
+  // "Charge card" / "charge account" name the same LIABILITY -- they are not
+  // fee wording -- but the bare `charges?` token in EXPENSE_WORDED vetoed the
+  // rule and "AMEX Charge Card" fell all the way to the expense default: the
+  // card balance lands on the P&L instead of the balance sheet and the
+  // account never appears in the bank-reconciliation picker (bank/credit_card
+  // subtypes only), so the card can never be reconciled. The phrase is
+  // stripped before the guard rather than dropped from it, so genuine
+  // merchant-fee names ("Amex Discount Fees", "Charge Card Fees") still lose.
+  const cardName = n.replace(/\bcharge\s+(card|account)\b/g, ' ');
+  if (
+    /\b(credit card|charge card|charge account|ccard|visa|amex|mastercard|discover)\b/.test(n) &&
+    !EXPENSE_WORDED.test(cardName)
+  ) {
     return { type: 'liability', subtype: 'credit_card' };
   }
   // A/R + A/P (specific phrases first to avoid false positives).
@@ -898,15 +1100,28 @@ export function inferAccountType(name: string): {
   // "sales tax" / "payroll" suggest a liability only when the name isn't
   // expense-worded: QBD's default payroll EXPENSE accounts ("Payroll
   // Expenses", "Payroll Tax Expense", "Payroll Expenses:Wages") are on every
-  // payroll-enabled company file and must stay on the P&L.
-  if (/\b(sales tax|payroll)\b/.test(n) && !/\b(expenses?|wages?|salar(?:y|ies))\b/.test(n)) {
+  // payroll-enabled company file and must stay on the P&L. Fee/charge/penalty
+  // wording counts too ("Payroll Service Fees", "Sales Tax Penalties" are
+  // costs we pay, not amounts we owe a taxing authority).
+  if (
+    /\b(sales tax|payroll)\b/.test(n) &&
+    !EXPENSE_WORDED.test(n) &&
+    !/\b(wages?|salar(?:y|ies))\b/.test(n)
+  ) {
     return { type: 'liability', subtype: 'other_current_liability' };
   }
   if (/\b(loan|mortgage|note payable)\b/.test(n)) {
     return { type: 'liability', subtype: 'long_term_liability' };
   }
-  // Fixed assets. Handle common plurals.
-  if (/\b(equipment|vehicles?|trucks?|machinery|buildings?|furniture|fixtures?|land|computers?)\b/.test(n)) {
+  // Fixed assets. Handle common plurals. Names that only MENTION the asset
+  // while describing what it costs to run ("Auto and Truck Expenses",
+  // "Equipment Rental", "Vehicle Insurance", "Computer and Internet
+  // Expenses" -- all stock QBD accounts) stay on the P&L.
+  if (
+    /\b(equipment|vehicles?|trucks?|machinery|buildings?|furniture|fixtures?|land|computers?)\b/.test(n) &&
+    !EXPENSE_WORDED.test(n) &&
+    !ASSET_USE_EXPENSE_WORDED.test(n)
+  ) {
     return { type: 'asset', subtype: 'fixed_asset' };
   }
   // Contra fixed-asset accounts: "Accumulated Depreciation" / "Accumulated
@@ -926,6 +1141,32 @@ export function inferAccountType(name: string): {
   if (/\b(customer|client|tenant)s?'?s?\s+deposits?\b/.test(n) || /\bdeposits?\s+held\b/.test(n)) {
     return { type: 'liability', subtype: 'other_current_liability' };
   }
+  // Deferred / unearned revenue is cash collected before it is earned -- QBD
+  // types these OCLIAB. Decided before the income rule below, whose bare
+  // "revenue"/"income" token otherwise files a prepaid-maintenance LIABILITY
+  // in the revenue section of the P&L: net income and taxable revenue
+  // overstated by the whole balance, the liability missing from the balance
+  // sheet, and no way to correct the type after commit. Only names that also
+  // carry revenue/income/rent/subscription wording qualify, so genuine
+  // deferred ASSETS ("Deferred Tax Asset", "Deferred Charges") are untouched,
+  // and expense wording still wins ("Deferred Income Tax Expense").
+  if (
+    (/\b(deferred|unearned)\b/.test(n) &&
+      /\b(revenue|income|rent|subscriptions?|dues|fees?)\b/.test(n) &&
+      !EXPENSE_WORDED.test(n)) ||
+    /\b(customer|client)s?'?s?\s+prepayments?\b/.test(n) ||
+    /\bprepayments?\s+(?:from|by)\s+(?:customer|client)s?\b/.test(n)
+  ) {
+    return { type: 'liability', subtype: 'other_current_liability' };
+  }
+  // Share capital. QBD types these EQUITY and they sit on the chart of every
+  // incorporated client, but the inventory rule below claims any name with a
+  // bare "stock" token (meant for "Stock on Hand") and filed Common Stock as
+  // a current ASSET -- total assets overstated and equity understated by the
+  // whole share issuance, so the migrated balance sheet cannot tie to QBD.
+  if (/\b(common|preferred|treasury|capital|share|membership)\s+stock\b/.test(n)) {
+    return { type: 'equity', subtype: 'equity' };
+  }
   // Inventory / WIP / prepaid -> other current asset.
   if (/\b(inventory|stock|wip|work in progress|prepaid|deposits?|undeposited)\b/.test(n)) {
     return { type: 'asset', subtype: 'other_current_asset' };
@@ -941,11 +1182,50 @@ export function inferAccountType(name: string): {
   if (/\b(other income|interest income|gain on)\b/.test(n)) {
     return { type: 'revenue', subtype: 'other_income' };
   }
-  if (/\b(income|revenue|sales|service|fees? collected|consulting)\b/.test(n)) {
+  // "Fees Collected" is unambiguous income even though it is fee-worded, so
+  // it is decided before the guarded rule below.
+  if (/\bfees? collected\b/.test(n)) {
     return { type: 'revenue', subtype: 'income' };
   }
-  // COGS.
-  if (/\b(cost of goods|cogs|materials|labor|freight in|direct cost)\b/.test(n)) {
+  // Fee- and charge-worded REVENUE accounts: "Late Fee Income" (standard on
+  // every property-management chart), "Finance Charge Income" (QBD's own
+  // stock finance-charge account is type INC), "Delivery Fee Revenue",
+  // "Membership Fees Income". The guard on the income rule below exists to
+  // keep "Consulting Fees" and "Bank Service Charges" on the cost side, but
+  // it also vetoed names that say income/revenue outright -- those were
+  // created as ordinary EXPENSE accounts, so a year of late fees posts as a
+  // negative expense: revenue and total expenses both understated by the same
+  // amount, and neither line ties to the QuickBooks P&L. Only the unambiguous
+  // income/revenue tokens rescue a name (not bare "sales"/"consulting", which
+  // QBD cost accounts use too), only against fee/charge wording -- anything
+  // that also says expense/cost/processing/penalty stays on the cost side
+  // ("Deferred Income Tax Expense", "Revenue Processing Fees") -- and never
+  // for deferred/unearned balances, which are liabilities.
+  if (
+    /\b(income|revenue)\b/.test(n) &&
+    /\b(charges?|fees?)\b/.test(n) &&
+    !/\b(expenses?|cost of|processing|penalt(?:y|ies)|deferred|unearned)\b/.test(n)
+  ) {
+    return { type: 'revenue', subtype: 'income' };
+  }
+  // The remaining income keywords are words QBD's stock EXPENSE accounts use
+  // too ("Cost of Sales", "Sales Tax Expense", "Consulting Fees"), so they
+  // only claim the name when nothing in it is expense-worded. Bare "service"
+  // used to be an alternative here and matched "Bank Service Charges" (a
+  // stock QBD expense account on essentially every company file), "Telephone
+  // Service", "Cleaning Service", ... -- service REVENUE accounts are
+  // already caught by the income/revenue/sales/fees-collected keywords, so
+  // the bare token only ever produced false positives.
+  if (/\b(income|revenue|sales|consulting)\b/.test(n) && !EXPENSE_WORDED.test(n)) {
+    return { type: 'revenue', subtype: 'income' };
+  }
+  // COGS. "Cost of Sales" / "Cost of Revenue" are as common in QBD files as
+  // "Cost of Goods Sold" and must not fall through to ordinary expense --
+  // that would move an entire cost column out of COGS and destroy gross
+  // margin.
+  if (
+    /\b(cost of (?:goods|sales|revenue|services?)|cogs|materials|labor|freight in|direct cost)\b/.test(n)
+  ) {
     return { type: 'expense', subtype: 'cost_of_goods_sold' };
   }
   // Other expense (interest paid, depreciation, taxes, etc.).
@@ -1209,6 +1489,7 @@ function parseAccountRow(
   cols: Record<string, number>,
   rowNo: number,
   warnings: string[],
+  obStats: { withOpeningBalance: number },
 ): ParsedAccount | null {
   const cell = (col: string) => (cells[cols[col] ?? -1] ?? '').trim();
   const name = cell('NAME');
@@ -1255,6 +1536,30 @@ function parseAccountRow(
   }
   const desc = cell('DESC');
   const final = mapped ?? { type: 'expense' as const, subtype: 'expense' as const };
+  // QBD emits plain EQUITY for Retained Earnings -- IIF has no distinct code
+  // for it -- but the subtype is load-bearing downstream: the statement of
+  // cash flows skips retained_earnings (already counted via net income) while
+  // plain `equity` lands in financing. The transactions-only path infers
+  // retained_earnings from the name, so without this the SAME account gets a
+  // different subtype depending on which file the customer imported first,
+  // and PATCH /ledger/accounts refuses type/subtype edits after the fact.
+  // Only the subtype is narrowed; the type stays equity either way.
+  const subtype =
+    final.type === 'equity' && inferAccountType(name).subtype === 'retained_earnings'
+      ? ('retained_earnings' as const)
+      : final.subtype;
+  // OBAMOUNT (the account's QBD opening balance) is read but deliberately NOT
+  // imported: QuickBooks materialises opening balances as real transactions
+  // against Opening Balance Equity, and those arrive with the transactions
+  // export -- posting the column here as well would double-book every one.
+  // Counting the non-zero ones lets parseIif disclose that a lists-only
+  // import leaves the balances behind, instead of leaving the only
+  // money-bearing column in the file completely unmentioned.
+  const rawOb = cell('OBAMOUNT');
+  if (rawOb) {
+    const ob = normaliseAmount(rawOb);
+    if (ob !== null && !/^-?0+\.0+$/.test(ob)) obStats.withOpeningBalance++;
+  }
   // Real QBD lists exports carry the customer's own numbering in ACCNUM.
   // Preserve it -- CPAs cross-reference old QBD reports and workpapers by
   // these numbers. Accounts without one get a synthetic code in the
@@ -1264,7 +1569,7 @@ function parseAccountRow(
     name,
     qbType,
     type: final.type,
-    subtype: final.subtype,
+    subtype,
     description: desc ? desc.slice(0, 500) : undefined,
     suggestedCode: accnum, // synthetic code assigned later when empty
     // QBD marks records made inactive with HIDDEN=Y. A 15-year company file
@@ -1346,7 +1651,7 @@ function parseCustomerRow(
     displayName: name,
     companyName: company && company !== name ? company.slice(0, 255) : undefined,
     email,
-    phone: phone || undefined,
+    phone: truncateContactField(phone, rowNo, `customer "${name}"`, 'phone', warnings),
     notes: note ? note.slice(0, 2000) : undefined,
     defaultTermsDays: termsDays,
     billingAddress,
@@ -1399,11 +1704,11 @@ function parseVendorRow(
     displayName: name,
     companyName: company && company !== name ? company.slice(0, 255) : undefined,
     email,
-    phone: phone || undefined,
+    phone: truncateContactField(phone, rowNo, `vendor "${name}"`, 'phone', warnings),
     notes: note ? note.slice(0, 2000) : undefined,
     defaultTermsDays: parseTermsToDays(terms, rowNo, `vendor "${name}"`, warnings),
     is1099Vendor: eligible,
-    taxId: taxId || undefined,
+    taxId: truncateContactField(taxId, rowNo, `vendor "${name}"`, 'tax ID', warnings),
     mailingAddress,
     isActive: cell('HIDDEN').toUpperCase() !== 'Y',
   };
@@ -1566,6 +1871,67 @@ function nextFreeCode(requested: string, taken: ReadonlySet<string>): string {
 }
 
 /**
+ * What a skipped vendor row carries that the stored vendor does not.
+ *
+ * Create-on-conflict stays the policy (auto-updating would clobber edits made
+ * inside KPBooks), but silently dropping data the CPA just corrected in
+ * QuickBooks and re-exported is not acceptable on the documented
+ * fix-and-re-import path: `is_1099_vendor` is what the January 1099-NEC run
+ * filters on, so a false->true correction dropped here removes the vendor
+ * from the run entirely, at any dollar amount, with nothing anywhere saying
+ * so. Tax IDs are described, never echoed -- they are SSNs/EINs.
+ */
+function vendorFieldDisagreements(
+  file: CommitIifInput['vendors'][number],
+  stored: { is1099Vendor: boolean | null; taxId: string | null; mailingAddress: unknown },
+): string[] {
+  const diffs: string[] = [];
+  if (file.is1099Vendor && !stored.is1099Vendor) {
+    diffs.push('this file flags it as a 1099 vendor but the existing vendor is not flagged');
+  }
+  if (file.taxId) {
+    if (!stored.taxId) diffs.push('this file has a tax ID but the existing vendor has none');
+    else if (file.taxId !== stored.taxId) diffs.push('this file has a different tax ID');
+  }
+  if (file.mailingAddress && !stored.mailingAddress) {
+    diffs.push('this file has a mailing address but the existing vendor has none');
+  }
+  return diffs;
+}
+
+/** Customer-side twin of vendorFieldDisagreements (statements and invoices
+ * read the stored customer, so the same silent-drop hazard applies). */
+function customerFieldDisagreements(
+  file: CommitIifInput['customers'][number],
+  stored: {
+    email: string | null;
+    phone: string | null;
+    defaultTermsDays: number | null;
+    billingAddress: unknown;
+  },
+): string[] {
+  const diffs: string[] = [];
+  if (file.email) {
+    if (!stored.email) diffs.push('this file has an email but the existing customer has none');
+    else if (file.email.toLowerCase() !== stored.email.toLowerCase()) {
+      diffs.push(`this file has a different email (${file.email})`);
+    }
+  }
+  if (file.phone && !stored.phone) {
+    diffs.push('this file has a phone number but the existing customer has none');
+  }
+  if (file.defaultTermsDays != null && stored.defaultTermsDays == null) {
+    diffs.push(
+      `this file has payment terms (net ${file.defaultTermsDays}) but the existing customer has none`,
+    );
+  }
+  if (file.billingAddress && !stored.billingAddress) {
+    diffs.push('this file has a billing address but the existing customer has none');
+  }
+  return diffs;
+}
+
+/**
  * Skip-on-conflict policy: if a NAME already exists in the company, the row
  * is skipped -- names are the identity, so a second run with the same file
  * is a no-op. An account whose name is new but whose code is taken (every
@@ -1612,6 +1978,7 @@ export async function commitIifImport(
         name: accountsTable.name,
         type: accountsTable.type,
         subtype: accountsTable.subtype,
+        parentId: accountsTable.parentId,
       })
       .from(accountsTable)
       .where(eq(accountsTable.companyId, ctx.companyId));
@@ -1644,8 +2011,10 @@ export async function commitIifImport(
         ) {
           result.warnings.push(
             `account "${a.name}": this file says ${a.type}/${a.subtype} but the existing ` +
-              `account is ${stored.type}/${stored.subtype} -- the existing type was kept; ` +
-              `edit the account in the chart of accounts if the file is right`,
+              `account is ${stored.type}/${stored.subtype} -- the existing type was kept. ` +
+              `An account's type cannot be changed once it exists (posted journal lines depend ` +
+              `on it), so if the file is right, create a new ${a.type}/${a.subtype} account, ` +
+              `move the balance to it with a journal entry, and deactivate this one`,
           );
         }
         continue;
@@ -1688,8 +2057,19 @@ export async function commitIifImport(
     // rollup by parent account is lost after migration. Runs after the
     // insert loop so a parent defined later in the same file still resolves.
     for (const a of input.accounts) {
-      const childId = createdIdByName.get(a.name.toLowerCase());
-      if (!childId) continue; // skipped rows were never created
+      // A row skipped as "name already exists" still needs its parent link:
+      // on a transactions-first migration the sub-account was auto-created
+      // from missingAccounts with parent_id NULL (its parent had no direct
+      // postings, so nothing referenced it), and the lists file that finally
+      // names the parent skips the child -- leaving the chart permanently
+      // flat with only "already exists" noise as a trace. Fall back to the
+      // stored row, but only while its parent_id is still NULL, so a link an
+      // earlier import (or the user) already established is never re-pointed.
+      const stored = existingRowByName.get(a.name.toLowerCase());
+      const childId =
+        createdIdByName.get(a.name.toLowerCase()) ??
+        (stored && stored.parentId === null ? stored.id : undefined);
+      if (!childId) continue;
       const colon = a.name.lastIndexOf(':');
       if (colon <= 0) continue;
       const parentName = a.name.slice(0, colon).trim();
@@ -1707,14 +2087,23 @@ export async function commitIifImport(
   }
 
   if (input.customers.length > 0) {
-    const existing = new Set(
-      (
-        await tx
-          .select({ name: customersTable.displayName })
-          .from(customersTable)
-          .where(eq(customersTable.companyId, ctx.companyId))
-      ).map((r) => r.name.toLowerCase()),
-    );
+    // Select the fields the file also carries, not just the name: a skipped
+    // row still has to disclose what THIS file says that the stored customer
+    // doesn't (same reasoning as the account disagreement warning above --
+    // on a lists re-import every row conflicts, so "already exists" alone is
+    // uniform noise that hides real corrections).
+    const existingRows = await tx
+      .select({
+        name: customersTable.displayName,
+        email: customersTable.email,
+        phone: customersTable.phone,
+        defaultTermsDays: customersTable.defaultTermsDays,
+        billingAddress: customersTable.billingAddress,
+      })
+      .from(customersTable)
+      .where(eq(customersTable.companyId, ctx.companyId));
+    const existing = new Set(existingRows.map((r) => r.name.toLowerCase()));
+    const existingRowByName = new Map(existingRows.map((r) => [r.name.toLowerCase(), r]));
     for (const c of input.customers) {
       if (existing.has(c.displayName.toLowerCase())) {
         result.customersSkipped++;
@@ -1723,6 +2112,14 @@ export async function commitIifImport(
           identifier: c.displayName,
           reason: 'name already exists',
         });
+        const stored = existingRowByName.get(c.displayName.toLowerCase());
+        const diffs = stored ? customerFieldDisagreements(c, stored) : [];
+        if (diffs.length > 0) {
+          result.warnings.push(
+            `customer "${c.displayName}": already exists, so the row was skipped -- ` +
+              `${diffs.join('; ')}. The existing customer was kept; edit it if the file is right.`,
+          );
+        }
         continue;
       }
       await tx.insert(customersTable).values({
@@ -1755,14 +2152,21 @@ export async function commitIifImport(
   }
 
   if (input.vendors.length > 0) {
-    const existing = new Set(
-      (
-        await tx
-          .select({ name: vendorsTable.displayName })
-          .from(vendorsTable)
-          .where(eq(vendorsTable.companyId, ctx.companyId))
-      ).map((r) => r.name.toLowerCase()),
-    );
+    // Same widened pre-scan as the customers branch: the 1099 flag is the
+    // sharp edge here. The January 1099-NEC run filters on is_1099_vendor, so
+    // a W-9 correction re-imported from QBD that lands on an existing vendor
+    // is dropped with no trace and the vendor silently misses their 1099.
+    const existingRows = await tx
+      .select({
+        name: vendorsTable.displayName,
+        is1099Vendor: vendorsTable.is1099Vendor,
+        taxId: vendorsTable.taxId,
+        mailingAddress: vendorsTable.mailingAddress,
+      })
+      .from(vendorsTable)
+      .where(eq(vendorsTable.companyId, ctx.companyId));
+    const existing = new Set(existingRows.map((r) => r.name.toLowerCase()));
+    const existingRowByName = new Map(existingRows.map((r) => [r.name.toLowerCase(), r]));
     for (const v of input.vendors) {
       if (existing.has(v.displayName.toLowerCase())) {
         result.vendorsSkipped++;
@@ -1771,6 +2175,15 @@ export async function commitIifImport(
           identifier: v.displayName,
           reason: 'name already exists',
         });
+        const stored = existingRowByName.get(v.displayName.toLowerCase());
+        const diffs = stored ? vendorFieldDisagreements(v, stored) : [];
+        if (diffs.length > 0) {
+          result.warnings.push(
+            `vendor "${v.displayName}": already exists, so the row was skipped -- ` +
+              `${diffs.join('; ')}. The existing vendor was kept; edit it if the file is right ` +
+              `(1099 totals and forms read the stored vendor, not this file).`,
+          );
+        }
         continue;
       }
       // A 1099-flagged vendor without a tax ID still imports -- dropping the
@@ -1857,9 +2270,9 @@ export interface TransactionCommitResult {
    * post, counted separately so they don't read as failures. */
   voided: number;
   /** Posted blocks that ALSO wrote a payments-subledger row (vendor check /
-   * bill payment / customer payment whose TRNS NAME matched a vendor or
-   * customer) so 1099 totals, payroll registers, and statements see the
-   * imported history. */
+   * bill payment whose TRNS NAME matched a vendor) so 1099 totals and
+   * payroll registers see the imported history. Money IN from customers is
+   * never linked -- see derivePaymentLink. */
   paymentsLinked: number;
   /**
    * Duplicate blocks whose earlier run posted GL-only (the payee matched no
@@ -1871,20 +2284,26 @@ export interface TransactionCommitResult {
    */
   paymentsBackfilled: number;
   /**
-   * Non-fatal disclosures. Today: a posted block whose date+reference match
-   * an existing entry with different amounts/accounts -- the signature of a
-   * transaction edited in QuickBooks after an earlier import, which the
-   * content fingerprint cannot treat as a duplicate (both versions are now
-   * on the ledger and only this warning says so).
+   * Non-fatal disclosures:
+   *  - a posted block whose date+reference match an existing entry with
+   *    different amounts/accounts -- the signature of a transaction edited in
+   *    QuickBooks after an earlier import, which the content fingerprint
+   *    cannot treat as a duplicate (both versions are now on the ledger and
+   *    only this warning says so);
+   *  - the A/R / A/P subledger gap when the file carries invoices or bills
+   *    (the GL is right, the aging reports and statements stay empty);
+   *  - a duplicate block whose already-posted entry could not be given its
+   *    missing payments-subledger row (the entry itself is untouched, so this
+   *    is explicitly NOT an `errors` entry -- see the backfill catch).
    */
   warnings: string[];
   /**
-   * Money-movement blocks that posted to the GL but wrote NO payments row
-   * because the TRNS NAME matched no vendor/customer (payee typo variants,
-   * QBD "Other Names", employees on PAYCHECKs, vendors unticked at import).
-   * 1099 totals, payroll registers, and statements read the payments table,
-   * so these amounts are invisible there -- aggregated per payee so the
-   * user gets an actionable list instead of a silent shortfall.
+   * Money-OUT blocks that posted to the GL but wrote NO payments row because
+   * the TRNS NAME matched no vendor (payee typo variants, QBD "Other Names",
+   * employees on PAYCHECKs, vendors unticked at import). 1099 totals and
+   * payroll registers read the payments table, so these amounts are invisible
+   * there -- aggregated per payee so the user gets an actionable list instead
+   * of a silent shortfall.
    */
   unlinkedPayees: { name: string; count: number; total: string }[];
   errors: { rowNumber: number; qbType: string; reason: string }[];
@@ -1910,6 +2329,37 @@ function entryFingerprint(
   return createHash('sha256')
     .update(`${entryDate}\u0000${reference ?? ''}\u0000${memo ?? ''}\u0000${lineKey}`)
     .digest('hex');
+}
+
+/**
+ * The same content fingerprint with the DATE deliberately left out: reference
+ * + memo + the exact multiset of (account, signed amount) lines. Correcting a
+ * transaction's date in QuickBooks after an earlier import changes every
+ * date-bearing identity at once -- the fingerprint, the source_id stamp AND
+ * the date+reference index -- so the re-import posts a second copy with
+ * nothing in `warnings`. Matching on this key instead lets the commit
+ * recognise "same transaction, moved to another day" and disclose it. Only
+ * consulted for blocks that carry a reference, so an unnumbered recurring
+ * payment can never collide with itself.
+ */
+function datelessFingerprint(
+  reference: string | null | undefined,
+  memo: string | null | undefined,
+  lines: { accountId: string; signedAmount: string }[],
+): string {
+  return entryFingerprint('', reference, memo, lines);
+}
+
+/**
+ * Identity for the same disclosure on blocks that carry NO reference: QBD
+ * writes no DOCNUM for DEPOSIT, TRANSFER and most CCARD blocks, which are
+ * exactly the ones a bookkeeper re-categorises. Keyed on the date plus the
+ * TRNS-row (bank-side) line, which survives a re-categorisation of the other
+ * leg while staying specific enough that six unrelated deposits on one day
+ * don't warn about each other.
+ */
+function bankSideKey(entryDate: string, accountId: string, signedAmount: string): string {
+  return `${entryDate}|${accountId}|${signedAmount}`;
 }
 
 /** Canonicalise a NUMERIC string to the parser's 4dp form for fingerprinting. */
@@ -1969,6 +2419,24 @@ function chunkForInArray<T>(values: readonly T[]): T[][] {
 }
 
 /**
+ * Append every row of `rows` to `target`.
+ *
+ * Deliberately NOT `target.push(...rows)`: spread passes each element as a
+ * separate function argument and V8 throws `RangeError: Maximum call stack
+ * size exceeded` past ~125k of them. chunkForInArray bounds the number of
+ * BIND PARAMETERS per query (10k ids), not the number of ROWS a query
+ * returns -- one batch of 10k entry ids on a payroll-heavy ledger (15-30
+ * splits per paycheck) comes back with 200k journal_lines. The duplicate
+ * pre-scan runs before the per-block try/catch and outside any savepoint, so
+ * the throw escaped commitIifTransactions as an opaque 500 that reproduced on
+ * every retry of the same chunk -- exactly the fix-and-re-run path this scan
+ * exists to protect.
+ */
+export function pushAllRows<T>(target: T[], rows: readonly T[]): void {
+  for (const row of rows) target.push(row);
+}
+
+/**
  * QBD money-out TRNSTYPEs that should also write a vendor_sent payments row,
  * keyed with spaces/hyphens stripped (like TRNSTYPE_MAP_NORMALISED). 1099-NEC
  * totals, the payroll register, and workers-comp summaries read the payments
@@ -1987,9 +2455,18 @@ const VENDOR_SENT_TRNSTYPES: Record<string, 'check' | 'credit_card'> = {
   LIABCHECK: 'check',
 };
 
-/** Money-in TRNSTYPEs that should write a customer_received payments row
- * (customer statements and A/R views read the payments table). */
+/**
+ * Money-in TRNSTYPEs (customer payments / sales receipts). These post to the
+ * GL like any other block but deliberately DO NOT write a payments-subledger
+ * row -- see the customer-payment note in derivePaymentLink. Kept as a set so
+ * the A/R disclosure below can count them.
+ */
 const CUSTOMER_RECEIVED_TRNSTYPES = new Set(['PAYMENT', 'RCPT']);
+
+/** Sales documents that settle on the spot (DR bank, CR income) and create no
+ * A/R. They share sourceType 'invoice' with real invoices, so the A/R
+ * disclosure excludes them by TRNSTYPE. */
+const CASH_SALE_TRNSTYPES = new Set(['CASHSALE', 'CASHREFUND']);
 
 interface PaymentLink {
   paymentType: 'vendor_sent' | 'customer_received';
@@ -2003,19 +2480,30 @@ interface PaymentLink {
 /**
  * Decide whether a posting block should also land in the payments subledger.
  * The TRNS (first) line carries the transaction total against the bank-side
- * account and the payee/customer NAME; a money-out type whose NAME matches a
- * vendor becomes vendor_sent, a money-in payment whose NAME matches a
- * customer becomes customer_received. Anything else stays GL-only --
- * `unmatchedPayee` reports the NAME when a money-movement block WOULD have
- * linked but found no counterparty, so the commit can disclose the gap
- * (those amounts are otherwise silently missing from 1099 totals and
- * payroll registers).
+ * account and the payee NAME; a money-out type whose NAME matches a vendor
+ * becomes vendor_sent. Anything else stays GL-only -- `unmatchedPayee`
+ * reports the NAME when a money-out block WOULD have linked but found no
+ * vendor, so the commit can disclose the gap (those amounts are otherwise
+ * silently missing from 1099 totals and payroll registers).
+ *
+ * Money IN from a customer is deliberately NOT written here, even when the
+ * NAME matches a customer. Customer statements compute the balance as
+ * SUM(invoices.total) - SUM(payments.amount) (statements.service.ts), and an
+ * IIF import cannot create the invoice side: QBD's transaction export does
+ * not carry which invoice each payment paid, so there is nothing to build an
+ * A/R document or a payment_application from. A payments row on its own turns
+ * every imported customer into a phantom CREDIT balance on a customer-facing
+ * statement PDF -- "we owe you $1,075" when the true balance is zero -- and
+ * makes the customer a candidate in the bulk-statement run. Vendor payments
+ * have no such counterpart: 1099 totals, payroll registers and pay stubs sum
+ * vendor_sent payments on a cash basis and no A/P balance is computed from
+ * them, so those rows stay. The A/R gap is disclosed in the commit result
+ * instead of being papered over with half a subledger.
  */
 function derivePaymentLink(
   t: CommitIifTransactionsInput['transactions'][number],
   trnsAccountId: string,
   vendorIdByName: ReadonlyMap<string, string>,
-  customerIdByName: ReadonlyMap<string, string>,
 ): { link: PaymentLink | null; unmatchedPayee: string | null } {
   const none = { link: null, unmatchedPayee: null };
   const trns = t.lines[0];
@@ -2034,20 +2522,6 @@ function derivePaymentLink(
         paymentType: 'vendor_sent',
         counterpartyId: vendorId,
         method: vendorMethod,
-        bankAccountId: trnsAccountId,
-        amount: positive,
-      },
-      unmatchedPayee: null,
-    };
-  }
-  if (CUSTOMER_RECEIVED_TRNSTYPES.has(key) && !negative) {
-    const customerId = customerIdByName.get(counterparty);
-    if (!customerId) return { link: null, unmatchedPayee: trns.name };
-    return {
-      link: {
-        paymentType: 'customer_received',
-        counterpartyId: customerId,
-        method: 'other',
         bankAccountId: trnsAccountId,
         amount: positive,
       },
@@ -2096,6 +2570,21 @@ export async function commitIifTransactions(
     agg.totalMicros += amountToMicros(abs);
     unlinkedByPayee.set(key, agg);
   };
+  // A/R- and A/P-document blocks that reached the ledger (posted now, or
+  // already there from an earlier run). They drive the subledger disclosure
+  // after the loop -- see the warnings pushed there.
+  let arDocuments = 0;
+  let apDocuments = 0;
+  let customerPayments = 0;
+  const noteSubledgerGap = (t: CommitIifTransactionsInput['transactions'][number]) => {
+    const key = t.qbType.replace(/[\s-]+/g, '');
+    // CASH SALE / CASH REFUND map to sourceType 'invoice' for journal
+    // labelling but settle immediately and never touch A/R, so a
+    // retail-only file must not be told its A/R aging is short.
+    if (t.sourceType === 'invoice' && !CASH_SALE_TRNSTYPES.has(key)) arDocuments++;
+    else if (t.sourceType === 'bill') apDocuments++;
+    if (CUSTOMER_RECEIVED_TRNSTYPES.has(key)) customerPayments++;
+  };
 
   // Serialise concurrent imports for this company. The fingerprint dedupe
   // below is read-then-write: two overlapping commit requests would each see
@@ -2137,17 +2626,13 @@ export async function commitIifTransactions(
     else byName.set(key, [a]);
   }
 
-  // Counterparty maps so money-movement blocks can land in the payments
-  // subledger (see derivePaymentLink). The lists commit runs first, so
-  // vendors/customers created from this same file are already visible here.
+  // Payee map so money-out blocks can land in the payments subledger (see
+  // derivePaymentLink). The lists commit runs first, so vendors created from
+  // this same file are already visible here.
   const vendorRows = await tx
     .select({ id: vendorsTable.id, name: vendorsTable.displayName })
     .from(vendorsTable);
   const vendorIdByName = new Map(vendorRows.map((v) => [v.name.toLowerCase(), v.id]));
-  const customerRows = await tx
-    .select({ id: customersTable.id, name: customersTable.displayName })
-    .from(customersTable);
-  const customerIdByName = new Map(customerRows.map((c) => [c.name.toLowerCase(), c.id]));
 
   // Idempotency: fingerprint every journal entry already posted on the dates
   // this file touches. Re-importing the same file (the documented
@@ -2190,6 +2675,28 @@ export async function commitIifTransactions(
   // identical blocks doesn't trip the warning.
   const existingByDateRef = new Map<string, number>();
   const dateRefKeyByEntryId = new Map<string, string>();
+  // Date-free content index (see datelessFingerprint) -> ids of matching
+  // pre-existing entries, for the same disclosure when the QuickBooks edit
+  // was to the DATE: every date-bearing identity above misses, so this is the
+  // only thing left that can recognise the earlier copy.
+  const existingByDatelessFp = new Map<string, string[]>();
+  const datelessFpByEntryId = new Map<string, string>();
+  // Bank-side line index of pre-existing entries that carry NO reference (see
+  // bankSideKey), for the disclosure on DEPOSIT/TRANSFER/CCARD blocks where
+  // QBD wrote no DOCNUM and the date+reference index can never fire.
+  const existingByBankSide = new Map<string, string[]>();
+  const bankSideKeysByEntryId = new Map<string, string[]>();
+  const entryDateById = new Map<string, string>();
+  // References this file carries. The date-scoped scan above cannot see an
+  // earlier copy sitting on the date it was imported under BEFORE the CPA
+  // corrected it, so those entries are fetched by reference as well.
+  const importReferences = Array.from(
+    new Set(
+      input.transactions
+        .filter((t) => t.posts && t.reference)
+        .map((t) => t.reference as string),
+    ),
+  );
   if (importDates.length > 0) {
     // Both pre-scan queries are chunked: postgres.js rejects any single
     // statement with >= 65,534 bind parameters (MAX_PARAMETERS_EXCEEDED),
@@ -2221,7 +2728,34 @@ export async function commitIifTransactions(
             inArray(journalEntries.entryDate, dates),
           ),
         );
-      entryRows.push(...rows);
+      pushAllRows(entryRows, rows);
+    }
+    // Second sweep, deliberately NOT scoped to the file's dates: an entry
+    // whose date was corrected in QuickBooks sits on a day this file no
+    // longer mentions. Bounded by the file's own reference list (and deduped
+    // against the rows already fetched), so it stays a lookup rather than a
+    // full-ledger scan.
+    if (importReferences.length > 0) {
+      const seenIds = new Set(entryRows.map((e) => e.id));
+      for (const refs of chunkForInArray(importReferences)) {
+        const rows = await tx
+          .select({
+            id: journalEntries.id,
+            entryDate: journalEntries.entryDate,
+            memo: journalEntries.memo,
+            reference: journalEntries.reference,
+            sourceId: journalEntries.sourceId,
+          })
+          .from(journalEntries)
+          .where(
+            and(eq(journalEntries.companyId, ctx.companyId), inArray(journalEntries.reference, refs)),
+          );
+        pushAllRows(
+          entryRows,
+          rows.filter((r) => !seenIds.has(r.id)),
+        );
+        for (const r of rows) seenIds.add(r.id);
+      }
     }
     if (entryRows.length > 0) {
       const lineRows: {
@@ -2240,7 +2774,7 @@ export async function commitIifTransactions(
           })
           .from(journalLines)
           .where(inArray(journalLines.entryId, entryIds));
-        lineRows.push(...rows);
+        pushAllRows(lineRows, rows);
       }
       const linesByEntry = new Map<string, { accountId: string; signedAmount: string }[]>();
       for (const l of lineRows) {
@@ -2264,10 +2798,29 @@ export async function commitIifTransactions(
           else existingBySourceId.set(e.sourceId, [e.id]);
           sourceIdByEntryId.set(e.id, e.sourceId);
         }
+        entryDateById.set(e.id, e.entryDate);
         if (e.reference) {
           const key = `${e.entryDate} ${e.reference}`;
           existingByDateRef.set(key, (existingByDateRef.get(key) ?? 0) + 1);
           dateRefKeyByEntryId.set(e.id, key);
+          const dateless = datelessFingerprint(e.reference, e.memo, linesByEntry.get(e.id) ?? []);
+          const datelessBucket = existingByDatelessFp.get(dateless);
+          if (datelessBucket) datelessBucket.push(e.id);
+          else existingByDatelessFp.set(dateless, [e.id]);
+          datelessFpByEntryId.set(e.id, dateless);
+        } else {
+          // Reference-less entries are indexed by every line, because which
+          // line was the block's TRNS (bank) row isn't recorded on the entry
+          // -- the incoming block only ever looks up its own first line.
+          const keys: string[] = [];
+          for (const l of linesByEntry.get(e.id) ?? []) {
+            const key = bankSideKey(e.entryDate, l.accountId, l.signedAmount);
+            const bucket = existingByBankSide.get(key);
+            if (bucket) bucket.push(e.id);
+            else existingByBankSide.set(key, [e.id]);
+            keys.push(key);
+          }
+          bankSideKeysByEntryId.set(e.id, keys);
         }
       }
       // Which of those entries already have a payments-subledger row (the
@@ -2457,15 +3010,11 @@ export async function commitIifTransactions(
     // old name re-resolves to a freshly auto-created twin, every block
     // touching it fingerprints differently, and the documented safe
     // re-import double-books the ledger.
-    const fingerprint = entryFingerprint(
-      t.date,
-      t.reference,
-      t.memo,
-      lines.map((l) => ({
-        accountId: l.accountId,
-        signedAmount: l.debit ?? `-${l.credit ?? '0.0000'}`,
-      })),
-    );
+    const signedLines = lines.map((l) => ({
+      accountId: l.accountId,
+      signedAmount: l.debit ?? `-${l.credit ?? '0.0000'}`,
+    }));
+    const fingerprint = entryFingerprint(t.date, t.reference, t.memo, signedLines);
     const contentSourceId = importSourceId(t.date, t.reference, t.memo, t.lines);
     // Consume one prior copy (multiset semantics: N identical blocks in the
     // file skip against exactly N prior copies). Prefer a copy that still
@@ -2503,19 +3052,19 @@ export async function commitIifTransactions(
       // closure below (narrowing on a `let` resets inside closures).
       const dupId = dupEntryId;
       result.duplicates++;
+      noteSubledgerGap(t);
       if (!entriesWithPayments.has(dupId)) {
         const { link: dupLink, unmatchedPayee: dupUnmatched } = derivePaymentLink(
           t,
           resolved[0]!.accountId,
           vendorIdByName,
-          customerIdByName,
         );
         if (dupLink) {
           // The earlier run posted this block GL-only because the payee
           // matched nobody then; it matches now, so write the missing
           // payments row against the already-posted entry. This is what
           // makes "create the vendor, re-import the same file" actually
-          // repair 1099/payroll/statement totals.
+          // repair 1099/payroll totals.
           try {
             await tx.transaction(async (inner) => {
               await inner.insert(paymentsTable).values({
@@ -2537,11 +3086,20 @@ export async function commitIifTransactions(
             entriesWithPayments.add(dupId);
             result.paymentsBackfilled++;
           } catch (err) {
-            result.errors.push({
-              rowNumber: t.rowNumber,
-              qbType: t.qbType,
-              reason: `payment backfill failed: ${err instanceof Error ? err.message : String(err)}`,
-            });
+            // A warning, NOT an error. `errors` is contractually the blocks
+            // that did not post, and the completion screen renders its length
+            // as "N transactions skipped" -- but this block's journal entry is
+            // already on the ledger (it was just counted as a duplicate).
+            // Reporting it as skipped invites the CPA to hand-enter the
+            // transaction a second time and double-book the register. Nothing
+            // was skipped here; only the subledger row is missing.
+            result.warnings.push(
+              `row ${t.rowNumber} (${t.qbType}): this transaction is already posted to the ledger, ` +
+                `but adding its payments-subledger row failed ` +
+                `(${err instanceof Error ? err.message : String(err)}) -- the general ledger is ` +
+                `correct and nothing was skipped, but 1099 and payroll totals will not include ` +
+                `this payment. Do NOT re-enter the transaction.`,
+            );
           }
         } else if (dupUnmatched) {
           // Still unlinked on re-import: keep disclosing the shortfall so
@@ -2558,6 +3116,14 @@ export async function commitIifTransactions(
         const n = existingByDateRef.get(dateRefKey) ?? 0;
         if (n > 1) existingByDateRef.set(dateRefKey, n - 1);
         else existingByDateRef.delete(dateRefKey);
+      }
+      // Same reasoning for the two date-independent indexes: a recurring
+      // payment that repeats verbatim month after month (or six identical
+      // deposits) must not make its own already-imported twin look like an
+      // edit of this block.
+      consumeFromBucket(existingByDatelessFp, datelessFpByEntryId.get(dupId), dupId);
+      for (const key of bankSideKeysByEntryId.get(dupId) ?? []) {
+        consumeFromBucket(existingByBankSide, key, dupId);
       }
       continue;
     }
@@ -2581,7 +3147,6 @@ export async function commitIifTransactions(
       t,
       resolved[0]!.accountId,
       vendorIdByName,
-      customerIdByName,
     );
 
     try {
@@ -2621,6 +3186,7 @@ export async function commitIifTransactions(
         }
       });
       result.posted++;
+      noteSubledgerGap(t);
       if (t.reference && (existingByDateRef.get(`${t.date} ${t.reference}`) ?? 0) > 0) {
         // Same date + reference as a pre-existing entry, but different
         // content (the fingerprint didn't match): the signature of a
@@ -2631,6 +3197,42 @@ export async function commitIifTransactions(
           `row ${t.rowNumber}: ${t.qbType} ref "${t.reference}" on ${t.date} posted as a new ` +
             `entry, but an entry with the same date and reference already exists with different ` +
             `amounts/accounts. If this transaction was edited in QuickBooks after an earlier ` +
+            `import, the previous version is still on the ledger -- review and reverse it.`,
+        );
+      } else if (t.reference) {
+        // Identical content under the same reference on a DIFFERENT day: the
+        // signature of a date correction in QuickBooks. Every date-bearing
+        // identity (fingerprint, source_id stamp, date+reference index) misses
+        // that edit, so without this the second copy lands on the ledger in
+        // total silence and the month's bank rec is off by its amount.
+        const movedId = (
+          existingByDatelessFp.get(datelessFingerprint(t.reference, t.memo, signedLines)) ?? []
+        ).find((id) => entryDateById.get(id) !== t.date);
+        if (movedId !== undefined) {
+          result.warnings.push(
+            `row ${t.rowNumber}: ${t.qbType} ref "${t.reference}" posted as a new entry on ` +
+              `${t.date}, but an entry with the same reference, amounts and accounts already ` +
+              `exists dated ${entryDateById.get(movedId)}. If this transaction's date was ` +
+              `corrected in QuickBooks after an earlier import, the previous version is still ` +
+              `on the ledger -- review and reverse it.`,
+          );
+        }
+      } else if (
+        (existingByBankSide.get(
+          bankSideKey(t.date, signedLines[0]!.accountId, signedLines[0]!.signedAmount),
+        ) ?? []).length > 0
+      ) {
+        // No reference to match on -- QBD writes no DOCNUM for DEPOSIT,
+        // TRANSFER or most CCARD blocks, which are exactly the ones a
+        // bookkeeper re-categorises. An existing reference-less entry on the
+        // same date hitting the same account for the same amount is the
+        // signature of that edit: the bank side is untouched while the
+        // category leg moved, so both duplicate identities miss.
+        result.warnings.push(
+          `row ${t.rowNumber}: ${t.qbType} on ${t.date} posted as a new entry, but an existing ` +
+            `entry on that date already posts ${signedLines[0]!.signedAmount} to the same ` +
+            `account with different offsetting accounts/amounts. This transaction carries no ` +
+            `reference number, so if it was re-categorised in QuickBooks after an earlier ` +
             `import, the previous version is still on the ledger -- review and reverse it.`,
         );
       }
@@ -2652,6 +3254,35 @@ export async function commitIifTransactions(
             : String(err);
       result.errors.push({ rowNumber: t.rowNumber, qbType: t.qbType, reason });
     }
+  }
+
+  // A/R + A/P subledger disclosure. Invoices, credit memos and bills post
+  // correct journal entries, but the import creates no invoices/bills rows
+  // behind them: a QBD transaction export carries no invoice<->payment
+  // linkage, so KPBooks would have to invent which document each payment
+  // settled -- and a subledger full of guesses is worse than an empty one.
+  // The consequence is invisible without this note: the Balance Sheet shows a
+  // real A/R (or A/P) balance from the control account while A/R Aging, A/P
+  // Aging, customer statements, Receive Payment and Pay Bills read the
+  // document tables and render nothing at all. Emitted at most once per
+  // commit and count-free, so the client-side merge collapses the copies the
+  // chunked commit produces into a single note.
+  if (arDocuments > 0 || customerPayments > 0) {
+    result.warnings.push(
+      'Invoices, credit memos and customer payments in this file posted to the general ledger ' +
+        'only. An IIF export does not say which invoice each payment paid, so no A/R documents ' +
+        'were created: Accounts Receivable is correct on the Trial Balance and Balance Sheet, but ' +
+        'A/R Aging and customer statements show only invoices and payments entered in KPBooks. ' +
+        'Re-enter any still-open invoices by hand to work the A/R subledger.',
+    );
+  }
+  if (apDocuments > 0) {
+    result.warnings.push(
+      'Bills, item receipts and vendor credits in this file posted to the general ledger only. ' +
+        'No A/P documents were created (the export carries no bill-to-payment linkage): Accounts ' +
+        'Payable is correct on the Trial Balance and Balance Sheet, but A/P Aging and Pay Bills ' +
+        'show only bills entered in KPBooks. Re-enter any still-unpaid bills by hand.',
+    );
   }
 
   result.unlinkedPayees = Array.from(unlinkedByPayee.values())

@@ -124,6 +124,7 @@ export function mergeTransactionCommitResults(
     errors: [],
   };
   const unlinked = new Map<string, { name: string; count: number; totalMicros: bigint }>();
+  const seenWarnings = new Set<string>();
   for (const r of results) {
     merged.posted += r.posted;
     merged.skipped += r.skipped;
@@ -138,7 +139,15 @@ export function mergeTransactionCommitResults(
       agg.totalMicros += amountToMicros4dp(p.total);
       unlinked.set(key, agg);
     }
-    merged.warnings!.push(...(r.warnings ?? []));
+    // Chunk-invariant disclosures (the A/R / A/P subledger notes) come back
+    // identically from every chunk; a CPA seeing the same paragraph six times
+    // reads it as a bug, so identical texts collapse to one. Per-row warnings
+    // name their row number and stay distinct.
+    for (const w of r.warnings ?? []) {
+      if (seenWarnings.has(w)) continue;
+      seenWarnings.add(w);
+      merged.warnings!.push(w);
+    }
     merged.errors.push(...r.errors);
   }
   merged.unlinkedPayees = Array.from(unlinked.values())
@@ -245,6 +254,83 @@ export function mergeListsCommitResults(
     merged.warnings.push(...r.warnings);
   }
   return merged;
+}
+
+/** Everything a chunked commit had landed at the moment it failed. */
+export interface PartialCommitProgress {
+  lists: ListsCommitResultLike;
+  txns: TransactionCommitResultLike;
+  listChunksDone: number;
+  listChunksTotal: number;
+  txnChunksDone: number;
+  txnChunksTotal: number;
+}
+
+/** Fresh zeroed result (a factory, not a shared constant: the arrays must not
+ * be aliased between the value a caller keeps and the next one built). */
+const emptyTxResult = (): TransactionCommitResultLike => ({
+  posted: 0,
+  skipped: 0,
+  duplicates: 0,
+  voided: 0,
+  paymentsLinked: 0,
+  paymentsBackfilled: 0,
+  warnings: [],
+  unlinkedPayees: [],
+  errors: [],
+});
+
+/**
+ * Run the two-leg commit (lists first, then transactions) one chunk per
+ * request, and hand back the merged result.
+ *
+ * The reason this is a function rather than two loops in the component: each
+ * chunk is its own server-side DB transaction, so a failure on chunk 4 does
+ * NOT roll back chunks 1-3 -- they are permanently on the ledger. Letting the
+ * rejection propagate with nothing else happening threw away the only record
+ * of what landed, and the user saw a bare "API 504" over an untouched-looking
+ * preview while the trial balance already held half the file. `onPartial`
+ * receives that record before the error is rethrown so the UI can report the
+ * committed batches and point at the resume path (clicking Confirm again is
+ * safe -- the server skips what already landed as duplicates).
+ */
+export async function runChunkedCommit<
+  A extends { name: string },
+  C,
+  V,
+  T extends CommitTransactionLike,
+>(args: {
+  lists: { accounts: readonly A[]; customers: readonly C[]; vendors: readonly V[] };
+  transactions: readonly T[];
+  sendLists: (chunk: ListsCommitPayload<A, C, V>) => Promise<ListsCommitResultLike>;
+  sendTransactions: (chunk: T[]) => Promise<TransactionCommitResultLike>;
+  onPartial: (progress: PartialCommitProgress) => void;
+}): Promise<{ listsResult: ListsCommitResultLike; txResult: TransactionCommitResultLike }> {
+  const listChunks = chunkListsForCommit(args.lists);
+  const txChunks = args.transactions.length > 0 ? chunkTransactionsForCommit(args.transactions) : [];
+  const listResults: ListsCommitResultLike[] = [];
+  const txResults: TransactionCommitResultLike[] = [];
+  try {
+    for (const chunk of listChunks) listResults.push(await args.sendLists(chunk));
+    for (const chunk of txChunks) txResults.push(await args.sendTransactions(chunk));
+  } catch (err) {
+    args.onPartial({
+      lists: mergeListsCommitResults(listResults),
+      txns: { ...emptyTxResult(), ...mergeTransactionCommitResults(txResults) },
+      listChunksDone: listResults.length,
+      listChunksTotal: listChunks.length,
+      txnChunksDone: txResults.length,
+      txnChunksTotal: txChunks.length,
+    });
+    throw err;
+  }
+  return {
+    listsResult: mergeListsCommitResults(listResults),
+    txResult:
+      txChunks.length > 0
+        ? { ...emptyTxResult(), ...mergeTransactionCommitResults(txResults) }
+        : emptyTxResult(),
+  };
 }
 
 /**
