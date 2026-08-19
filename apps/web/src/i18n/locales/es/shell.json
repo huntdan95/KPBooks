@@ -1,0 +1,8 @@
+{
+  "signIn": {
+    "subtitle": "Inicie sesión para continuar.",
+    "google": "Continuar con Google",
+    "busy": "Iniciando sesión...",
+    "failed": "No se pudo iniciar sesión"
+  }
+}

@@ -3,6 +3,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';
 import './index.css';
+// Initializes i18next synchronously (bundled resources) — must run before
+// the first render so useTranslation never sees an uninitialized instance.
+import './i18n';
 import { AuthProvider } from './lib/auth';
 import { CurrentCompanyProvider } from './lib/current-company';
 
