@@ -3,7 +3,8 @@
     "subtitle": "Inicie sesión para continuar.",
     "google": "Continuar con Google",
     "busy": "Iniciando sesión...",
-    "failed": "No se pudo iniciar sesión"
+    "failed": "No se pudo iniciar sesión",
+    "storageBlocked": "Su navegador bloqueó la sesión de inicio de sesión. En iPhone esto suele deberse a la opción Impedir el rastreo entre sitios; inténtelo de nuevo."
   },
   "app": {
     "startingUp": "Iniciando…",
@@ -116,30 +117,102 @@
     }
   },
   "pages": {
-    "dashboard": { "title": "Panel", "subtitle": "Resumen del día" },
-    "chat": { "title": "Preguntar a Claude", "subtitle": "Asistente contable con IA" },
-    "estimates": { "title": "Cotizaciones", "subtitle": "Cotizaciones listas para convertirse en facturas" },
-    "invoices": { "title": "Facturas", "subtitle": "Documentos de cuentas por cobrar dirigidos al cliente" },
-    "customers": { "title": "Clientes", "subtitle": "Contrapartes de cuentas por cobrar" },
-    "bills": { "title": "Facturas por pagar", "subtitle": "Documentos de cuentas por pagar del proveedor" },
-    "vendors": { "title": "Proveedores", "subtitle": "Contrapartes de cuentas por pagar" },
-    "mileage": { "title": "Millaje", "subtitle": "Registro de viajes de uso comercial" },
-    "workers": { "title": "Trabajadores / 1099", "subtitle": "Contratistas, empleados y formularios W-9" },
-    "banking": { "title": "Bancos", "subtitle": "Cuentas bancarias y conciliación bancaria" },
-    "payments": { "title": "Pagos", "subtitle": "Entradas y salidas de dinero" },
-    "accounts": { "title": "Catálogo de cuentas", "subtitle": "La estructura de su libro mayor" },
-    "new-entry": { "title": "Nuevo asiento contable", "subtitle": "Registro manual en el libro mayor" },
-    "import": { "title": "Importar desde QuickBooks", "subtitle": "Suelte un archivo .iif para inicializar sus libros" },
-    "reports": { "title": "Informes", "subtitle": "Balanza de comprobación, estado de resultados, cuentas por cobrar, cuentas por pagar y más" },
-    "tax-rates": { "title": "Tasas de impuesto", "subtitle": "Tasas de impuesto sobre ventas aplicadas a las facturas" },
-    "1099-prep": { "title": "Preparación de 1099", "subtitle": "Revisión de fin de año para 1099-NEC y 1099-MISC" },
-    "recurring": { "title": "Transacciones recurrentes", "subtitle": "Cobros mensuales fijos y facturas por pagar recurrentes" },
-    "time-entries": { "title": "Registro de horas", "subtitle": "Horas de trabajadores que se trasladan a las facturas por pagar" },
-    "items": { "title": "Artículos y servicios", "subtitle": "Plantillas guardadas para las líneas de facturas y facturas por pagar" },
-    "payroll-runs": { "title": "Corridas de nómina", "subtitle": "Captura por lotes de cheques de nómina" },
-    "fixed-assets": { "title": "Activos fijos", "subtitle": "Activos capitalizados y depreciación" },
-    "activity": { "title": "Registro de actividad", "subtitle": "Pista de auditoría de solo adición" },
-    "documents": { "title": "Documentos", "subtitle": "Declaraciones de impuestos, 1099, recibos y estados de cuenta" }
+    "dashboard": {
+      "title": "Panel",
+      "subtitle": "Resumen del día"
+    },
+    "chat": {
+      "title": "Preguntar a Claude",
+      "subtitle": "Asistente contable con IA"
+    },
+    "estimates": {
+      "title": "Cotizaciones",
+      "subtitle": "Cotizaciones listas para convertirse en facturas"
+    },
+    "invoices": {
+      "title": "Facturas",
+      "subtitle": "Documentos de cuentas por cobrar dirigidos al cliente"
+    },
+    "customers": {
+      "title": "Clientes",
+      "subtitle": "Contrapartes de cuentas por cobrar"
+    },
+    "bills": {
+      "title": "Facturas por pagar",
+      "subtitle": "Documentos de cuentas por pagar del proveedor"
+    },
+    "vendors": {
+      "title": "Proveedores",
+      "subtitle": "Contrapartes de cuentas por pagar"
+    },
+    "mileage": {
+      "title": "Millaje",
+      "subtitle": "Registro de viajes de uso comercial"
+    },
+    "workers": {
+      "title": "Trabajadores / 1099",
+      "subtitle": "Contratistas, empleados y formularios W-9"
+    },
+    "banking": {
+      "title": "Bancos",
+      "subtitle": "Cuentas bancarias y conciliación bancaria"
+    },
+    "payments": {
+      "title": "Pagos",
+      "subtitle": "Entradas y salidas de dinero"
+    },
+    "accounts": {
+      "title": "Catálogo de cuentas",
+      "subtitle": "La estructura de su libro mayor"
+    },
+    "new-entry": {
+      "title": "Nuevo asiento contable",
+      "subtitle": "Registro manual en el libro mayor"
+    },
+    "import": {
+      "title": "Importar desde QuickBooks",
+      "subtitle": "Suelte un archivo .iif para inicializar sus libros"
+    },
+    "reports": {
+      "title": "Informes",
+      "subtitle": "Balanza de comprobación, estado de resultados, cuentas por cobrar, cuentas por pagar y más"
+    },
+    "tax-rates": {
+      "title": "Tasas de impuesto",
+      "subtitle": "Tasas de impuesto sobre ventas aplicadas a las facturas"
+    },
+    "1099-prep": {
+      "title": "Preparación de 1099",
+      "subtitle": "Revisión de fin de año para 1099-NEC y 1099-MISC"
+    },
+    "recurring": {
+      "title": "Transacciones recurrentes",
+      "subtitle": "Cobros mensuales fijos y facturas por pagar recurrentes"
+    },
+    "time-entries": {
+      "title": "Registro de horas",
+      "subtitle": "Horas de trabajadores que se trasladan a las facturas por pagar"
+    },
+    "items": {
+      "title": "Artículos y servicios",
+      "subtitle": "Plantillas guardadas para las líneas de facturas y facturas por pagar"
+    },
+    "payroll-runs": {
+      "title": "Corridas de nómina",
+      "subtitle": "Captura por lotes de cheques de nómina"
+    },
+    "fixed-assets": {
+      "title": "Activos fijos",
+      "subtitle": "Activos capitalizados y depreciación"
+    },
+    "activity": {
+      "title": "Registro de actividad",
+      "subtitle": "Pista de auditoría de solo adición"
+    },
+    "documents": {
+      "title": "Documentos",
+      "subtitle": "Declaraciones de impuestos, 1099, recibos y estados de cuenta"
+    }
   },
   "dashboard": {
     "greeting": {

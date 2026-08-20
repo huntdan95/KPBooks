@@ -3,7 +3,8 @@
     "subtitle": "Sign in to continue.",
     "google": "Continue with Google",
     "busy": "Signing in...",
-    "failed": "Sign-in failed"
+    "failed": "Sign-in failed",
+    "storageBlocked": "Your browser blocked the sign-in session. On iPhone this is usually Prevent Cross-Site Tracking — please try again."
   },
   "app": {
     "startingUp": "Starting up…",
@@ -116,30 +117,102 @@
     }
   },
   "pages": {
-    "dashboard": { "title": "Dashboard", "subtitle": "Today at a glance" },
-    "chat": { "title": "Ask Claude", "subtitle": "AI bookkeeping assistant" },
-    "estimates": { "title": "Estimates", "subtitle": "Quotes ready to convert to invoices" },
-    "invoices": { "title": "Invoices", "subtitle": "Customer-facing A/R documents" },
-    "customers": { "title": "Customers", "subtitle": "A/R counterparties" },
-    "bills": { "title": "Bills", "subtitle": "Vendor-facing A/P documents" },
-    "vendors": { "title": "Vendors", "subtitle": "A/P counterparties" },
-    "mileage": { "title": "Mileage", "subtitle": "Business-use travel log" },
-    "workers": { "title": "Workers / 1099", "subtitle": "Contractors, employees, W-9s" },
-    "banking": { "title": "Banking", "subtitle": "Bank accounts + reconciliation" },
-    "payments": { "title": "Payments", "subtitle": "Money in and money out" },
-    "accounts": { "title": "Chart of Accounts", "subtitle": "Your ledger structure" },
-    "new-entry": { "title": "New journal entry", "subtitle": "Manual ledger posting" },
-    "import": { "title": "Import from QuickBooks", "subtitle": "Drop an .iif file to seed your books" },
-    "reports": { "title": "Reports", "subtitle": "Trial balance, P&L, A/R, A/P, and more" },
-    "tax-rates": { "title": "Tax rates", "subtitle": "Sales-tax rates applied to invoices" },
-    "1099-prep": { "title": "1099 prep", "subtitle": "Year-end NEC + MISC pre-flight" },
-    "recurring": { "title": "Recurring", "subtitle": "Monthly retainers + recurring bills" },
-    "time-entries": { "title": "Time entries", "subtitle": "Worker hours that flow into bills" },
-    "items": { "title": "Items / services", "subtitle": "Saved fixtures for invoice + bill lines" },
-    "payroll-runs": { "title": "Pay runs", "subtitle": "Batch entry for paychecks" },
-    "fixed-assets": { "title": "Fixed assets", "subtitle": "Capitalized assets + depreciation" },
-    "activity": { "title": "Activity log", "subtitle": "Append-only audit trail" },
-    "documents": { "title": "Documents", "subtitle": "Tax returns, 1099s, receipts, statements" }
+    "dashboard": {
+      "title": "Dashboard",
+      "subtitle": "Today at a glance"
+    },
+    "chat": {
+      "title": "Ask Claude",
+      "subtitle": "AI bookkeeping assistant"
+    },
+    "estimates": {
+      "title": "Estimates",
+      "subtitle": "Quotes ready to convert to invoices"
+    },
+    "invoices": {
+      "title": "Invoices",
+      "subtitle": "Customer-facing A/R documents"
+    },
+    "customers": {
+      "title": "Customers",
+      "subtitle": "A/R counterparties"
+    },
+    "bills": {
+      "title": "Bills",
+      "subtitle": "Vendor-facing A/P documents"
+    },
+    "vendors": {
+      "title": "Vendors",
+      "subtitle": "A/P counterparties"
+    },
+    "mileage": {
+      "title": "Mileage",
+      "subtitle": "Business-use travel log"
+    },
+    "workers": {
+      "title": "Workers / 1099",
+      "subtitle": "Contractors, employees, W-9s"
+    },
+    "banking": {
+      "title": "Banking",
+      "subtitle": "Bank accounts + reconciliation"
+    },
+    "payments": {
+      "title": "Payments",
+      "subtitle": "Money in and money out"
+    },
+    "accounts": {
+      "title": "Chart of Accounts",
+      "subtitle": "Your ledger structure"
+    },
+    "new-entry": {
+      "title": "New journal entry",
+      "subtitle": "Manual ledger posting"
+    },
+    "import": {
+      "title": "Import from QuickBooks",
+      "subtitle": "Drop an .iif file to seed your books"
+    },
+    "reports": {
+      "title": "Reports",
+      "subtitle": "Trial balance, P&L, A/R, A/P, and more"
+    },
+    "tax-rates": {
+      "title": "Tax rates",
+      "subtitle": "Sales-tax rates applied to invoices"
+    },
+    "1099-prep": {
+      "title": "1099 prep",
+      "subtitle": "Year-end NEC + MISC pre-flight"
+    },
+    "recurring": {
+      "title": "Recurring",
+      "subtitle": "Monthly retainers + recurring bills"
+    },
+    "time-entries": {
+      "title": "Time entries",
+      "subtitle": "Worker hours that flow into bills"
+    },
+    "items": {
+      "title": "Items / services",
+      "subtitle": "Saved fixtures for invoice + bill lines"
+    },
+    "payroll-runs": {
+      "title": "Pay runs",
+      "subtitle": "Batch entry for paychecks"
+    },
+    "fixed-assets": {
+      "title": "Fixed assets",
+      "subtitle": "Capitalized assets + depreciation"
+    },
+    "activity": {
+      "title": "Activity log",
+      "subtitle": "Append-only audit trail"
+    },
+    "documents": {
+      "title": "Documents",
+      "subtitle": "Tax returns, 1099s, receipts, statements"
+    }
   },
   "dashboard": {
     "greeting": {

@@ -1,20 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { signInWithGoogle } from '../lib/firebase';
+import { consumeRedirectResult, signInWithGoogle } from '../lib/firebase';
 import { LanguageSwitcher } from './LanguageSwitcher';
+
+/** Firebase error codes that mean "the browser withheld sign-in storage". */
+const STORAGE_BLOCKED_CODES = new Set([
+  'auth/missing-initial-state',
+  'auth/web-storage-unsupported',
+]);
 
 export function SignIn() {
   const { t } = useTranslation('shell');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  function describe(err: unknown): string {
+    const code = (err as { code?: string } | null)?.code;
+    if (code && STORAGE_BLOCKED_CODES.has(code)) return t('signIn.storageBlocked');
+    return err instanceof Error ? err.message : t('signIn.failed');
+  }
+
+  // A redirect sign-in finishes by loading this page again. Without claiming
+  // the result, a failed redirect would drop the user back on a silent button
+  // with no idea what went wrong.
+  useEffect(() => {
+    let cancelled = false;
+    void consumeRedirectResult().catch((err: unknown) => {
+      if (!cancelled) setError(describe(err));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function onSignIn() {
     setError(null);
     setBusy(true);
     try {
       await signInWithGoogle();
+      // On mobile this never resolves — signInWithRedirect navigates away.
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('signIn.failed'));
+      setError(describe(err));
     } finally {
       setBusy(false);
     }
