@@ -4,11 +4,17 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { PostingError, postEntry, postingSchemas } from '../modules/ledger/posting.service.js';
 import {
+  ACCOUNT_DETAIL_MAX_PAGE_SIZE,
+  ACCOUNT_DETAIL_PAGE_SIZE,
+  GENERAL_LEDGER_MAX_ROW_CAP,
+  GENERAL_LEDGER_ROW_CAP,
+  accountDetail,
   apAging,
   arAging,
   balanceSheet,
   cashFlowForecast,
   complianceExpiring,
+  generalLedger,
   nineteenNinetyNineSummary,
   payrollRegister,
   profitAndLoss,
@@ -137,7 +143,7 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
     return req.withTenantTx(async (tx) => ({ asOf, rows: await trialBalance(tx, asOf) }));
   });
 
-  app.get('/ledger/reports/pnl', async (req, reply) => {
+  app.get('/ledger/reports/pnl', async (req) => {
     const { start, end, basis } = z
       .object({
         start: DateOnly,
@@ -145,15 +151,69 @@ export const ledgerRoutes: FastifyPluginAsync = async (app) => {
         basis: z.enum(['accrual', 'cash']).default('accrual'),
       })
       .parse(req.query);
-    if (basis === 'cash') {
-      return reply.status(422).send({
-        error: 'not_implemented',
-        message: 'cash basis is not implemented yet; use accrual',
-      });
-    }
     return req.withTenantTx(async (tx) => profitAndLoss(tx, start, end, basis));
   });
 
+  /**
+   * General ledger drill-down. Every posted line in [start, end] grouped by
+   * account, in date order, with an opening balance (all activity strictly
+   * before `start`) and a running balance down the rows.
+   *
+   * `limit` caps DETAIL ROWS ACROSS ALL ACCOUNTS COMBINED (default 5,000, hard
+   * max 20,000). Opening/closing balances, period debit/credit totals and
+   * rowCount are computed over the full range whatever the cap does, so a
+   * capped response never mis-states money -- it just returns fewer rows and
+   * says so via `truncated` on the report and on each shortened account group.
+   * Page through one busy account with /ledger/reports/account-detail.
+   */
+  app.get('/ledger/reports/general-ledger', async (req) => {
+    const { start, end, accountId, limit } = z
+      .object({
+        start: DateOnly,
+        end: DateOnly,
+        accountId: z.string().uuid().optional(),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(GENERAL_LEDGER_MAX_ROW_CAP)
+          .default(GENERAL_LEDGER_ROW_CAP),
+      })
+      .parse(req.query);
+    return req.withTenantTx(async (tx) =>
+      generalLedger(tx, start, end, { accountId, rowCap: limit }),
+    );
+  });
+
+  /**
+   * Single-account detail -- what powers 'click a P&L number and see what's in
+   * it'. Offset-paginated (default 500 rows, hard max 5,000) with the running
+   * balance carried across pages, so page 2 opens where page 1 closed.
+   * `truncated` means this page is not the whole range; `hasMore` means more
+   * rows follow -- refetch with offset += limit. 404 when the account does not
+   * exist for this tenant.
+   */
+  app.get('/ledger/reports/account-detail', async (req, reply) => {
+    const { accountId, start, end, limit, offset } = z
+      .object({
+        accountId: z.string().uuid(),
+        start: DateOnly,
+        end: DateOnly,
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(ACCOUNT_DETAIL_MAX_PAGE_SIZE)
+          .default(ACCOUNT_DETAIL_PAGE_SIZE),
+        offset: z.coerce.number().int().min(0).default(0),
+      })
+      .parse(req.query);
+    const report = await req.withTenantTx(async (tx) =>
+      accountDetail(tx, accountId, start, end, { limit, offset }),
+    );
+    if (!report) return reply.status(404).send({ error: 'not_found' });
+    return report;
+  });
   app.get('/ledger/reports/balance-sheet', async (req) => {
     const { asOf } = z.object({ asOf: DateOnly }).parse(req.query);
     return req.withTenantTx(async (tx) => balanceSheet(tx, asOf));

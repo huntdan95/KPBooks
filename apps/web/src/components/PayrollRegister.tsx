@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 type WorkerType = 'contractor' | 'employee' | 'subcontractor' | 'not_a_worker';
 
@@ -59,8 +61,13 @@ const TYPE_TONE: Record<WorkerType, string> = {
   not_a_worker: 'bg-slate-100 text-slate-600 ring-slate-300',
 };
 
+/** Tax IDs leave the screen masked; they leave the app masked too. */
+function maskTaxId(taxId: string): string {
+  return taxId.replace(/.(?=.{4})/g, '•').slice(-9);
+}
+
 export function PayrollRegister() {
-  const { t } = useTranslation(['payroll', 'common']);
+  const { t } = useTranslation(['payroll', 'reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfMonth);
   const [to, setTo] = useState<string>(todayIso);
@@ -81,6 +88,63 @@ export function PayrollRegister() {
   });
 
   const data = query.data;
+  const workerTypeLabel = workerType ? t(TYPE_LABEL_KEY[workerType]) : t('register.filter.all');
+
+  // The two type tiles the header renders beside the payroll total.
+  const topTypes = (data?.totals.byWorkerType ?? [])
+    .filter((b) => b.workerType !== 'not_a_worker')
+    .sort((a, b) => Number(b.total) - Number(a.total))
+    .slice(0, 2);
+
+  /** The tiles, then the register exactly as rendered. */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [
+      [
+        t('register.totalPayroll'),
+        csvMoney(data.totals.totalPaid),
+        t('register.paymentCount', { count: data.totals.totalPayments }),
+      ],
+    ];
+    for (const b of topTypes) {
+      out.push([
+        t(TYPE_LABEL_KEY[b.workerType]),
+        csvMoney(b.total),
+        t('register.paymentCount', { count: b.count }),
+      ]);
+    }
+    out.push([]);
+    out.push([
+      t('register.columns.worker'),
+      t('register.columns.type'),
+      t('register.columns.taxId'),
+      t('register.columns.wcClass'),
+      t('register.columns.schedule'),
+      t('register.columns.payments'),
+      t('register.columns.totalPaid'),
+    ]);
+    for (const r of data.rows) {
+      out.push([
+        r.displayName,
+        t(TYPE_LABEL_KEY[r.workerType]),
+        r.taxId ? maskTaxId(r.taxId) : t('register.missing'),
+        r.workersCompClass ?? '',
+        r.paySchedule ?? '',
+        r.paymentCount,
+        csvMoney(r.totalPaid),
+      ]);
+    }
+    out.push([
+      t('register.totalRange', { from: data.from, to: data.to }),
+      '',
+      '',
+      '',
+      '',
+      data.totals.totalPayments,
+      csvMoney(data.totals.totalPaid),
+    ]);
+    return out;
+  }
 
   return (
     <div className="space-y-4">
@@ -115,6 +179,18 @@ export function PayrollRegister() {
             <option value="subcontractor">{t('register.filter.subcontractors')}</option>
           </select>
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('payroll-register', data?.from, data?.to)}
+          meta={{
+            title: t('reports:tabs.payrollRegister'),
+            ...(data ? { start: data.from, end: data.to } : {}),
+            // The classification filter decides which workers are below, so it
+            // has to ride along in the file.
+            extra: [[t('register.classification'), workerTypeLabel]],
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data || data.rows.length === 0}
+        />
       </div>
 
       <p className="text-xs text-slate-500">
@@ -138,19 +214,15 @@ export function PayrollRegister() {
               hint={t('register.paymentCount', { count: data.totals.totalPayments })}
               tone="slate"
             />
-            {data.totals.byWorkerType
-              .filter((b) => b.workerType !== 'not_a_worker')
-              .sort((a, b) => Number(b.total) - Number(a.total))
-              .slice(0, 2)
-              .map((b) => (
-                <Tile
-                  key={b.workerType}
-                  label={t(TYPE_LABEL_KEY[b.workerType])}
-                  value={formatUsd(b.total)}
-                  hint={t('register.paymentCount', { count: b.count })}
-                  tone="slate"
-                />
-              ))}
+            {topTypes.map((b) => (
+              <Tile
+                key={b.workerType}
+                label={t(TYPE_LABEL_KEY[b.workerType])}
+                value={formatUsd(b.total)}
+                hint={t('register.paymentCount', { count: b.count })}
+                tone="slate"
+              />
+            ))}
           </div>
 
           {data.rows.length === 0 ? (
@@ -201,7 +273,7 @@ export function PayrollRegister() {
                       </td>
                       <td className="px-4 py-2 font-mono text-xs text-slate-600">
                         {r.taxId
-                          ? r.taxId.replace(/.(?=.{4})/g, '•').slice(-9)
+                          ? maskTaxId(r.taxId)
                           : <span className="text-rose-600">{t('register.missing')}</span>}
                       </td>
                       <td className="px-4 py-2 text-xs text-slate-700">

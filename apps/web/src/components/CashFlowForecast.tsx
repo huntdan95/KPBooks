@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface CashAccountRow {
   accountId: string;
@@ -121,6 +123,169 @@ export function CashFlowForecast() {
     : '0';
   const lowestNum = Number(lowestBalance);
 
+  // Built once for the tab strip and reused as the exported file's "Section"
+  // line, so the CSV names the same view the reader was looking at.
+  const tabLabels: Record<Tab, string> = {
+    summary: t('forecast.tabs.summary'),
+    ar: t('forecast.tabs.ar', { count: data?.arDue.length ?? 0 }),
+    ap: t('forecast.tabs.ap', { count: data?.apDue.length ?? 0 }),
+    recurring: t('forecast.tabs.recurring', {
+      count: (data?.recurringInvoices.length ?? 0) + (data?.recurringBills.length ?? 0),
+    }),
+  };
+
+  /**
+   * The tiles, the table of whichever tab is open, and the cash-account
+   * breakdown — the forecast as it stands on screen. Only the open tab is
+   * exported: that is the table the reader is looking at.
+   */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [
+      [t('forecast.tiles.starting'), csvMoney(data.startingBalance)],
+      [t('forecast.tiles.netChange', { days: horizonDays }), csvMoney(data.totals.netChange)],
+      [t('forecast.tiles.ending'), csvMoney(data.totals.endingBalance)],
+      [t('forecast.tiles.lowest'), csvMoney(lowestBalance)],
+      [],
+    ];
+
+    if (tab === 'summary') {
+      out.push([
+        t('forecast.weekly.week'),
+        t('common:from'),
+        t('common:to'),
+        t('forecast.weekly.opening'),
+        t('forecast.weekly.arDue'),
+        t('forecast.weekly.recurringIn'),
+        t('forecast.weekly.apDue'),
+        t('forecast.weekly.recurringOut'),
+        t('forecast.weekly.net'),
+        t('forecast.weekly.closing'),
+      ]);
+      data.weeks.forEach((w, i) => {
+        // Outflow columns stay positive, as the table's own totals do — the
+        // parentheses on screen are presentation, and a column of positives
+        // is what sums to "total money out".
+        out.push([
+          t('forecast.weekly.weekN', { n: i + 1 }),
+          w.weekStart,
+          w.weekEnd,
+          csvMoney(w.openingBalance),
+          csvMoney(w.arDue),
+          csvMoney(w.recurringInflows),
+          csvMoney(w.apDue),
+          csvMoney(w.recurringOutflows),
+          csvMoney(w.netChange),
+          csvMoney(w.closingBalance),
+        ]);
+      });
+      out.push([
+        t('totals'),
+        '',
+        '',
+        t('forecast.weekly.start'),
+        csvMoney(data.totals.arDue),
+        csvMoney(data.totals.recurringInflows),
+        csvMoney(data.totals.apDue),
+        csvMoney(data.totals.recurringOutflows),
+        csvMoney(data.totals.netChange),
+        csvMoney(data.totals.endingBalance),
+      ]);
+    }
+
+    if (tab === 'ar') {
+      out.push([
+        t('forecast.ar.due'),
+        t('forecast.ar.customer'),
+        t('forecast.ar.invoiceNumber'),
+        t('forecast.ar.invoiceDate'),
+        t('forecast.ar.balanceDue'),
+      ]);
+      if (data.arDue.length === 0) out.push([t('forecast.ar.empty')]);
+      for (const r of data.arDue) {
+        out.push([
+          r.dueDate,
+          r.customerName,
+          r.invoiceNumber,
+          r.invoiceDate,
+          csvMoney(r.balanceDue),
+        ]);
+      }
+      out.push([t('common:total'), '', '', '', csvMoney(data.totals.arDue)]);
+    }
+
+    if (tab === 'ap') {
+      out.push([
+        t('forecast.ap.due'),
+        t('forecast.ap.vendor'),
+        t('forecast.ap.billNumber'),
+        t('forecast.ap.billDate'),
+        t('forecast.ap.balanceDue'),
+      ]);
+      if (data.apDue.length === 0) out.push([t('forecast.ap.empty')]);
+      for (const r of data.apDue) {
+        out.push([r.dueDate, r.vendorName, r.billNumber, r.billDate, csvMoney(r.balanceDue)]);
+      }
+      out.push([t('common:total'), '', '', '', csvMoney(data.totals.apDue)]);
+    }
+
+    if (tab === 'recurring') {
+      out.push([
+        t('common:date'),
+        t('forecast.recurring.type'),
+        t('forecast.recurring.template'),
+        t('forecast.recurring.counterparty'),
+        t('forecast.recurring.frequency'),
+        t('common:amount'),
+      ]);
+      const all = [
+        ...data.recurringInvoices.map((o) => ({ ...o, kind: 'invoice' as const })),
+        ...data.recurringBills.map((o) => ({ ...o, kind: 'bill' as const })),
+      ].sort((a, b) => a.occurrenceDate.localeCompare(b.occurrenceDate));
+      if (all.length === 0) out.push([t('forecast.recurring.empty')]);
+      for (const o of all) {
+        out.push([
+          o.occurrenceDate,
+          o.kind === 'invoice'
+            ? t('forecast.recurring.inflow')
+            : t('forecast.recurring.outflow'),
+          o.templateName,
+          o.counterpartyName,
+          t(`frequencies.${o.frequency}`),
+          csvMoney(o.amount),
+        ]);
+      }
+      out.push([
+        t('totals'),
+        t('forecast.recurring.inflow'),
+        '',
+        '',
+        '',
+        csvMoney(data.totals.recurringInflows),
+      ]);
+      out.push([
+        t('totals'),
+        t('forecast.recurring.outflow'),
+        '',
+        '',
+        '',
+        csvMoney(data.totals.recurringOutflows),
+      ]);
+    }
+
+    out.push([]);
+    out.push([
+      t('code'),
+      t('common:name'),
+      t('forecast.breakdownColumns.type'),
+      t('forecast.breakdownColumns.balanceAsOf', { date: data.asOf }),
+    ]);
+    for (const a of data.cashAccounts) {
+      out.push([a.code, a.name, t(`subtypes.${a.subtype}`), csvMoney(a.balance)]);
+    }
+    return out;
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -152,6 +317,19 @@ export function CashFlowForecast() {
             ))}
           </select>
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('cash-flow-forecast', tab, data?.asOf ?? asOf)}
+          meta={{
+            title: t('forecast.title'),
+            asOf: data?.asOf ?? asOf,
+            extra: [
+              [t('forecast.horizon'), t('forecast.horizonOption', { days: horizonDays })],
+              [t('export.meta.section'), tabLabels[tab]],
+            ],
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data}
+        />
       </div>
 
       {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
@@ -201,19 +379,8 @@ export function CashFlowForecast() {
 
           {/* Tab navigation for drill-down */}
           <div className="flex gap-1 border-b border-slate-200">
-            {(
-              [
-                ['summary', t('forecast.tabs.summary')],
-                ['ar', t('forecast.tabs.ar', { count: data.arDue.length })],
-                ['ap', t('forecast.tabs.ap', { count: data.apDue.length })],
-                [
-                  'recurring',
-                  t('forecast.tabs.recurring', {
-                    count: data.recurringInvoices.length + data.recurringBills.length,
-                  }),
-                ],
-              ] as Array<[Tab, string]>
-            ).map(([id, label]) => {
+            {(['summary', 'ar', 'ap', 'recurring'] as Tab[]).map((id) => {
+              const label = tabLabels[id];
               const active = tab === id;
               return (
                 <button

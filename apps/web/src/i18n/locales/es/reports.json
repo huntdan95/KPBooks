@@ -3,10 +3,24 @@
   "totals": "Totales",
   "saving": "Guardando…",
   "errorLabel": "Error",
+  "export": {
+    "csv": "Exportar CSV",
+    "meta": {
+      "report": "Informe",
+      "company": "Empresa",
+      "period": "Período",
+      "asOf": "Al",
+      "basis": "Base",
+      "section": "Sección",
+      "rows": "Filas",
+      "generated": "Generado"
+    }
+  },
   "tabs": {
     "trialBalance": "Balanza de comprobación",
     "pnl": "Estado de resultados",
     "balanceSheet": "Balance general",
+    "generalLedger": "Libro mayor",
     "cashFlows": "Flujos de efectivo",
     "cashFlowForecast": "Pronóstico de flujo de efectivo",
     "arAging": "Antigüedad de cuentas por cobrar",
@@ -23,6 +37,19 @@
     "equity": "Capital",
     "revenue": "Ingresos",
     "expense": "Gastos"
+  },
+  "documentTypes": {
+    "invoice": "Factura",
+    "bill": "Factura por pagar",
+    "payment": "Pago",
+    "journal": "Asiento contable",
+    "bank_transaction": "Movimiento bancario",
+    "reconciliation": "Conciliación bancaria",
+    "payroll": "Nómina",
+    "import": "Importación"
+  },
+  "drill": {
+    "openAccount": "Abrir el detalle de la cuenta {{code}} {{name}}"
   },
   "subtypes": {
     "bank": "banco",
@@ -59,7 +86,7 @@
   "pnl": {
     "basis": "Base",
     "basisAccrual": "Devengado",
-    "basisCashSoon": "Efectivo (próximamente)",
+    "basisCash": "Efectivo",
     "loadError": "No se pudo cargar el estado de resultados.",
     "revenue": "Ingresos",
     "expenses": "Gastos",
@@ -67,11 +94,22 @@
     "noExpenses": "Sin gastos en este rango.",
     "totalRevenue": "Total de ingresos",
     "totalExpenses": "Total de gastos",
-    "netIncome": "Utilidad neta (base {{basis}})",
-    "basisName": {
-      "accrual": "devengado",
-      "cash": "efectivo"
-    }
+    "netIncome": {
+      "accrual": "Utilidad neta (base devengada)",
+      "cash": "Utilidad neta (base de efectivo)"
+    },
+    "reportTitle": "Estado de resultados",
+    "period": "Del {{start}} al {{end}}",
+    "basisBadge": {
+      "accrual": "Base devengada",
+      "cash": "Base de efectivo"
+    },
+    "basisHint": {
+      "accrual": "Se reconoce al emitir la factura o al recibir la factura del proveedor, haya habido o no movimiento de dinero.",
+      "cash": "Se reconoce cuando el dinero se movió: las facturas por cobrar y por pagar cuentan solo cuando se pagan."
+    },
+    "unlinkedTitle": "Excluido de la base de efectivo",
+    "unlinkedBody": "Ingresos por {{revenue}} y gastos por {{expenses}} están en asientos que afectan cuentas por cobrar o por pagar pero no tienen una factura ni un pago detrás: importaciones IIF y asientos contables capturados a mano. La base de efectivo no tiene un pago con el cual reconocerlos, por eso quedan fuera de las cifras de arriba."
   },
   "balanceSheet": {
     "loadError": "No se pudo cargar el balance general.",
@@ -96,7 +134,51 @@
     "imbalance": "Descuadre (activos − (pasivos + capital))",
     "balanced": "✓ Cuadrado"
   },
+  "accountDetail": {
+    "title": "Detalle de cuenta",
+    "backTo": {
+      "trialBalance": "← Volver a la balanza de comprobación",
+      "pnl": "← Volver al estado de resultados",
+      "balanceSheet": "← Volver al balance general",
+      "generalLedger": "← Volver al libro mayor"
+    },
+    "loadError": "No se pudo cargar el detalle de la cuenta.",
+    "notFound": "Esa cuenta ya no existe.",
+    "empty": "No hay movimientos contabilizados en esta cuenta entre el {{start}} y el {{end}}.",
+    "accrualNotice": "El libro mayor siempre es devengado, por lo que estas líneas no suman la cifra en base de efectivo que usted seleccionó.",
+    "columns": {
+      "sourceDoc": "Documento origen",
+      "counterparty": "Cliente / Proveedor",
+      "runningBalance": "Saldo acumulado"
+    },
+    "reversal": "reversión",
+    "openingBalance": "Saldo inicial",
+    "broughtForward": "Saldo que viene de la página anterior",
+    "closingBalance": "Saldo final",
+    "periodDebits": "Cargos del período",
+    "periodCredits": "Abonos del período",
+    "periodTotals": "Totales del período",
+    "fullRangeNote": "Los totales del período y el saldo final cubren todo el rango, no solo esta página.",
+    "showing": "Mostrando {{first}}–{{last}} de {{total}}"
+  },
+  "generalLedger": {
+    "title": "Libro mayor",
+    "description": "Todas las líneas contabilizadas del rango, agrupadas por cuenta, con el saldo inicial de cada cuenta y un saldo acumulado línea por línea. Se incluyen las cuentas inactivas con movimientos: es peor ocultar movimientos contabilizados que mostrar una cuenta desactivada.",
+    "loadError": "No se pudo cargar el libro mayor.",
+    "empty": "No hay movimientos contabilizados entre el {{start}} y el {{end}}.",
+    "allAccounts": "Todas las cuentas",
+    "noActivity": "Sin movimientos en este rango; el saldo inicial se traslada.",
+    "accountTotal": "Total de {{code}}",
+    "truncated": "Mostrando {{returned}} de {{total}} líneas (límite {{cap}}). Los saldos iniciales, los totales del período y los saldos finales de abajo siguen siendo exactos: solo se recortaron las líneas de detalle. Abra una cuenta para recorrer todas sus líneas.",
+    "accountTruncated_one": "{{count}} línea más en esta cuenta; abra el detalle de la cuenta para verla.",
+    "accountTruncated_other": "{{count}} líneas más en esta cuenta; abra el detalle de la cuenta para verlas.",
+    "screenCapped": "Se muestran las primeras {{shown}} de {{total}} líneas en pantalla para que la página siga respondiendo. Los saldos iniciales, los totales del período y los saldos finales ya son exactos, y Exportar CSV escribe las {{total}}.",
+    "showAllRows": "Mostrar todas las líneas",
+    "summary_one": "{{count}} cuenta",
+    "summary_other": "{{count}} cuentas"
+  },
   "cashFlows": {
+    "reportTitle": "Estado de flujos de efectivo",
     "method": "Método indirecto. Parte de la utilidad neta del período y luego recorre la variación de cada cuenta no monetaria del balance general (tomada de los asientos contables contabilizados) para conciliar con la variación real del efectivo. Se agrupa por subtipo de cuenta: los cambios de capital de trabajo van a operación; los activos fijos y otros activos, a inversión; los pasivos a largo plazo y el capital, a financiamiento.",
     "loadError": "No se pudo cargar el estado.",
     "imbalance": "El flujo de efectivo ({{netChange}}) no coincide con la variación de los saldos de las cuentas bancarias ({{endingCash}} − {{beginningCash}} = {{delta}}). Diferencia: {{difference}}. Esto normalmente indica asientos contables directos a utilidades retenidas u otras cuentas de capital que omiten los supuestos del método indirecto.",

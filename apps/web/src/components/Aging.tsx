@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface AgingRow {
   counterpartyId: string;
@@ -64,9 +66,50 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
 
   const data = query.data;
 
+  /**
+   * The bucket grid exactly as rendered, with one deliberate difference: the
+   * em dash the table prints for an empty bucket becomes a real 0.00, or the
+   * column would not add up in Excel.
+   */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [
+      [
+        counterpartyLabel,
+        t('aging.current'),
+        '1–30',
+        '31–60',
+        '61–90',
+        '90+',
+        t('common:total'),
+      ],
+    ];
+    for (const r of data.rows) {
+      out.push([
+        r.counterpartyName,
+        csvMoney(r.current),
+        csvMoney(r.days1to30),
+        csvMoney(r.days31to60),
+        csvMoney(r.days61to90),
+        csvMoney(r.days91plus),
+        csvMoney(r.total),
+      ]);
+    }
+    out.push([
+      t('totals'),
+      csvMoney(data.totals.current),
+      csvMoney(data.totals.days1to30),
+      csvMoney(data.totals.days31to60),
+      csvMoney(data.totals.days61to90),
+      csvMoney(data.totals.days91plus),
+      csvMoney(data.totals.total),
+    ]);
+    return out;
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <Field label={t('common:asOf')}>
           <input
             type="date"
@@ -75,6 +118,12 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
             className={inputClass}
           />
         </Field>
+        <ExportCsvButton
+          filename={reportFilename(`${mode}-aging`, data?.asOf ?? asOf)}
+          meta={{ title: t(`tabs.${mode}Aging`), asOf: data?.asOf ?? asOf }}
+          rows={csvRows}
+          disabled={query.isLoading || !data || data.rows.length === 0}
+        />
       </div>
 
       {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}

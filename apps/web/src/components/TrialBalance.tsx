@@ -3,6 +3,9 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
+import { type CsvRow, ExportCsvButton, csvMoney, csvSide } from './ReportExport';
 
 interface TrialBalanceRow {
   accountId: string;
@@ -16,6 +19,14 @@ interface TrialBalanceRow {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/**
+ * Trial balance figures are cumulative, so there is no range to hand the
+ * drill-down. Open it on the year to date and let the account detail carry the
+ * prior years in as its opening balance — nothing is lost, and the detail view
+ * has its own From/To if a wider window is wanted.
+ */
+const yearStartOf = (asOf: string) => `${asOf.slice(0, 4)}-01-01`;
 
 function addCents(a: string, b: string): string {
   const toMicros = (s: string) => {
@@ -43,7 +54,11 @@ function formatUsd(s: string): string {
 
 const ORDER: TrialBalanceRow['type'][] = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 
-export function TrialBalance() {
+export function TrialBalance({
+  onOpenAccount,
+}: {
+  onOpenAccount?: ((target: AccountDrillTarget) => void) | undefined;
+}) {
   const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(today);
@@ -83,21 +98,52 @@ export function TrialBalance() {
     return map;
   }, [rows]);
 
+  /** The table exactly as rendered: section headers, rows, totals. */
+  function csvRows(): CsvRow[] {
+    const out: CsvRow[] = [
+      [t('code'), t('common:account'), t('common:debit'), t('common:credit'), t('common:balance')],
+    ];
+    for (const type of ORDER) {
+      const group = grouped[type];
+      if (!group?.length) continue;
+      out.push([t(`accountTypes.${type}`)]);
+      for (const r of group) {
+        out.push([r.code, r.name, csvSide(r.debit), csvSide(r.credit), csvMoney(r.balance)]);
+      }
+    }
+    out.push([
+      '',
+      t('totals'),
+      csvMoney(totals.debit),
+      csvMoney(totals.credit),
+      balanced ? t('trialBalance.balanced') : t('trialBalance.unbalanced'),
+    ]);
+    return out;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight text-slate-900">
           {t('trialBalance.title')}
         </h2>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          {t('common:asOf')}
-          <input
-            type="date"
-            value={asOf}
-            onChange={(e) => setAsOf(e.target.value)}
-            className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-slate-900 focus:outline-none"
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            {t('common:asOf')}
+            <input
+              type="date"
+              value={asOf}
+              onChange={(e) => setAsOf(e.target.value)}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-slate-900 focus:outline-none"
+            />
+          </label>
+          <ExportCsvButton
+            filename={reportFilename('trial-balance', query.data?.asOf ?? asOf)}
+            meta={{ title: t('trialBalance.title'), asOf: query.data?.asOf ?? asOf }}
+            rows={csvRows}
+            disabled={query.isLoading || rows.length === 0}
           />
-        </label>
+        </div>
       </div>
 
       {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
@@ -133,21 +179,57 @@ export function TrialBalance() {
                       {t(`accountTypes.${type}`)}
                     </td>
                   </tr>,
-                  ...group.map((r) => (
-                    <tr key={r.accountId}>
-                      <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
-                      <td className="px-4 py-2 text-slate-900">{r.name}</td>
-                      <td className="px-4 py-2 text-right font-mono text-slate-900">
-                        {Number(r.debit) > 0 ? formatUsd(r.debit) : ''}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-slate-900">
-                        {Number(r.credit) > 0 ? formatUsd(r.credit) : ''}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono text-slate-700">
-                        {formatUsd(r.balance)}
-                      </td>
-                    </tr>
-                  )),
+                  ...group.map((r) => {
+                    // The whole row is a mouse target so the amounts QuickZoom
+                    // like they do in QuickBooks; the account name is a real
+                    // <button> so the same drill-down is reachable — and
+                    // announced — from the keyboard.
+                    const open = onOpenAccount
+                      ? () =>
+                          onOpenAccount({
+                            accountId: r.accountId,
+                            start: yearStartOf(asOf),
+                            end: asOf,
+                          })
+                      : undefined;
+                    return (
+                      <tr
+                        key={r.accountId}
+                        className={open ? drillRowClass : undefined}
+                        onClick={open}
+                      >
+                        <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
+                        <td className="px-4 py-2 text-slate-900">
+                          {open ? (
+                            <button
+                              type="button"
+                              className={drillButtonClass}
+                              aria-label={t('drill.openAccount', { code: r.code, name: r.name })}
+                              onClick={(e) => {
+                                // Stop the bubble, or one click would run the
+                                // row handler too.
+                                e.stopPropagation();
+                                open();
+                              }}
+                            >
+                              {r.name}
+                            </button>
+                          ) : (
+                            r.name
+                          )}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-slate-900">
+                          {Number(r.debit) > 0 ? formatUsd(r.debit) : ''}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-slate-900">
+                          {Number(r.credit) > 0 ? formatUsd(r.credit) : ''}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-slate-700">
+                          {formatUsd(r.balance)}
+                        </td>
+                      </tr>
+                    );
+                  }),
                 ];
               })}
             </tbody>

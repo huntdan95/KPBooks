@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface ScfLine {
   accountId: string;
@@ -57,6 +59,54 @@ export function StatementOfCashFlows() {
   const data = query.data;
   const imbalanced = data && Number(data.imbalance) !== 0;
 
+  /**
+   * The statement exactly as rendered. On screen the code and the account name
+   * share one cell; in a spreadsheet they get a column each, so the code stays
+   * sortable.
+   */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [[t('code'), t('common:account'), t('common:amount')]];
+
+    const lines = (rows: ScfLine[], emptyLabel: string) => {
+      if (rows.length === 0) out.push([emptyLabel]);
+      for (const l of rows) out.push([l.code, l.name, csvMoney(l.amount)]);
+    };
+
+    out.push([t('cashFlows.operating')]);
+    out.push(['', t('cashFlows.netIncome'), csvMoney(data.netIncome)]);
+    lines(data.operatingAdjustments, t('cashFlows.noOperating'));
+    out.push(['', t('cashFlows.totalOperating'), csvMoney(data.totalOperating)]);
+
+    out.push([t('cashFlows.investing')]);
+    lines(data.investing, t('cashFlows.noInvesting'));
+    out.push(['', t('cashFlows.totalInvesting'), csvMoney(data.totalInvesting)]);
+
+    out.push([t('cashFlows.financing')]);
+    lines(data.financing, t('cashFlows.noFinancing'));
+    out.push(['', t('cashFlows.totalFinancing'), csvMoney(data.totalFinancing)]);
+
+    out.push(['', t('cashFlows.beginningCash'), csvMoney(data.beginningCash)]);
+    out.push(['', t('cashFlows.netChange'), csvMoney(data.netChange)]);
+    out.push(['', t('cashFlows.endingCash'), csvMoney(data.endingCash)]);
+
+    // The reconciliation warning goes in the file too — a statement that does
+    // not tie to the bank accounts must not look clean once it leaves the app.
+    if (imbalanced) {
+      out.push([]);
+      out.push([
+        t('cashFlows.imbalance', {
+          netChange: formatUsd(data.netChange),
+          endingCash: formatUsd(data.endingCash),
+          beginningCash: formatUsd(data.beginningCash),
+          delta: formatUsd((Number(data.endingCash) - Number(data.beginningCash)).toFixed(4)),
+          difference: formatUsd(data.imbalance),
+        }),
+      ]);
+    }
+    return out;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -76,6 +126,15 @@ export function StatementOfCashFlows() {
             className={inputClass}
           />
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('statement-of-cash-flows', data?.start, data?.end)}
+          meta={{
+            title: t('cashFlows.reportTitle'),
+            ...(data ? { start: data.start, end: data.end } : {}),
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data}
+        />
       </div>
 
       <p className="text-xs text-slate-500">{t('cashFlows.method')}</p>

@@ -27,6 +27,8 @@ implicitly (imperative infinitives or third person), never "tú".
 | Journal entry | Asiento contable |
 | Chart of accounts | Catálogo de cuentas |
 | Trial balance | Balanza de comprobación |
+| General ledger | Libro mayor |
+| Account detail (drill-down) | Detalle de cuenta |
 | Profit & loss / Income statement | Estado de resultados |
 | Balance sheet | Balance general |
 | Statement of cash flows | Estado de flujos de efectivo |
@@ -63,6 +65,7 @@ implicitly (imperative infinitives or third person), never "tú".
 | Draft | Borrador |
 | Void (verb) | Anular |
 | Voided | Anulado |
+| Reversal | Reversión |
 | Open (invoice) | Pendiente |
 | Overdue | Vencido |
 | Paid | Pagado |
@@ -113,6 +116,13 @@ implicitly (imperative infinitives or third person), never "tú".
 | Today | Hoy |
 | Required | Obligatorio |
 | Optional | Opcional |
+
+## Easily confused
+- **Void ≠ reversal.** *Anular* / *anulado* / *anulación* belong to Void alone —
+  cancelling a document. A reversal is the offsetting journal entry, *reversión*
+  (`asiento de reversión`). Voiding an invoice writes a reversal, but plain
+  reversing entries exist with no void behind them, so never render "reversal"
+  as *anulación*.
 
 ## Do NOT translate
 - Form names: 1099-NEC, 1099-MISC, W-9, W-4, I-9, 941, 940

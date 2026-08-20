@@ -36,6 +36,33 @@ export interface ProfitAndLoss {
   totalRevenue: string;
   totalExpenses: string;
   netIncome: string;
+  /**
+   * Cash basis only (absent on accrual, which keeps that payload byte-identical).
+   *
+   * The revenue/expense that cash basis could NOT recognise and that no future
+   * payment will ever recover. Three conditions all have to hold for an amount
+   * to land here:
+   *
+   *   1. it sits on a journal entry that also touches A/R or A/P;
+   *   2. that entry has NO subledger document behind it — no invoices/bills row
+   *      resolves from its source_type/source_id. That is IIF-imported GL (the
+   *      importer writes journal entries but no invoices, bills or payment
+   *      applications — see modules/imports/iif.ts) and hand-written journal
+   *      entries against A/R or A/P;
+   *   3. the amount was not funded by cash inside that same entry — the part
+   *      that was IS recognised above (see cashBasisEntryRecognisableAmount).
+   *
+   * A natively keyed invoice or bill never appears here: it has a document
+   * behind it and its revenue is recognised through payment_applications as its
+   * payments land. Only the genuinely unrecoverable gap is disclosed, so the
+   * figure means "this much income/expense is missing from the report", not
+   * "this much A/R activity exists".
+   *
+   * Both figures are natural-sign (revenue credit-positive, expense
+   * debit-positive), rounded to whole cents, and are NOT included in
+   * totalRevenue/totalExpenses.
+   */
+  unlinkedAccrualActivity?: { revenue: string; expenses: string };
 }
 
 export interface BalanceSheetSection {
@@ -111,9 +138,10 @@ export async function profitAndLoss(
   end: string,
   basis: 'accrual' | 'cash' = 'accrual',
 ): Promise<ProfitAndLoss> {
-  // Cash basis is a v2 concern (requires payment-vs-invoice resolution); accrual is the default.
+  // Cash basis takes a completely different path: recognition follows the
+  // money, not the document. See the block comment above cashBasisProfitAndLoss.
   if (basis === 'cash') {
-    throw new Error('cash basis not implemented in v0; use accrual');
+    return cashBasisProfitAndLoss(db, start, end);
   }
 
   const rows = await db.execute(sql`
@@ -173,6 +201,691 @@ export async function profitAndLoss(
     totalRevenue: minorToDecimal(totalRev, SCALE),
     totalExpenses: minorToDecimal(totalExp, SCALE),
     netIncome: minorToDecimal(totalRev - totalExp, SCALE),
+  };
+}
+
+// ─── Cash-basis P&L ──────────────────────────────────────────────────────
+
+/**
+ * CASH-BASIS RECOGNITION — the approach.
+ *
+ * Cash basis recognises revenue when cash is RECEIVED and expense when cash is
+ * PAID. KPBooks holds three kinds of activity and each needs its own rule:
+ *
+ *  1. Direct activity — a check written straight to an expense account, a
+ *     deposit straight to income, a manual journal entry between accounts that
+ *     are neither A/R nor A/P. The entry date IS the cash date, so cash and
+ *     accrual agree; we read these off the GL the same way the accrual query
+ *     does.
+ *
+ *  2. A/R and A/P documents — invoices and bills. Their document date is an
+ *     accrual date and must never drive recognition. Instead we walk the
+ *     payment_applications allocation table (payments link to invoices/bills
+ *     through it, never by direct FK): each non-void payment applied to a
+ *     non-void document recognises a pro-rata slice of that document's lines,
+ *     dated on the PAYMENT date. Unpaid documents — and the unpaid portion of a
+ *     partly paid one — never appear at all. Voiding a payment removes its
+ *     slice outright: we recompute from live rows every run, so a void leaves
+ *     no phantom recognition behind.
+ *
+ *  3. Accrual activity that cannot be tied to cash — the part of a
+ *     revenue/expense line on an A/R- or A/P-touching entry that no cash in
+ *     that entry funded. Recognising it would mean recognising on the document
+ *     date, which is accrual. It is excluded; and where no subledger document
+ *     sits behind the entry (so no future payment can ever recover it) it is
+ *     reported in `unlinkedAccrualActivity` so the preparer sees the gap
+ *     instead of a silently under-reported income number.
+ *
+ * Bucket 1 and bucket 3 are NOT separated by a per-entry yes/no test. A single
+ * entry routinely contains both: a receipt banked net of the processor's fee
+ * (DR bank 970 / DR merchant fees 30 / CR A/R 1,000) settles a receivable AND
+ * pays an expense in cash, and an early-pay discount (DR A/P 1,000 / CR bank
+ * 980 / CR discounts 20) does the mirror image on the A/P side. Splitting per
+ * ENTRY drops that cash-side line out of the report entirely. So each P&L line
+ * is split per LINE, by what it is offset against — see
+ * cashBasisEntryRecognisableAmount, which is where the rule lives and is unit
+ * tested.
+ *
+ * Date range: `start`/`end` filter the RECOGNITION date — the payment date for
+ * anything derived from A/R or A/P, the entry date otherwise.
+ *
+ * Row set: the same active revenue/expense accounts, in the same `code` order,
+ * that the accrual report returns, so the two bases render identically.
+ *
+ * Rounding: every figure this report emits is a whole number of cents. The
+ * per-line pro rata inside a payment runs at the ledger's ten-thousandth scale
+ * (that is what keeps a split summing exactly to the payment), but a P&L whose
+ * line items do not foot to its own printed total is a defect on a report that
+ * gets transcribed onto a tax return — so each account is rounded once, and the
+ * totals are the sum of the ROUNDED lines.
+ *
+ * The allocation math is pure and lives in allocatePaymentAcrossLines /
+ * recognizeCashBasisDocument / recognizeCashBasisTotals /
+ * cashBasisEntryRecognisableAmount below, so it is unit tested without a
+ * database in apps/api/test/cash-basis.test.ts.
+ */
+
+/** Which way a document's lines hit the GL. Invoices credit, bills debit. */
+export type CashBasisSide = 'credit' | 'debit';
+
+export interface CashBasisLine {
+  accountId: string;
+  /** Non-negative decimal string — the amount this line posts to the GL. */
+  amount: string;
+}
+
+export interface CashBasisPayment {
+  paymentId: string;
+  /** The date the cash moved. This, and only this, is the recognition date. */
+  date: string;
+  /** The portion of the payment applied to THIS document. */
+  amount: string;
+  voided?: boolean;
+}
+
+export interface CashBasisDocument {
+  documentId: string;
+  side: CashBasisSide;
+  /** Gross total the payments were applied against: subtotal + tax. */
+  total: string;
+  /** In line_number order. */
+  lines: readonly CashBasisLine[];
+  /** Applications against this document only. */
+  payments: readonly CashBasisPayment[];
+  voided?: boolean;
+}
+
+export interface CashBasisRecognition {
+  accountId: string;
+  paymentId: string;
+  /** Payment date — cash basis recognises here, never on the document date. */
+  date: string;
+  /** Credit-positive, exactly like SUM(credit - debit) over journal lines. */
+  amount: string;
+}
+
+export interface CashBasisAllocation {
+  /** One entry per input line, in input order. */
+  lines: string[];
+  /** The share of the payment that maps to no line: sales tax, plus any overpayment. */
+  residual: string;
+}
+
+/**
+ * Split ONE payment across ONE document's lines, pro rata by line amount.
+ *
+ * All arithmetic is BigInt in minor units at the ledger's NUMERIC(19,4) scale —
+ * no JS float ever touches money. The parts always add back up exactly:
+ *
+ *     sum(result.lines) + result.residual === paymentAmount
+ *
+ * Proration is against the document's GROSS total rather than the sum of its
+ * lines, because the gross total is what the payment was applied to. The
+ * difference between the two — sales tax, which credits a liability account and
+ * has no revenue line — rides along as one extra participant and comes back as
+ * `residual`, so the tax share of a payment can never be mistaken for revenue.
+ *
+ * Truncating each share leaves a remainder of at most (participants - 1) minor
+ * units. The whole remainder goes on the largest participant; the first of a tie
+ * wins, and lines arrive in line_number order, so the split is deterministic.
+ * A cent is never dropped and never counted twice.
+ *
+ * A payment larger than the document (an overpayment, i.e. a customer deposit)
+ * recognises at most the document's worth; the excess lands in `residual`,
+ * because a deposit is a balance-sheet item and not income.
+ */
+export function allocatePaymentAcrossLines(
+  documentTotal: string,
+  lines: readonly CashBasisLine[],
+  paymentAmount: string,
+): CashBasisAllocation {
+  const SCALE = 10000n;
+  const paymentMinor = decimalToMinor(paymentAmount, SCALE);
+  const lineMinors = lines.map((l) => decimalToMinor(l.amount, SCALE));
+  const lineSum = lineMinors.reduce((acc, m) => acc + m, 0n);
+  const totalMinor = decimalToMinor(documentTotal, SCALE);
+  // Denominator is the gross total, but never less than the lines themselves:
+  // if bad data made the lines exceed the total we must still not recognise
+  // more than what actually posted.
+  const denom = totalMinor > lineSum ? totalMinor : lineSum;
+
+  if (denom <= 0n || paymentMinor <= 0n) {
+    return {
+      lines: lineMinors.map(() => minorToDecimal(0n, SCALE)),
+      residual: minorToDecimal(paymentMinor, SCALE),
+    };
+  }
+
+  const basis = paymentMinor < denom ? paymentMinor : denom;
+  // The trailing participant is the non-line part of the total (sales tax).
+  const participants = [...lineMinors, denom - lineSum];
+  const shares = participants.map((p) => (p * basis) / denom);
+  const assigned = shares.reduce((acc, s) => acc + s, 0n);
+
+  // Largest participant first, ties broken by position (lines arrive in
+  // line_number order), so the whole remainder lands on the largest line. It
+  // cascades to the next largest only if a participant would otherwise be
+  // pushed past its own amount — reachable only for sub-cent payments, but
+  // recognising more than a line actually posted is never acceptable.
+  const largestFirst = participants
+    .map((amount, index) => ({ amount, index }))
+    .sort((a, b) => (a.amount === b.amount ? a.index - b.index : a.amount > b.amount ? -1 : 1));
+  let remainder = basis - assigned;
+  for (const p of largestFirst) {
+    if (remainder <= 0n) break;
+    const room = participants[p.index]! - shares[p.index]!;
+    if (room <= 0n) continue;
+    const take = remainder < room ? remainder : room;
+    shares[p.index] = shares[p.index]! + take;
+    remainder -= take;
+  }
+
+  return {
+    lines: lineMinors.map((_, i) => minorToDecimal(shares[i]!, SCALE)),
+    residual: minorToDecimal(shares[participants.length - 1]! + (paymentMinor - basis), SCALE),
+  };
+}
+
+/** Deterministic payment order: date first, then id to break same-day ties. */
+function byDateThenPaymentId(a: CashBasisPayment, b: CashBasisPayment): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  if (a.paymentId !== b.paymentId) return a.paymentId < b.paymentId ? -1 : 1;
+  return 0;
+}
+
+/**
+ * Every recognition event a single document produces, one per (payment, line).
+ * A voided document produces none; voided payments are skipped.
+ *
+ * Allocation is CUMULATIVE, not per payment: each payment re-splits the
+ * payments-to-date against the document and recognises the DIFFERENCE from what
+ * the earlier payments already recognised. Allocating every payment
+ * independently makes each payment sum exactly to itself but lets the smaller
+ * lines truncate downward on every instalment while the largest line absorbs
+ * the remainder, so a fully paid document never converges on its own line
+ * amounts — 100.00 of labour collected in three instalments recognises 99.9999,
+ * which a cent-level report then shows a full cent light. Cumulative allocation
+ * removes the drift: at the last payment the basis equals the denominator, so
+ * every line lands on exactly its own amount.
+ *
+ * The deltas stay non-negative because each line's cumulative share is
+ * monotonic in the amount paid to date — the raw pro rata share is, and the
+ * remainder rides on the largest participant, whose rank never changes (it is
+ * derived from the fixed line amounts).
+ *
+ * Amounts are credit-positive: an invoice line recognises +, a bill line −, and
+ * a bill line pointed at a revenue account correctly reduces revenue.
+ */
+export function recognizeCashBasisDocument(doc: CashBasisDocument): CashBasisRecognition[] {
+  const SCALE = 10000n;
+  if (doc.voided === true) return [];
+
+  const sign = doc.side === 'credit' ? 1n : -1n;
+  const live = doc.payments.filter((p) => p.voided !== true).slice().sort(byDateThenPaymentId);
+
+  const out: CashBasisRecognition[] = [];
+  const recognised = doc.lines.map(() => 0n);
+  let paidToDate = 0n;
+
+  for (const payment of live) {
+    paidToDate += decimalToMinor(payment.amount, SCALE);
+    const alloc = allocatePaymentAcrossLines(
+      doc.total,
+      doc.lines,
+      minorToDecimal(paidToDate, SCALE),
+    );
+    for (let i = 0; i < doc.lines.length; i += 1) {
+      const cumulative = decimalToMinor(alloc.lines[i]!, SCALE);
+      const minor = cumulative - recognised[i]!;
+      recognised[i] = cumulative;
+      if (minor === 0n) continue;
+      out.push({
+        accountId: doc.lines[i]!.accountId,
+        paymentId: payment.paymentId,
+        date: payment.date,
+        amount: minorToDecimal(sign * minor, SCALE),
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Per-account cash-basis recognition across a set of documents, credit-positive
+ * and sorted by accountId. `window` filters on the recognition (payment) date,
+ * inclusive on both ends; omit it when the caller already filtered in SQL.
+ */
+export function recognizeCashBasisTotals(
+  docs: readonly CashBasisDocument[],
+  window?: { start: string; end: string },
+): Array<{ accountId: string; amount: string }> {
+  const SCALE = 10000n;
+  const byAccount = new Map<string, bigint>();
+
+  for (const doc of docs) {
+    for (const rec of recognizeCashBasisDocument(doc)) {
+      if (window && (rec.date < window.start || rec.date > window.end)) continue;
+      byAccount.set(
+        rec.accountId,
+        (byAccount.get(rec.accountId) ?? 0n) + decimalToMinor(rec.amount, SCALE),
+      );
+    }
+  }
+
+  return Array.from(byAccount.entries())
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([accountId, minor]) => ({ accountId, amount: minorToDecimal(minor, SCALE) }));
+}
+
+/**
+ * The A/R- and A/P-facing shape of ONE journal entry, in decimal strings.
+ * Everything the cash/accrual split of that entry's P&L lines depends on.
+ */
+export interface CashBasisEntryShape {
+  /** Sum of every debit on the entry — equal to the sum of every credit. */
+  total: string;
+  /** Debits to accounts_receivable: a receivable CREATED (an invoice). */
+  arDebit: string;
+  /** Credits to accounts_receivable: a receivable SETTLED (a receipt). */
+  arCredit: string;
+  /** Debits to accounts_payable: a payable SETTLED (a vendor payment). */
+  apDebit: string;
+  /** Credits to accounts_payable: a payable CREATED (a bill). */
+  apCredit: string;
+  /** Does the entry move money through a bank or credit-card account? */
+  movesCash: boolean;
+}
+
+/**
+ * How much of ONE P&L line on ONE entry cash basis may recognise.
+ *
+ * A journal entry is balanced, so every line is funded pro rata by the opposite
+ * side. A P&L line is recognisable to the extent the opposite side is CASH
+ * rather than an A/R/A/P accrual, which turns on direction, not on the mere
+ * presence of an A/R or A/P line:
+ *
+ *   • A/R debit / A/P credit — a receivable or payable was CREATED. Nothing was
+ *     collected or paid, so the P&L it funds is accrual. Not recognisable.
+ *   • A/R credit / A/P debit — a receivable or payable was SETTLED. When the
+ *     entry also moves cash, that settlement IS the money changing hands, so
+ *     the P&L it funds was genuinely received or paid. Recognisable.
+ *   • A settlement on an entry that moves NO cash is a write-off, an offset or
+ *     the reversing entry a void writes. Nothing was collected or paid, so it
+ *     is not recognisable — this is what keeps a bad-debt write-off out of a
+ *     cash-basis deduction and stops a void from recognising negative revenue.
+ *   • Everything else (bank, credit card, other balance-sheet accounts) is
+ *     treated as cash-side, which is what makes an entry with no A/R or A/P
+ *     line at all recognise in full — identical to accrual, as it must be.
+ *
+ * Worked from the block comment's two examples: a receipt banked net of a fee
+ * (DR bank 970 / DR merchant fees 30 / CR A/R 1,000) has no A/R debit, so the
+ * fee's opposite side is all cash and all 30.00 is deductible; an invoice
+ * (DR A/R 1,000 / CR revenue 1,000) has an A/R debit for the whole entry, so
+ * none of the revenue is recognised here — it is recognised later, on the
+ * payment date, through payment_applications.
+ *
+ * `amount` is the gross debit or credit posted by the line, and may be signed;
+ * the result carries the same sign and never exceeds it in magnitude. All
+ * arithmetic is BigInt at the ledger's NUMERIC(19,4) scale.
+ */
+export function cashBasisEntryRecognisableAmount(
+  shape: CashBasisEntryShape,
+  side: 'debit' | 'credit',
+  amount: string,
+): string {
+  const SCALE = 10000n;
+  const total = decimalToMinor(shape.total, SCALE);
+  const value = decimalToMinor(amount, SCALE);
+  if (value === 0n) return minorToDecimal(0n, SCALE);
+  // A zero-total entry cannot post a non-zero line; treat it as nothing to
+  // prorate rather than dividing by zero.
+  if (total <= 0n) return minorToDecimal(0n, SCALE);
+
+  const arDebit = decimalToMinor(shape.arDebit, SCALE);
+  const arCredit = decimalToMinor(shape.arCredit, SCALE);
+  const apDebit = decimalToMinor(shape.apDebit, SCALE);
+  const apCredit = decimalToMinor(shape.apCredit, SCALE);
+
+  // The non-cash pool on the side that funds this line. A settlement counts as
+  // cash only when the entry actually moved some.
+  const accrualPool =
+    side === 'debit'
+      ? apCredit + (shape.movesCash ? 0n : arCredit)
+      : arDebit + (shape.movesCash ? 0n : apDebit);
+
+  let cashPool = total - accrualPool;
+  if (cashPool <= 0n) return minorToDecimal(0n, SCALE);
+  if (cashPool > total) cashPool = total;
+
+  const sign = value < 0n ? -1n : 1n;
+  const abs = value < 0n ? -value : value;
+  return minorToDecimal(sign * ((abs * cashPool) / total), SCALE);
+}
+
+/**
+ * Round a ten-thousandth-scale minor amount to whole cents, half away from
+ * zero, and give it back at the same scale. Used once per reported figure so
+ * the P&L's line items foot to its own totals.
+ */
+function roundMinorToCents(minor: bigint): bigint {
+  const step = 100n;
+  const sign = minor < 0n ? -1n : 1n;
+  const abs = minor < 0n ? -minor : minor;
+  return sign * (((abs + step / 2n) / step) * step);
+}
+
+async function cashBasisProfitAndLoss(
+  db: Database,
+  start: string,
+  end: string,
+): Promise<ProfitAndLoss> {
+  const SCALE = 10000n;
+
+  // 1. Row skeleton — the same accounts, in the same order, as accrual.
+  const accountRows = await db.execute(sql`
+    SELECT
+      a.id   AS account_id,
+      a.code AS code,
+      a.name AS name,
+      a.type AS type
+    FROM accounts a
+    WHERE a.type IN ('revenue', 'expense')
+      AND a.is_active = true
+    ORDER BY a.code
+  `);
+
+  // 2. Bucket 1: P&L activity on entries that touch neither A/R nor A/P. The
+  //    entry date IS the cash date, so this aggregates straight to the account
+  //    exactly as the accrual query does.
+  const directRows = await db.execute(sql`
+    WITH ar_ap_entries AS (
+      SELECT DISTINCT jl.entry_id AS entry_id
+      FROM journal_lines jl
+      JOIN accounts a ON a.id = jl.account_id
+      JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE a.subtype IN ('accounts_receivable', 'accounts_payable')
+        AND je.entry_date BETWEEN ${start}::date AND ${end}::date
+    )
+    SELECT
+      jl.account_id AS account_id,
+      COALESCE(SUM(jl.credit - jl.debit), 0) AS credit_minus_debit
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE a.type IN ('revenue', 'expense')
+      AND a.is_active = true
+      AND je.entry_date BETWEEN ${start}::date AND ${end}::date
+      AND jl.entry_id NOT IN (SELECT entry_id FROM ar_ap_entries)
+    GROUP BY jl.account_id
+  `);
+
+  // 2b. Every P&L line on an entry that DOES touch A/R or A/P, one row per
+  //     (entry, account), carrying that entry's A/R/A/P shape. Each row is then
+  //     split into its cash half (recognised here, on the entry date, because
+  //     the money moved here) and its accrual half, by
+  //     cashBasisEntryRecognisableAmount.
+  //
+  //     `has_document` governs the DISCLOSURE only. When an invoices/bills row
+  //     resolves from the entry's source, the accrual half is recognised on its
+  //     payment dates through payment_applications instead — disclosing it as
+  //     left out would contradict the figures above and invite a preparer to
+  //     add income back that is already in them. Only an entry with no document
+  //     behind it (IIF-imported GL, a hand-keyed A/R journal) has a gap no
+  //     payment will ever close, and only that gap is disclosed.
+  const mixedRows = await db.execute(sql`
+    WITH windowed AS (
+      SELECT je.id AS entry_id, je.source_type AS source_type, je.source_id AS source_id
+      FROM journal_entries je
+      WHERE je.entry_date BETWEEN ${start}::date AND ${end}::date
+    ),
+    shape AS (
+      SELECT
+        jl.entry_id AS entry_id,
+        COALESCE(SUM(jl.debit), 0) AS total,
+        COALESCE(SUM(CASE WHEN a.subtype = 'accounts_receivable' THEN jl.debit  ELSE 0 END), 0) AS ar_debit,
+        COALESCE(SUM(CASE WHEN a.subtype = 'accounts_receivable' THEN jl.credit ELSE 0 END), 0) AS ar_credit,
+        COALESCE(SUM(CASE WHEN a.subtype = 'accounts_payable'    THEN jl.debit  ELSE 0 END), 0) AS ap_debit,
+        COALESCE(SUM(CASE WHEN a.subtype = 'accounts_payable'    THEN jl.credit ELSE 0 END), 0) AS ap_credit,
+        BOOL_OR(a.subtype IN ('bank', 'credit_card')) AS moves_cash
+      FROM journal_lines jl
+      JOIN accounts a ON a.id = jl.account_id
+      WHERE jl.entry_id IN (SELECT entry_id FROM windowed)
+      GROUP BY jl.entry_id
+      HAVING BOOL_OR(a.subtype IN ('accounts_receivable', 'accounts_payable'))
+    ),
+    sourced AS (
+      -- Only for the entries the shape CTE kept. A reversal (what a void
+      -- writes) carries the ORIGINAL entry's id as its source_id, so resolve
+      -- one hop before looking for the document.
+      SELECT
+        w.entry_id AS entry_id,
+        CASE COALESCE(orig.source_type, w.source_type)
+          WHEN 'invoice' THEN EXISTS (
+            SELECT 1 FROM invoices i WHERE i.id = COALESCE(orig.source_id, w.source_id)
+          )
+          WHEN 'bill' THEN EXISTS (
+            SELECT 1 FROM bills b WHERE b.id = COALESCE(orig.source_id, w.source_id)
+          )
+          WHEN 'payment' THEN EXISTS (
+            SELECT 1 FROM payments p WHERE p.id = COALESCE(orig.source_id, w.source_id)
+          )
+          ELSE false
+        END AS has_document
+      FROM windowed w
+      LEFT JOIN journal_entries orig
+        ON w.source_type = 'reversal' AND orig.id = w.source_id
+      WHERE w.entry_id IN (SELECT entry_id FROM shape)
+    )
+    SELECT
+      s.entry_id        AS entry_id,
+      jl.account_id     AS account_id,
+      a.type            AS type,
+      s.total           AS total,
+      s.ar_debit        AS ar_debit,
+      s.ar_credit       AS ar_credit,
+      s.ap_debit        AS ap_debit,
+      s.ap_credit       AS ap_credit,
+      s.moves_cash      AS moves_cash,
+      src.has_document  AS has_document,
+      COALESCE(SUM(jl.debit), 0)  AS debit,
+      COALESCE(SUM(jl.credit), 0) AS credit
+    FROM journal_lines jl
+    JOIN shape s ON s.entry_id = jl.entry_id
+    JOIN sourced src ON src.entry_id = jl.entry_id
+    JOIN accounts a ON a.id = jl.account_id
+    WHERE a.type IN ('revenue', 'expense')
+      AND a.is_active = true
+    GROUP BY s.entry_id, jl.account_id, a.type, s.total, s.ar_debit, s.ar_credit,
+             s.ap_debit, s.ap_credit, s.moves_cash, src.has_document
+  `);
+
+  // 3. Every non-void application against a non-void document that took at
+  //    least one non-void payment inside the window. Applications from OUTSIDE
+  //    the window come along too: recognition is cumulative across a document's
+  //    payments (see recognizeCashBasisDocument), so an instalment can only be
+  //    split correctly against everything already paid before it. The window is
+  //    applied afterwards, to the recognition dates, in
+  //    recognizeCashBasisTotals. payment_date is rendered with to_char so the
+  //    recognition date is a plain YYYY-MM-DD string whatever the driver does
+  //    with DATE columns — the pure recogniser compares those as strings.
+  const applicationRows = await db.execute(sql`
+    WITH paid AS (
+      SELECT DISTINCT pa.invoice_id AS invoice_id, pa.bill_id AS bill_id
+      FROM payment_applications pa
+      JOIN payments p ON p.id = pa.payment_id
+      WHERE p.status <> 'void'
+        AND p.payment_date BETWEEN ${start}::date AND ${end}::date
+    )
+    SELECT
+      CASE WHEN pa.invoice_id IS NOT NULL THEN 'invoice' ELSE 'bill' END AS doc_kind,
+      COALESCE(pa.invoice_id, pa.bill_id)   AS doc_id,
+      COALESCE(i.total, b.total)            AS doc_total,
+      p.id                                  AS payment_id,
+      to_char(p.payment_date, 'YYYY-MM-DD') AS payment_date,
+      pa.amount                             AS applied_amount
+    FROM payment_applications pa
+    JOIN payments p ON p.id = pa.payment_id
+    LEFT JOIN invoices i ON i.id = pa.invoice_id
+    LEFT JOIN bills    b ON b.id = pa.bill_id
+    WHERE p.status <> 'void'
+      AND (i.id IS NULL OR i.status <> 'void')
+      AND (b.id IS NULL OR b.status <> 'void')
+      AND (
+        pa.invoice_id IN (SELECT invoice_id FROM paid WHERE invoice_id IS NOT NULL)
+        OR pa.bill_id IN (SELECT bill_id FROM paid WHERE bill_id IS NOT NULL)
+      )
+    ORDER BY 1, 2, 5, 4
+  `);
+
+  // 4. The lines of exactly those documents, in line_number order (the
+  //    remainder-on-the-largest-line tiebreak depends on that order).
+  const lineRows = await db.execute(sql`
+    WITH paid AS (
+      SELECT DISTINCT pa.invoice_id AS invoice_id, pa.bill_id AS bill_id
+      FROM payment_applications pa
+      JOIN payments p ON p.id = pa.payment_id
+      WHERE p.status <> 'void'
+        AND p.payment_date BETWEEN ${start}::date AND ${end}::date
+    )
+    SELECT
+      'invoice'      AS doc_kind,
+      il.invoice_id  AS doc_id,
+      il.line_number AS line_number,
+      il.account_id  AS account_id,
+      il.amount      AS amount
+    FROM invoice_lines il
+    WHERE il.invoice_id IN (SELECT invoice_id FROM paid WHERE invoice_id IS NOT NULL)
+    UNION ALL
+    SELECT
+      'bill',
+      bl.bill_id,
+      bl.line_number,
+      bl.account_id,
+      bl.amount
+    FROM bill_lines bl
+    WHERE bl.bill_id IN (SELECT bill_id FROM paid WHERE bill_id IS NOT NULL)
+    ORDER BY 1, 2, 3
+  `);
+
+  // Assemble one CashBasisDocument per paid document, then hand the whole set
+  // to the pure recogniser. The SQL applied the void filters; the date window
+  // is applied by the recogniser, because the payments feeding a cumulative
+  // allocation deliberately reach outside it.
+  const docs = new Map<
+    string,
+    Omit<CashBasisDocument, 'lines' | 'payments'> & {
+      lines: CashBasisLine[];
+      payments: CashBasisPayment[];
+    }
+  >();
+
+  for (const r of applicationRows as unknown as Array<Record<string, unknown>>) {
+    const key = `${String(r.doc_kind)}:${String(r.doc_id)}`;
+    let doc = docs.get(key);
+    if (!doc) {
+      doc = {
+        documentId: String(r.doc_id),
+        side: r.doc_kind === 'invoice' ? 'credit' : 'debit',
+        total: String(r.doc_total ?? '0'),
+        lines: [],
+        payments: [],
+      };
+      docs.set(key, doc);
+    }
+    doc.payments.push({
+      paymentId: String(r.payment_id),
+      date: String(r.payment_date),
+      amount: String(r.applied_amount),
+    });
+  }
+
+  for (const r of lineRows as unknown as Array<Record<string, unknown>>) {
+    const doc = docs.get(`${String(r.doc_kind)}:${String(r.doc_id)}`);
+    if (!doc) continue;
+    doc.lines.push({ accountId: String(r.account_id), amount: String(r.amount) });
+  }
+
+  const byAccount = new Map<string, bigint>();
+  for (const rec of recognizeCashBasisTotals(Array.from(docs.values()), { start, end })) {
+    byAccount.set(rec.accountId, decimalToMinor(rec.amount, SCALE));
+  }
+
+  for (const r of directRows as unknown as Array<Record<string, unknown>>) {
+    const accountId = String(r.account_id);
+    const creditMinusDebit = decimalToMinor(String(r.credit_minus_debit ?? '0'), SCALE);
+    byAccount.set(accountId, (byAccount.get(accountId) ?? 0n) + creditMinusDebit);
+  }
+
+  let unlinkedRev = 0n;
+  let unlinkedExp = 0n;
+  for (const r of mixedRows as unknown as Array<Record<string, unknown>>) {
+    const shape: CashBasisEntryShape = {
+      total: String(r.total ?? '0'),
+      arDebit: String(r.ar_debit ?? '0'),
+      arCredit: String(r.ar_credit ?? '0'),
+      apDebit: String(r.ap_debit ?? '0'),
+      apCredit: String(r.ap_credit ?? '0'),
+      movesCash: r.moves_cash === true,
+    };
+    const debit = String(r.debit ?? '0');
+    const credit = String(r.credit ?? '0');
+    const postedMinor = decimalToMinor(credit, SCALE) - decimalToMinor(debit, SCALE);
+    const recognisedMinor =
+      decimalToMinor(cashBasisEntryRecognisableAmount(shape, 'credit', credit), SCALE) -
+      decimalToMinor(cashBasisEntryRecognisableAmount(shape, 'debit', debit), SCALE);
+
+    const accountId = String(r.account_id);
+    byAccount.set(accountId, (byAccount.get(accountId) ?? 0n) + recognisedMinor);
+
+    // The accrual half. Disclose it only when nothing can ever recover it —
+    // with a document behind the entry it comes back through the payments.
+    if (r.has_document === true) continue;
+    const excluded = postedMinor - recognisedMinor;
+    if (r.type === 'revenue') unlinkedRev += excluded;
+    else unlinkedExp -= excluded;
+  }
+
+  const revenue: ProfitAndLossSection[] = [];
+  const expenses: ProfitAndLossSection[] = [];
+  let totalRev = 0n;
+  let totalExp = 0n;
+
+  for (const r of accountRows as unknown as Array<Record<string, unknown>>) {
+    const accountId = String(r.account_id);
+    // Stored credit-positive; flip for expenses so both read natural-sign,
+    // exactly like the accrual query's CASE. Rounded to cents HERE, once, and
+    // the totals below accumulate the rounded figures — so the column the
+    // report prints adds up to the total the report prints.
+    const creditMinusDebit = byAccount.get(accountId) ?? 0n;
+    const minor = roundMinorToCents(r.type === 'revenue' ? creditMinusDebit : -creditMinusDebit);
+    const section: ProfitAndLossSection = {
+      accountId,
+      code: String(r.code),
+      name: String(r.name),
+      amount: minorToDecimal(minor, SCALE),
+    };
+    if (r.type === 'revenue') {
+      revenue.push(section);
+      totalRev += minor;
+    } else {
+      expenses.push(section);
+      totalExp += minor;
+    }
+  }
+
+  return {
+    start,
+    end,
+    basis: 'cash',
+    revenue,
+    expenses,
+    totalRevenue: minorToDecimal(totalRev, SCALE),
+    totalExpenses: minorToDecimal(totalExp, SCALE),
+    netIncome: minorToDecimal(totalRev - totalExp, SCALE),
+    unlinkedAccrualActivity: {
+      revenue: minorToDecimal(roundMinorToCents(unlinkedRev), SCALE),
+      expenses: minorToDecimal(roundMinorToCents(unlinkedExp), SCALE),
+    },
   };
 }
 
@@ -1499,6 +2212,548 @@ export async function salesTaxLiability(
       invoiceCount: Number(u?.invoice_count ?? 0),
       taxCollected: String(u?.tax_collected ?? '0'),
     },
+  };
+}
+
+// ─── General ledger + account detail (drill-down) ─────────────────────────
+
+/**
+ * Which side an account's balance grows on. Asset and expense accounts are
+ * debit-positive; liability, equity and revenue accounts are credit-positive.
+ * Both detail reports run their opening and running balances through this, so
+ * a revenue account reads +1,000.00 after a 1,000.00 credit rather than
+ * -1,000.00, which is what an accountant expects to see on a ledger page.
+ */
+export type NormalBalance = 'debit' | 'credit';
+
+export function normalBalanceOf(type: TrialBalanceRow['type']): NormalBalance {
+  return type === 'asset' || type === 'expense' ? 'debit' : 'credit';
+}
+
+/** The source document behind a ledger row, named the way a preparer names it. */
+export type LedgerDocumentType =
+  | 'invoice'
+  | 'bill'
+  | 'payment'
+  | 'journal'
+  | 'bank_transaction'
+  | 'reconciliation'
+  | 'payroll'
+  | 'import';
+
+const SOURCE_TYPE_TO_DOCUMENT_TYPE: Record<string, LedgerDocumentType> = {
+  invoice: 'invoice',
+  bill: 'bill',
+  payment: 'payment',
+  bank_transaction: 'bank_transaction',
+  reconciliation: 'reconciliation',
+  payroll: 'payroll',
+  import: 'import',
+  // A hand-keyed entry reads as "journal", and so does a reversal whose
+  // original entry had no subledger document behind it. When the original DOES
+  // have one — the ordinary void of an invoice, bill or payment — the query
+  // resolves through to that document, so the row reads as an invoice/bill/
+  // payment with `isReversal` set rather than as an anonymous journal.
+  manual: 'journal',
+  reversal: 'journal',
+};
+
+export function ledgerDocumentTypeOf(sourceType: string): LedgerDocumentType {
+  return SOURCE_TYPE_TO_DOCUMENT_TYPE[sourceType] ?? 'journal';
+}
+
+export interface LedgerDetailRow {
+  /** journal_lines.id — stable row key for the UI. */
+  lineId: string;
+  entryId: string;
+  entryDate: string;
+  documentType: LedgerDocumentType;
+  /**
+   * Invoice number, bill number, payment reference, or failing all of those
+   * the entry's own reference (an IIF-imported check number lands here).
+   * Null when the entry carries no identifier at all.
+   */
+  documentNumber: string | null;
+  /**
+   * True when this line is the mirror written by a void/reversal. The row keeps
+   * the voided document's type and number, so a voided invoice still reads as
+   * INV-1041 — this flag is what marks it as the reversing side.
+   */
+  isReversal: boolean;
+  /** Line memo, falling back to the entry memo. */
+  memo: string | null;
+  /** Customer or vendor behind the document; IIF payee name as a fallback. */
+  counterpartyName: string | null;
+  debit: string;
+  credit: string;
+  /** Opening balance plus every row through this one, normal-balance signed. */
+  runningBalance: string;
+}
+
+export interface LedgerAccountGroup {
+  accountId: string;
+  code: string;
+  name: string;
+  type: TrialBalanceRow['type'];
+  subtype: string;
+  /**
+   * Inactive accounts with history ARE included — unlike the trial balance and
+   * the P&L, a drill-down report that silently hides posted transactions is
+   * worse than one that shows a deactivated account. The flag lets the UI
+   * badge it.
+   */
+  isActive: boolean;
+  normalBalance: NormalBalance;
+  /** Every posting strictly before `start`, normal-balance signed. */
+  openingBalance: string;
+  /** Period totals over EVERY row in range — never affected by the row cap. */
+  totalDebit: string;
+  totalCredit: string;
+  /** openingBalance ± period net. Always the true closing balance. */
+  closingBalance: string;
+  /** Rows in range for this account, before any cap. */
+  rowCount: number;
+  rows: LedgerDetailRow[];
+  /** True when `rows.length < rowCount` — the cap cut this account short. */
+  truncated: boolean;
+}
+
+export interface GeneralLedgerReport {
+  start: string;
+  end: string;
+  /** Echoes the accountId filter, or null for the whole chart. */
+  accountId: string | null;
+  accounts: LedgerAccountGroup[];
+  /** Row cap applied across ALL accounts combined. */
+  rowCap: number;
+  /** Rows in range across every account, before the cap. */
+  totalRowCount: number;
+  /** Rows actually returned. */
+  returnedRows: number;
+  /** True when the cap bit. Per-account summaries stay exact either way. */
+  truncated: boolean;
+  totals: { totalDebit: string; totalCredit: string; accountCount: number };
+}
+
+export interface AccountDetailReport {
+  start: string;
+  end: string;
+  account: {
+    accountId: string;
+    code: string;
+    name: string;
+    type: TrialBalanceRow['type'];
+    subtype: string;
+    isActive: boolean;
+    normalBalance: NormalBalance;
+  };
+  /** Every posting strictly before `start`, normal-balance signed. */
+  openingBalance: string;
+  /** Balance carried into the first returned row: opening + everything `offset` skipped. */
+  pageOpeningBalance: string;
+  rows: LedgerDetailRow[];
+  /** Period totals over EVERY row in range, not just this page. */
+  totalDebit: string;
+  totalCredit: string;
+  closingBalance: string;
+  /** Rows in range across all pages. */
+  rowCount: number;
+  limit: number;
+  offset: number;
+  returnedRows: number;
+  /** True when this page does not contain every row in range. */
+  truncated: boolean;
+  /** True when rows remain after this page — refetch with offset += limit. */
+  hasMore: boolean;
+}
+
+/**
+ * Default and hard caps.
+ *
+ * generalLedger returns at most `rowCap` detail rows ACROSS ALL ACCOUNTS
+ * (default 5,000, hard maximum 20,000). Nothing is ever silently dropped: the
+ * per-account opening balance, period debit/credit totals, closing balance and
+ * rowCount come from a separate aggregate query that the cap does not touch, so
+ * a truncated group still reports correct money — only its `rows` array is
+ * short, and `truncated` says so on both the group and the report. To read
+ * every row of a busy account, drill into accountDetail, which paginates.
+ */
+export const GENERAL_LEDGER_ROW_CAP = 5000;
+export const GENERAL_LEDGER_MAX_ROW_CAP = 20000;
+export const ACCOUNT_DETAIL_PAGE_SIZE = 500;
+export const ACCOUNT_DETAIL_MAX_PAGE_SIZE = 5000;
+
+/**
+ * Roll a running balance down a set of rows, honouring the account's normal
+ * balance. Pure — the SQL supplies the opening carry and the raw debits and
+ * credits, this decides what the accountant sees. BigInt minor units at the
+ * ledger's NUMERIC(19,4) scale, so no float ever touches a balance.
+ */
+export function ledgerRunningBalances(
+  normalBalance: NormalBalance,
+  openingBalance: string,
+  rows: readonly { debit: string; credit: string }[],
+): string[] {
+  const SCALE = 10000n;
+  let running = decimalToMinor(openingBalance, SCALE);
+  return rows.map((r) => {
+    const debit = decimalToMinor(r.debit, SCALE);
+    const credit = decimalToMinor(r.credit, SCALE);
+    running += normalBalance === 'debit' ? debit - credit : credit - debit;
+    return minorToDecimal(running, SCALE);
+  });
+}
+
+/**
+ * The detail-row projection shared by both reports.
+ *
+ * Provenance resolution: journal_entries.source_id points at the invoice, bill
+ * or payment that produced the entry. A void writes a reversal whose source_id
+ * is the ORIGINAL ENTRY, so we hop through `oe` first and resolve the document
+ * behind that — otherwise every void row would read as an anonymous journal.
+ * IIF-imported entries stamp a content-hash source_id that matches no
+ * subledger row; those joins simply miss and the row falls back to the entry's
+ * own reference plus the payee name the importer parked in dimension_json.
+ *
+ * entry_date goes through to_char: the driver parses DATE columns into JS Date
+ * objects, and these reports move dates as plain YYYY-MM-DD strings.
+ */
+const LEDGER_DETAIL_PROJECTION = sql`
+      jl.id                                    AS line_id,
+      jl.account_id                            AS account_id,
+      je.id                                    AS entry_id,
+      to_char(je.entry_date, 'YYYY-MM-DD')     AS entry_date,
+      COALESCE(oe.source_type, je.source_type) AS document_source_type,
+      (je.source_type = 'reversal')            AS is_reversal,
+      COALESCE(jl.memo, je.memo)               AS memo,
+      jl.debit                                 AS debit,
+      jl.credit                                AS credit,
+      COALESCE(i.invoice_number, b.bill_number, p.reference, je.reference) AS document_number,
+      COALESCE(cu.display_name, vn.display_name, jl.dimension_json->>'name') AS counterparty_name`;
+
+const LEDGER_DETAIL_JOINS = sql`
+    JOIN journal_entries je ON je.id = jl.entry_id
+    LEFT JOIN journal_entries oe
+           ON je.source_type = 'reversal'
+          AND oe.id = je.source_id
+    LEFT JOIN invoices i
+           ON COALESCE(oe.source_type, je.source_type) = 'invoice'
+          AND i.id = COALESCE(oe.source_id, je.source_id)
+    LEFT JOIN bills b
+           ON COALESCE(oe.source_type, je.source_type) = 'bill'
+          AND b.id = COALESCE(oe.source_id, je.source_id)
+    LEFT JOIN payments p
+           ON COALESCE(oe.source_type, je.source_type) = 'payment'
+          AND p.id = COALESCE(oe.source_id, je.source_id)
+    LEFT JOIN customers cu ON cu.id = COALESCE(i.customer_id, p.customer_id)
+    LEFT JOIN vendors   vn ON vn.id = COALESCE(b.vendor_id,   p.vendor_id)`;
+
+/** Shape one raw projection row; runningBalance is filled in by the caller. */
+function toLedgerDetailRow(r: Record<string, unknown>): LedgerDetailRow {
+  return {
+    lineId: String(r.line_id),
+    entryId: String(r.entry_id),
+    entryDate: String(r.entry_date),
+    documentType: ledgerDocumentTypeOf(String(r.document_source_type)),
+    documentNumber: r.document_number === null || r.document_number === undefined
+      ? null
+      : String(r.document_number),
+    isReversal: r.is_reversal === true,
+    memo: r.memo === null || r.memo === undefined ? null : String(r.memo),
+    counterpartyName: r.counterparty_name === null || r.counterparty_name === undefined
+      ? null
+      : String(r.counterparty_name),
+    debit: String(r.debit ?? '0'),
+    credit: String(r.credit ?? '0'),
+    runningBalance: '0.0000',
+  };
+}
+
+/**
+ * General ledger for [start, end] — every posted line grouped by account, in
+ * date order, with an opening balance per account (all activity strictly
+ * before `start`) and a running balance down the rows.
+ *
+ * Accounts appear when they have activity in the range OR a non-zero opening
+ * balance, so a dormant account still shows what it is carrying. Inactive
+ * accounts with history are included (see LedgerAccountGroup.isActive).
+ *
+ * Row cap: see GENERAL_LEDGER_ROW_CAP. The cap only shortens `rows`; every
+ * money figure on the group is computed from the full range.
+ */
+export async function generalLedger(
+  db: Database,
+  start: string,
+  end: string,
+  opts: { accountId?: string | undefined; rowCap?: number } = {},
+): Promise<GeneralLedgerReport> {
+  const SCALE = 10000n;
+  const accountId = opts.accountId;
+  const rowCap = Math.max(
+    1,
+    Math.min(opts.rowCap ?? GENERAL_LEDGER_ROW_CAP, GENERAL_LEDGER_MAX_ROW_CAP),
+  );
+
+  // Summary pass — exact for the whole range, never touched by the row cap.
+  // The date predicate lives inside the aggregates, not on the LEFT JOIN; see
+  // the note in trialBalance for why that matters.
+  const summaryRows = await db.execute(sql`
+    SELECT
+      a.id        AS account_id,
+      a.code      AS code,
+      a.name      AS name,
+      a.type      AS type,
+      a.subtype   AS subtype,
+      a.is_active AS is_active,
+      COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.debit  ELSE 0 END), 0) AS opening_debit,
+      COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.credit ELSE 0 END), 0) AS opening_credit,
+      COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.debit  ELSE 0 END), 0) AS period_debit,
+      COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.credit ELSE 0 END), 0) AS period_credit,
+      COUNT(jl.id) FILTER (WHERE je.entry_date BETWEEN ${start}::date AND ${end}::date) AS row_count
+    FROM accounts a
+    LEFT JOIN journal_lines jl ON jl.account_id = a.id
+    LEFT JOIN journal_entries je ON je.id = jl.entry_id
+    ${accountId ? sql`WHERE a.id = ${accountId}::uuid` : sql``}
+    GROUP BY a.id, a.code, a.name, a.type, a.subtype, a.is_active
+    HAVING COUNT(jl.id) FILTER (WHERE je.entry_date BETWEEN ${start}::date AND ${end}::date) > 0
+        OR COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.debit  ELSE 0 END), 0)
+        <> COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.credit ELSE 0 END), 0)
+    ORDER BY a.code, a.id
+  `);
+
+  const groups = new Map<string, LedgerAccountGroup>();
+  const order: string[] = [];
+  let totalRowCount = 0;
+  let grandDebit = 0n;
+  let grandCredit = 0n;
+
+  for (const r of summaryRows as unknown as Array<Record<string, unknown>>) {
+    const id = String(r.account_id);
+    const type = r.type as TrialBalanceRow['type'];
+    const normalBalance = normalBalanceOf(type);
+    const openingDebit = decimalToMinor(String(r.opening_debit ?? '0'), SCALE);
+    const openingCredit = decimalToMinor(String(r.opening_credit ?? '0'), SCALE);
+    const opening =
+      normalBalance === 'debit' ? openingDebit - openingCredit : openingCredit - openingDebit;
+    const periodDebit = decimalToMinor(String(r.period_debit ?? '0'), SCALE);
+    const periodCredit = decimalToMinor(String(r.period_credit ?? '0'), SCALE);
+    const periodNet =
+      normalBalance === 'debit' ? periodDebit - periodCredit : periodCredit - periodDebit;
+    const rowCount = Number(r.row_count ?? 0);
+
+    totalRowCount += rowCount;
+    grandDebit += periodDebit;
+    grandCredit += periodCredit;
+
+    groups.set(id, {
+      accountId: id,
+      code: String(r.code),
+      name: String(r.name),
+      type,
+      subtype: String(r.subtype),
+      isActive: r.is_active === true,
+      normalBalance,
+      openingBalance: minorToDecimal(opening, SCALE),
+      totalDebit: minorToDecimal(periodDebit, SCALE),
+      totalCredit: minorToDecimal(periodCredit, SCALE),
+      closingBalance: minorToDecimal(opening + periodNet, SCALE),
+      rowCount,
+      rows: [],
+      truncated: false,
+    });
+    order.push(id);
+  }
+
+  // Detail pass. Ordered the same way the summary is grouped (code, then id to
+  // break duplicate codes), so the cap always cuts a clean tail rather than
+  // scattering holes through the report.
+  const detailRows = await db.execute(sql`
+    SELECT${LEDGER_DETAIL_PROJECTION},
+      a.code AS account_code
+    FROM journal_lines jl
+    JOIN accounts a ON a.id = jl.account_id${LEDGER_DETAIL_JOINS}
+    WHERE je.entry_date BETWEEN ${start}::date AND ${end}::date
+      ${accountId ? sql`AND jl.account_id = ${accountId}::uuid` : sql``}
+    ORDER BY a.code, a.id, je.entry_date, je.id, jl.id
+    LIMIT ${rowCap}::int
+  `);
+
+  let returnedRows = 0;
+  for (const r of detailRows as unknown as Array<Record<string, unknown>>) {
+    const group = groups.get(String(r.account_id));
+    // Unreachable: the HAVING above keeps every account with a row in range.
+    if (!group) continue;
+    group.rows.push(toLedgerDetailRow(r));
+    returnedRows += 1;
+  }
+
+  const accounts: LedgerAccountGroup[] = [];
+  for (const id of order) {
+    const group = groups.get(id)!;
+    const balances = ledgerRunningBalances(
+      group.normalBalance,
+      group.openingBalance,
+      group.rows,
+    );
+    for (let i = 0; i < group.rows.length; i += 1) {
+      group.rows[i]!.runningBalance = balances[i]!;
+    }
+    group.truncated = group.rows.length < group.rowCount;
+    accounts.push(group);
+  }
+
+  return {
+    start,
+    end,
+    accountId: accountId ?? null,
+    accounts,
+    rowCap,
+    totalRowCount,
+    returnedRows,
+    truncated: returnedRows < totalRowCount,
+    totals: {
+      totalDebit: minorToDecimal(grandDebit, SCALE),
+      totalCredit: minorToDecimal(grandCredit, SCALE),
+      accountCount: accounts.length,
+    },
+  };
+}
+
+/**
+ * The same detail for ONE account, paginated — this is what powers "click a
+ * P&L number and see what's in it".
+ *
+ * Pagination is offset-based and the running balance stays correct across
+ * pages: the SQL carries a windowed sum of everything before the first
+ * returned row, so page 3 opens where page 2 closed instead of restarting from
+ * the account's opening balance. Page size defaults to
+ * ACCOUNT_DETAIL_PAGE_SIZE and is hard-capped at ACCOUNT_DETAIL_MAX_PAGE_SIZE;
+ * `rowCount`, `truncated` and `hasMore` tell the caller exactly what is missing.
+ *
+ * Returns null when the account does not exist for this tenant (RLS makes a
+ * foreign company's account indistinguishable from a deleted one, which is the
+ * intent).
+ */
+export async function accountDetail(
+  db: Database,
+  accountId: string,
+  start: string,
+  end: string,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<AccountDetailReport | null> {
+  const SCALE = 10000n;
+  const limit = Math.max(
+    1,
+    Math.min(opts.limit ?? ACCOUNT_DETAIL_PAGE_SIZE, ACCOUNT_DETAIL_MAX_PAGE_SIZE),
+  );
+  const offset = Math.max(0, opts.offset ?? 0);
+
+  const accountRows = await db.execute(sql`
+    SELECT a.id, a.code, a.name, a.type, a.subtype, a.is_active
+    FROM accounts a
+    WHERE a.id = ${accountId}::uuid
+  `);
+  const acct = (accountRows as unknown as Array<Record<string, unknown>>)[0];
+  if (!acct) return null;
+
+  const type = acct.type as TrialBalanceRow['type'];
+  const normalBalance = normalBalanceOf(type);
+
+  // Exact figures for the whole range, independent of the page.
+  const summaryRows = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.debit  ELSE 0 END), 0) AS opening_debit,
+      COALESCE(SUM(CASE WHEN je.entry_date < ${start}::date THEN jl.credit ELSE 0 END), 0) AS opening_credit,
+      COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.debit  ELSE 0 END), 0) AS period_debit,
+      COALESCE(SUM(CASE WHEN je.entry_date BETWEEN ${start}::date AND ${end}::date THEN jl.credit ELSE 0 END), 0) AS period_credit,
+      COUNT(jl.id) FILTER (WHERE je.entry_date BETWEEN ${start}::date AND ${end}::date) AS row_count
+    FROM journal_lines jl
+    JOIN journal_entries je ON je.id = jl.entry_id
+    WHERE jl.account_id = ${accountId}::uuid
+  `);
+  const s = (summaryRows as unknown as Array<Record<string, unknown>>)[0];
+  const openingDebit = decimalToMinor(String(s?.opening_debit ?? '0'), SCALE);
+  const openingCredit = decimalToMinor(String(s?.opening_credit ?? '0'), SCALE);
+  const opening =
+    normalBalance === 'debit' ? openingDebit - openingCredit : openingCredit - openingDebit;
+  const periodDebit = decimalToMinor(String(s?.period_debit ?? '0'), SCALE);
+  const periodCredit = decimalToMinor(String(s?.period_credit ?? '0'), SCALE);
+  const periodNet =
+    normalBalance === 'debit' ? periodDebit - periodCredit : periodCredit - periodDebit;
+  const rowCount = Number(s?.row_count ?? 0);
+  const closing = opening + periodNet;
+
+  // Page. prior_debit/prior_credit are the running sums of everything BEFORE
+  // each row in the full ordering; only the first returned row's pair is read,
+  // and it is what makes the running balance survive a non-zero offset.
+  const pageRows = await db.execute(sql`
+    WITH ordered AS (
+      SELECT${LEDGER_DETAIL_PROJECTION},
+        ROW_NUMBER() OVER (ORDER BY je.entry_date, je.id, jl.id) AS rn,
+        COALESCE(SUM(jl.debit) OVER (
+          ORDER BY je.entry_date, je.id, jl.id
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_debit,
+        COALESCE(SUM(jl.credit) OVER (
+          ORDER BY je.entry_date, je.id, jl.id
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS prior_credit
+      FROM journal_lines jl${LEDGER_DETAIL_JOINS}
+      WHERE jl.account_id = ${accountId}::uuid
+        AND je.entry_date BETWEEN ${start}::date AND ${end}::date
+    )
+    SELECT * FROM ordered
+    WHERE rn > ${offset}::bigint
+    ORDER BY rn
+    LIMIT ${limit}::int
+  `);
+
+  const raw = pageRows as unknown as Array<Record<string, unknown>>;
+  const rows = raw.map((r) => toLedgerDetailRow(r));
+
+  let pageOpening: bigint;
+  const first = raw[0];
+  if (first) {
+    const priorDebit = decimalToMinor(String(first.prior_debit ?? '0'), SCALE);
+    const priorCredit = decimalToMinor(String(first.prior_credit ?? '0'), SCALE);
+    pageOpening =
+      opening +
+      (normalBalance === 'debit' ? priorDebit - priorCredit : priorCredit - priorDebit);
+  } else {
+    // No rows on this page: either the range is empty, or the offset ran past
+    // the end, in which case everything in range was skipped and the carry is
+    // the closing balance.
+    pageOpening = offset >= rowCount ? closing : opening;
+  }
+
+  const pageOpeningBalance = minorToDecimal(pageOpening, SCALE);
+  const balances = ledgerRunningBalances(normalBalance, pageOpeningBalance, rows);
+  for (let i = 0; i < rows.length; i += 1) {
+    rows[i]!.runningBalance = balances[i]!;
+  }
+
+  return {
+    start,
+    end,
+    account: {
+      accountId: String(acct.id),
+      code: String(acct.code),
+      name: String(acct.name),
+      type,
+      subtype: String(acct.subtype),
+      isActive: acct.is_active === true,
+      normalBalance,
+    },
+    openingBalance: minorToDecimal(opening, SCALE),
+    pageOpeningBalance,
+    rows,
+    totalDebit: minorToDecimal(periodDebit, SCALE),
+    totalCredit: minorToDecimal(periodCredit, SCALE),
+    closingBalance: minorToDecimal(closing, SCALE),
+    rowCount,
+    limit,
+    offset,
+    returnedRows: rows.length,
+    truncated: rows.length < rowCount,
+    hasMore: offset + rows.length < rowCount,
   };
 }
 

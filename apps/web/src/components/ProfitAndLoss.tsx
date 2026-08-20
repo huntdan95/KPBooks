@@ -3,6 +3,9 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface PnlSection {
   accountId: string;
@@ -20,6 +23,13 @@ interface ProfitAndLossResponse {
   totalRevenue: string;
   totalExpenses: string;
   netIncome: string;
+  /**
+   * Cash basis only. Revenue/expense activity the cash path cannot recognise
+   * because no payment sits behind it (IIF imports, hand-keyed A/R/A/P
+   * entries). NOT included in the totals — surfaced so the gap is visible
+   * rather than silently under-reported.
+   */
+  unlinkedAccrualActivity?: { revenue: string; expenses: string };
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -37,7 +47,11 @@ function formatUsd(s: string): string {
   return `${negative ? '-' : ''}$${withCommas}.${frac.slice(0, 2)}`;
 }
 
-export function ProfitAndLoss() {
+export function ProfitAndLoss({
+  onOpenAccount,
+}: {
+  onOpenAccount?: ((target: AccountDrillTarget) => void) | undefined;
+}) {
   const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [start, setStart] = useState<string>(firstOfYear);
@@ -65,6 +79,38 @@ export function ProfitAndLoss() {
     [data],
   );
 
+  /** The table exactly as rendered: sections, their totals, then net income. */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [[t('code'), t('common:account'), t('common:amount')]];
+
+    out.push([t('pnl.revenue')]);
+    if (sortedRevenue.length === 0) out.push([t('pnl.noRevenue')]);
+    for (const r of sortedRevenue) out.push([r.code, r.name, csvMoney(r.amount)]);
+    out.push(['', t('pnl.totalRevenue'), csvMoney(data.totalRevenue)]);
+
+    out.push([t('pnl.expenses')]);
+    if (sortedExpenses.length === 0) out.push([t('pnl.noExpenses')]);
+    for (const r of sortedExpenses) out.push([r.code, r.name, csvMoney(r.amount)]);
+    out.push(['', t('pnl.totalExpenses'), csvMoney(data.totalExpenses)]);
+
+    out.push(['', t(`pnl.netIncome.${data.basis}`), csvMoney(data.netIncome)]);
+
+    // The cash-basis exclusion banner travels with the file. Whoever reconciles
+    // this export against the ledger needs to know what was left out.
+    if (data.unlinkedAccrualActivity && hasUnlinked(data.unlinkedAccrualActivity)) {
+      out.push([]);
+      out.push([t('pnl.unlinkedTitle')]);
+      out.push([
+        t('pnl.unlinkedBody', {
+          revenue: formatUsd(data.unlinkedAccrualActivity.revenue),
+          expenses: formatUsd(data.unlinkedAccrualActivity.expenses),
+        }),
+      ]);
+    }
+    return out;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -91,13 +137,22 @@ export function ProfitAndLoss() {
             className={inputClass}
           >
             <option value="accrual">{t('pnl.basisAccrual')}</option>
-            {/* Cash basis is not implemented server-side yet; offering it
-                produced a hard error. Re-enable when the API supports it. */}
-            <option value="cash" disabled>
-              {t('pnl.basisCashSoon')}
-            </option>
+            <option value="cash">{t('pnl.basisCash')}</option>
           </select>
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('profit-and-loss', data?.start, data?.end)}
+          meta={{
+            title: t('pnl.reportTitle'),
+            ...(data ? { start: data.start, end: data.end } : {}),
+            // Reads off data.basis — what the server actually computed — not
+            // the select, which may already have moved on.
+            ...(data ? { basis: t(`pnl.basisBadge.${data.basis}`) } : {}),
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data}
+        />
+        <p className="pb-1 text-xs text-slate-500">{t(`pnl.basisHint.${basis}`)}</p>
       </div>
 
       {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
@@ -109,6 +164,30 @@ export function ProfitAndLoss() {
 
       {data && (
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+          {/* The report header sits INSIDE the card, not up in the toolbar: the
+              basis has to survive a print, a PDF or a copy-paste of the table,
+              where the control that set it is nowhere to be seen. It reads off
+              data.basis (what the server actually computed), not the select. */}
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 px-4 py-3">
+            <div>
+              <h3 className="text-base font-semibold tracking-tight text-slate-900">
+                {t('pnl.reportTitle')}
+              </h3>
+              <p className="text-xs text-slate-500">
+                {t('pnl.period', { start: data.start, end: data.end })}
+              </p>
+            </div>
+            <span
+              className={
+                'rounded px-2 py-1 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset ' +
+                (data.basis === 'cash'
+                  ? 'bg-sky-50 text-sky-800 ring-sky-600/30'
+                  : 'bg-slate-100 text-slate-700 ring-slate-400/40')
+              }
+            >
+              {t(`pnl.basisBadge.${data.basis}`)}
+            </span>
+          </div>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
@@ -129,11 +208,21 @@ export function ProfitAndLoss() {
                 </tr>
               ) : (
                 sortedRevenue.map((r) => (
-                  <tr key={r.accountId}>
-                    <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
-                    <td className="px-4 py-2 text-slate-900">{r.name}</td>
-                    <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(r.amount)}</td>
-                  </tr>
+                  <AccountRow
+                    key={r.accountId}
+                    row={r}
+                    onOpen={
+                      onOpenAccount
+                        ? () =>
+                            onOpenAccount({
+                              accountId: r.accountId,
+                              start: data.start,
+                              end: data.end,
+                              cashBasis: data.basis === 'cash',
+                            })
+                        : undefined
+                    }
+                  />
                 ))
               )}
               <tr className="bg-slate-50 font-medium">
@@ -154,11 +243,21 @@ export function ProfitAndLoss() {
                 </tr>
               ) : (
                 sortedExpenses.map((r) => (
-                  <tr key={r.accountId}>
-                    <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
-                    <td className="px-4 py-2 text-slate-900">{r.name}</td>
-                    <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(r.amount)}</td>
-                  </tr>
+                  <AccountRow
+                    key={r.accountId}
+                    row={r}
+                    onOpen={
+                      onOpenAccount
+                        ? () =>
+                            onOpenAccount({
+                              accountId: r.accountId,
+                              start: data.start,
+                              end: data.end,
+                              cashBasis: data.basis === 'cash',
+                            })
+                        : undefined
+                    }
+                  />
                 ))
               )}
               <tr className="bg-slate-50 font-medium">
@@ -171,7 +270,10 @@ export function ProfitAndLoss() {
             <tfoot className="bg-slate-100 text-sm font-semibold">
               <tr>
                 <td colSpan={2} className="px-4 py-3 text-right text-slate-900">
-                  {t('pnl.netIncome', { basis: t(`pnl.basisName.${data.basis}`) })}
+                  {/* One whole string per basis, never a name interpolated into
+                      a template: Spanish needs "base devengada" but "base de
+                      efectivo", which no single template produces. */}
+                  {t(`pnl.netIncome.${data.basis}`)}
                 </td>
                 <td
                   className={
@@ -184,10 +286,59 @@ export function ProfitAndLoss() {
               </tr>
             </tfoot>
           </table>
+          {data.unlinkedAccrualActivity && hasUnlinked(data.unlinkedAccrualActivity) && (
+            <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <p className="font-medium">{t('pnl.unlinkedTitle')}</p>
+              <p className="mt-0.5 text-xs">
+                {t('pnl.unlinkedBody', {
+                  revenue: formatUsd(data.unlinkedAccrualActivity.revenue),
+                  expenses: formatUsd(data.unlinkedAccrualActivity.expenses),
+                })}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * One account line. The whole row is a mouse target so the amount QuickZooms
+ * like it does in QuickBooks, and the account name is a real <button> so the
+ * same drill-down is reachable — and announced — from the keyboard.
+ */
+function AccountRow({ row, onOpen }: { row: PnlSection; onOpen?: (() => void) | undefined }) {
+  const { t } = useTranslation('reports');
+  return (
+    <tr className={onOpen ? drillRowClass : undefined} onClick={onOpen}>
+      <td className="px-4 py-2 font-mono text-slate-500">{row.code}</td>
+      <td className="px-4 py-2 text-slate-900">
+        {onOpen ? (
+          <button
+            type="button"
+            className={drillButtonClass}
+            aria-label={t('drill.openAccount', { code: row.code, name: row.name })}
+            onClick={(e) => {
+              // Stop the bubble, or one click would run the row handler too.
+              e.stopPropagation();
+              onOpen();
+            }}
+          >
+            {row.name}
+          </button>
+        ) : (
+          row.name
+        )}
+      </td>
+      <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(row.amount)}</td>
+    </tr>
+  );
+}
+
+/** Only worth a banner when there is actually something excluded. */
+function hasUnlinked(u: { revenue: string; expenses: string }): boolean {
+  return Number(u.revenue) !== 0 || Number(u.expenses) !== 0;
 }
 
 const inputClass =

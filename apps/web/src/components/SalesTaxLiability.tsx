@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface RateRow {
   taxRateId: string;
@@ -40,6 +42,26 @@ function formatUsd(s: string | number | null | undefined): string {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
+// Local 4-dp string add — same precision as the server-side Money. The period
+// totals used to accumulate through Number(), which drifts a cent on a long
+// rate list and would then be truncated to the wrong cent in the CSV.
+function addStr(a: string, b: string): string {
+  const toMicros = (s: string) => {
+    if (!s) return 0n;
+    const [whole = '0', frac = ''] = s.split('.');
+    const padded = (frac + '0000').slice(0, 4);
+    const sign = whole.startsWith('-') ? -1n : 1n;
+    const wholeAbs = whole.replace(/^-/, '');
+    return sign * (BigInt(wholeAbs || '0') * 10000n + BigInt(padded || '0'));
+  };
+  const sum = toMicros(a) + toMicros(b);
+  const negative = sum < 0n;
+  const abs = negative ? -sum : sum;
+  const whole = abs / 10000n;
+  const frac = abs % 10000n;
+  return `${negative ? '-' : ''}${whole}.${String(frac).padStart(4, '0')}`;
+}
+
 export function SalesTaxLiability() {
   const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
@@ -58,6 +80,66 @@ export function SalesTaxLiability() {
 
   const data = query.data;
   const netChangeNum = data ? Number(data.netChange) : 0;
+
+  // Footer totals, in minor units so screen and CSV agree to the cent.
+  const periodTotals = useMemo(() => {
+    let taxableSales = '0';
+    let taxCollected = '0';
+    for (const r of data?.byRate ?? []) {
+      taxableSales = addStr(taxableSales, r.taxableSales);
+      taxCollected = addStr(taxCollected, r.taxCollected);
+    }
+    if (data) taxCollected = addStr(taxCollected, data.untracked.taxCollected);
+    return { taxableSales, taxCollected };
+  }, [data]);
+
+  /** The four tiles, then the per-rate table exactly as rendered. */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [
+      // The tiles carry numbers the table does not — remitted and the ending
+      // GL balance are the whole point of the report at filing time.
+      [t('salesTax.tiles.collected'), csvMoney(data.collected)],
+      [t('salesTax.tiles.remitted'), csvMoney(data.remitted)],
+      [t('salesTax.tiles.netChange'), csvMoney(data.netChange)],
+      [t('salesTax.tiles.owed', { date: data.to }), csvMoney(data.endingBalance)],
+      [],
+      [
+        t('salesTax.columns.taxRate'),
+        t('salesTax.columns.rate'),
+        t('salesTax.columns.invoices'),
+        t('salesTax.columns.taxableSales'),
+        t('salesTax.columns.taxCollected'),
+      ],
+    ];
+    if (data.byRate.length === 0) out.push([t('salesTax.noRates')]);
+    for (const r of data.byRate) {
+      out.push([
+        r.isActive ? r.name : `${r.name} ${t('accounts.inactiveTag')}`,
+        Number(r.ratePercent).toFixed(4),
+        r.invoiceCount,
+        csvMoney(r.taxableSales),
+        csvMoney(r.taxCollected),
+      ]);
+    }
+    if (data.untracked.invoiceCount > 0) {
+      out.push([
+        t('salesTax.noRateLinked'),
+        '',
+        data.untracked.invoiceCount,
+        '',
+        csvMoney(data.untracked.taxCollected),
+      ]);
+    }
+    out.push([
+      t('salesTax.periodTotal'),
+      '',
+      '',
+      csvMoney(periodTotals.taxableSales),
+      csvMoney(periodTotals.taxCollected),
+    ]);
+    return out;
+  }
 
   return (
     <div className="space-y-4">
@@ -78,6 +160,15 @@ export function SalesTaxLiability() {
             className={inputClass}
           />
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('sales-tax-liability', data?.from, data?.to)}
+          meta={{
+            title: t('tabs.salesTaxLiability'),
+            ...(data ? { start: data.from, end: data.to } : {}),
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data}
+        />
       </div>
 
       <p className="text-xs text-slate-500">
@@ -211,15 +302,10 @@ export function SalesTaxLiability() {
                     {t('salesTax.periodTotal')}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-slate-700">
-                    {formatUsd(
-                      data.byRate.reduce((acc, r) => acc + Number(r.taxableSales), 0),
-                    )}
+                    {formatUsd(periodTotals.taxableSales)}
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-slate-900">
-                    {formatUsd(
-                      data.byRate.reduce((acc, r) => acc + Number(r.taxCollected), 0) +
-                        Number(data.untracked.taxCollected),
-                    )}
+                    {formatUsd(periodTotals.taxCollected)}
                   </td>
                 </tr>
               </tfoot>

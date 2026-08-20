@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface WorkersCompSummaryRow {
   workersCompClass: string | null;
@@ -28,7 +30,7 @@ function formatUsd(s: string | number): string {
 }
 
 export function WorkersCompSummary() {
-  const { t } = useTranslation(['payroll', 'common']);
+  const { t } = useTranslation(['payroll', 'reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [from, setFrom] = useState<string>(firstOfYear);
   const [to, setTo] = useState<string>(todayIso);
@@ -51,6 +53,41 @@ export function WorkersCompSummary() {
         .reduce((acc, r) => acc + Number(r.totalPaid), 0)
     : 0;
 
+  /** The class-code table exactly as rendered, percentages included. */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [
+      [
+        t('workersComp.columns.wcClass'),
+        t('workersComp.columns.workerCount'),
+        t('workersComp.columns.totalPaid'),
+        t('workersComp.columns.pctOfTotal'),
+      ],
+    ];
+    for (const r of data.rows) {
+      const pct =
+        Number(data.totalPaid) > 0 ? (Number(r.totalPaid) / Number(data.totalPaid)) * 100 : 0;
+      out.push([
+        r.workersCompClass ?? t('workersComp.unclassified'),
+        r.workerCount,
+        csvMoney(r.totalPaid),
+        pct.toFixed(1),
+      ]);
+    }
+    out.push([
+      t('workersComp.totalRange', { from: data.from, to: data.to }),
+      '',
+      csvMoney(data.totalPaid),
+      t('workersComp.pctClassified', {
+        pct:
+          Number(data.totalPaid) > 0
+            ? ((classifiedTotal / Number(data.totalPaid)) * 100).toFixed(1)
+            : '0.0',
+      }),
+    ]);
+    return out;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -70,6 +107,15 @@ export function WorkersCompSummary() {
             className={inputClass}
           />
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('workers-comp-summary', data?.from, data?.to)}
+          meta={{
+            title: t('reports:tabs.workersComp'),
+            ...(data ? { start: data.from, end: data.to } : {}),
+          }}
+          rows={csvRows}
+          disabled={query.isLoading || !data || data.rows.length === 0}
+        />
       </div>
 
       <p className="text-xs text-slate-500">

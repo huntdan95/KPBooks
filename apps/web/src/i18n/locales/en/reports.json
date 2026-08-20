@@ -3,10 +3,24 @@
   "totals": "Totals",
   "saving": "Saving…",
   "errorLabel": "Error",
+  "export": {
+    "csv": "Export CSV",
+    "meta": {
+      "report": "Report",
+      "company": "Company",
+      "period": "Period",
+      "asOf": "As of",
+      "basis": "Basis",
+      "section": "Section",
+      "rows": "Rows",
+      "generated": "Generated"
+    }
+  },
   "tabs": {
     "trialBalance": "Trial Balance",
     "pnl": "Profit & Loss",
     "balanceSheet": "Balance Sheet",
+    "generalLedger": "General Ledger",
     "cashFlows": "Cash Flows",
     "cashFlowForecast": "Cash Flow Forecast",
     "arAging": "A/R Aging",
@@ -23,6 +37,19 @@
     "equity": "Equity",
     "revenue": "Revenue",
     "expense": "Expense"
+  },
+  "documentTypes": {
+    "invoice": "Invoice",
+    "bill": "Bill",
+    "payment": "Payment",
+    "journal": "Journal",
+    "bank_transaction": "Bank transaction",
+    "reconciliation": "Reconciliation",
+    "payroll": "Payroll",
+    "import": "Import"
+  },
+  "drill": {
+    "openAccount": "Open account detail for {{code}} {{name}}"
   },
   "subtypes": {
     "bank": "bank",
@@ -59,7 +86,7 @@
   "pnl": {
     "basis": "Basis",
     "basisAccrual": "Accrual",
-    "basisCashSoon": "Cash (coming soon)",
+    "basisCash": "Cash",
     "loadError": "Failed to load P&L.",
     "revenue": "Revenue",
     "expenses": "Expenses",
@@ -67,11 +94,22 @@
     "noExpenses": "No expenses in this range.",
     "totalRevenue": "Total revenue",
     "totalExpenses": "Total expenses",
-    "netIncome": "Net income ({{basis}} basis)",
-    "basisName": {
-      "accrual": "accrual",
-      "cash": "cash"
-    }
+    "netIncome": {
+      "accrual": "Net income (accrual basis)",
+      "cash": "Net income (cash basis)"
+    },
+    "reportTitle": "Profit & Loss",
+    "period": "{{start}} through {{end}}",
+    "basisBadge": {
+      "accrual": "Accrual basis",
+      "cash": "Cash basis"
+    },
+    "basisHint": {
+      "accrual": "Recognised when invoiced or billed, whether or not money has moved.",
+      "cash": "Recognised when money actually moved — invoices and bills count only once they are paid."
+    },
+    "unlinkedTitle": "Excluded from cash basis",
+    "unlinkedBody": "Revenue of {{revenue}} and expenses of {{expenses}} sit on entries that touch A/R or A/P but have no invoice, bill or payment behind them — IIF imports and hand-keyed journal entries. Cash basis has no payment to recognise them against, so they are left out of the figures above."
   },
   "balanceSheet": {
     "loadError": "Failed to load balance sheet.",
@@ -96,7 +134,51 @@
     "imbalance": "Imbalance (assets − (liabilities + equity))",
     "balanced": "✓ Balanced"
   },
+  "accountDetail": {
+    "title": "Account detail",
+    "backTo": {
+      "trialBalance": "← Back to the trial balance",
+      "pnl": "← Back to the profit & loss",
+      "balanceSheet": "← Back to the balance sheet",
+      "generalLedger": "← Back to the general ledger"
+    },
+    "loadError": "Failed to load account detail.",
+    "notFound": "That account no longer exists.",
+    "empty": "Nothing posted to this account between {{start}} and {{end}}.",
+    "accrualNotice": "The ledger is always accrual, so these rows will not add up to the cash-basis figure you clicked.",
+    "columns": {
+      "sourceDoc": "Source doc",
+      "counterparty": "Customer / Vendor",
+      "runningBalance": "Running balance"
+    },
+    "reversal": "reversal",
+    "openingBalance": "Opening balance",
+    "broughtForward": "Balance brought forward",
+    "closingBalance": "Closing balance",
+    "periodDebits": "Debits in period",
+    "periodCredits": "Credits in period",
+    "periodTotals": "Period totals",
+    "fullRangeNote": "Period totals and the closing balance cover the whole range, not just this page.",
+    "showing": "Showing {{first}}–{{last}} of {{total}}"
+  },
+  "generalLedger": {
+    "title": "General Ledger",
+    "description": "Every posted line in the range, grouped by account, with each account's opening balance carried in and a running balance down its rows. Inactive accounts with history are included — a drill-down that hides postings is worse than one that shows a deactivated account.",
+    "loadError": "Failed to load general ledger.",
+    "empty": "Nothing posted between {{start}} and {{end}}.",
+    "allAccounts": "All accounts",
+    "noActivity": "No activity in this range — opening balance carried forward.",
+    "accountTotal": "Total for {{code}}",
+    "truncated": "Showing {{returned}} of {{total}} rows (cap {{cap}}). Every opening balance, period total and closing balance below is still exact — only the detail rows are cut. Open an account to page through all of its rows.",
+    "accountTruncated_one": "{{count}} more row in this account — open account detail to see it.",
+    "accountTruncated_other": "{{count}} more rows in this account — open account detail to see them.",
+    "screenCapped": "Showing the first {{shown}} of {{total}} rows on screen so the page stays responsive. Every opening balance, period total and closing balance is already exact, and Export CSV writes all {{total}}.",
+    "showAllRows": "Show all rows",
+    "summary_one": "{{count}} account",
+    "summary_other": "{{count}} accounts"
+  },
   "cashFlows": {
+    "reportTitle": "Statement of Cash Flows",
     "method": "Indirect method. Starts with net income for the period, then walks the change in every non-cash balance sheet account (sourced from posted journal entries) to reconcile to the actual change in cash. Bucketed by account subtype: working-capital changes flow to operating; fixed/other assets to investing; long-term liabilities and equity to financing.",
     "loadError": "Failed to load statement.",
     "imbalance": "Cash flow ({{netChange}}) does not match the change in bank-account balances ({{endingCash}} − {{beginningCash}} = {{delta}}). Difference: {{difference}}. This usually indicates direct journal entries to retained earnings or other equity accounts that bypass the indirect-method assumptions.",

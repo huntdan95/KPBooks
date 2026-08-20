@@ -3,6 +3,9 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { reportFilename } from '../lib/report-export';
+import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
+import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
 
 interface Section {
   accountId: string;
@@ -24,6 +27,14 @@ interface BalanceSheetResponse {
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * A balance sheet figure is cumulative, so there is no range to hand the
+ * drill-down. Open it on the year to date and let the account detail carry the
+ * prior years in as its opening balance — the QuickZoom default, and nothing
+ * is lost: the detail view has its own From/To if a wider window is wanted.
+ */
+const yearStartOf = (asOf: string) => `${asOf.slice(0, 4)}-01-01`;
+
 function formatUsd(s: string): string {
   if (!s) return '$0.00';
   const [whole = '0', frac = '0000'] = s.split('.');
@@ -33,7 +44,11 @@ function formatUsd(s: string): string {
   return `${negative ? '-' : ''}$${withCommas}.${frac.slice(0, 2)}`;
 }
 
-export function BalanceSheet() {
+export function BalanceSheet({
+  onOpenAccount,
+}: {
+  onOpenAccount?: ((target: AccountDrillTarget) => void) | undefined;
+}) {
   const { t } = useTranslation(['reports', 'common']);
   const { companyId } = useCurrentCompany();
   const [asOf, setAsOf] = useState<string>(todayIso);
@@ -65,9 +80,42 @@ export function BalanceSheet() {
 
   const balanced = data ? Number(data.imbalance) === 0 : true;
 
+  /** The table exactly as rendered: three sections, their totals, the footer. */
+  function csvRows(): CsvRow[] {
+    if (!data) return [];
+    const out: CsvRow[] = [[t('code'), t('common:account'), t('common:amount')]];
+
+    const section = (
+      name: 'assets' | 'liabilities' | 'equity',
+      rows: Section[],
+      total: string,
+    ) => {
+      out.push([t(`balanceSheet.sections.${name}.label`)]);
+      if (rows.length === 0) out.push([t(`balanceSheet.sections.${name}.empty`)]);
+      for (const r of rows) out.push([r.code, r.name, csvMoney(r.amount)]);
+      out.push(['', t(`balanceSheet.sections.${name}.total`), csvMoney(total)]);
+    };
+
+    section('assets', sortedAssets, data.totalAssets);
+    section('liabilities', sortedLiabilities, data.totalLiabilities);
+    section('equity', sortedEquity, data.totalEquity);
+
+    out.push([
+      '',
+      t('balanceSheet.liabilitiesPlusEquity'),
+      csvMoney(addStr(data.totalLiabilities, data.totalEquity)),
+    ]);
+    out.push(
+      balanced
+        ? ['', t('balanceSheet.balanced')]
+        : ['', t('balanceSheet.imbalance'), csvMoney(data.imbalance)],
+    );
+    return out;
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3">
         <Field label={t('common:asOf')}>
           <input
             type="date"
@@ -76,6 +124,12 @@ export function BalanceSheet() {
             className={inputClass}
           />
         </Field>
+        <ExportCsvButton
+          filename={reportFilename('balance-sheet', data?.asOf ?? asOf)}
+          meta={{ title: t('tabs.balanceSheet'), asOf: data?.asOf ?? asOf }}
+          rows={csvRows}
+          disabled={query.isLoading || !data}
+        />
       </div>
 
       {query.isLoading && <p className="text-sm text-slate-500">{t('common:loading')}</p>}
@@ -96,13 +150,27 @@ export function BalanceSheet() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              <SectionRows section="assets" rows={sortedAssets} total={data.totalAssets} />
+              <SectionRows
+                section="assets"
+                rows={sortedAssets}
+                total={data.totalAssets}
+                onOpenAccount={onOpenAccount}
+                asOf={data.asOf}
+              />
               <SectionRows
                 section="liabilities"
                 rows={sortedLiabilities}
                 total={data.totalLiabilities}
+                onOpenAccount={onOpenAccount}
+                asOf={data.asOf}
               />
-              <SectionRows section="equity" rows={sortedEquity} total={data.totalEquity} />
+              <SectionRows
+                section="equity"
+                rows={sortedEquity}
+                total={data.totalEquity}
+                onOpenAccount={onOpenAccount}
+                asOf={data.asOf}
+              />
             </tbody>
             <tfoot className="bg-slate-100 text-sm font-semibold">
               <tr>
@@ -144,10 +212,14 @@ function SectionRows({
   section,
   rows,
   total,
+  onOpenAccount,
+  asOf,
 }: {
   section: 'assets' | 'liabilities' | 'equity';
   rows: Section[];
   total: string;
+  onOpenAccount?: ((target: AccountDrillTarget) => void) | undefined;
+  asOf: string;
 }) {
   const { t } = useTranslation('reports');
   return (
@@ -164,13 +236,41 @@ function SectionRows({
           </td>
         </tr>
       ) : (
-        rows.map((r) => (
-          <tr key={r.accountId}>
-            <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
-            <td className="px-4 py-2 text-slate-900">{r.name}</td>
-            <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(r.amount)}</td>
-          </tr>
-        ))
+        rows.map((r) => {
+          // The whole row is a mouse target so the amount QuickZooms like it
+          // does in QuickBooks; the account name is a real <button> so the same
+          // drill-down is reachable — and announced — from the keyboard.
+          const open = onOpenAccount
+            ? () =>
+                onOpenAccount({ accountId: r.accountId, start: yearStartOf(asOf), end: asOf })
+            : undefined;
+          return (
+            <tr key={r.accountId} className={open ? drillRowClass : undefined} onClick={open}>
+              <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
+              <td className="px-4 py-2 text-slate-900">
+                {open ? (
+                  <button
+                    type="button"
+                    className={drillButtonClass}
+                    aria-label={t('drill.openAccount', { code: r.code, name: r.name })}
+                    onClick={(e) => {
+                      // Stop the bubble, or one click would run the row handler too.
+                      e.stopPropagation();
+                      open();
+                    }}
+                  >
+                    {r.name}
+                  </button>
+                ) : (
+                  r.name
+                )}
+              </td>
+              <td className="px-4 py-2 text-right font-mono text-slate-900">
+                {formatUsd(r.amount)}
+              </td>
+            </tr>
+          );
+        })
       )}
       <tr className="bg-slate-50 font-medium">
         <td colSpan={2} className="px-4 py-2 text-right text-slate-700">
