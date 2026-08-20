@@ -27,15 +27,20 @@ import {
  * partitioning (ITP) hides that state on the way back and the auth handler
  * dies with auth/missing-initial-state — the iPhone sign-up failure.
  *
- * Serving the app from kpbooks-91c48.firebaseapp.com makes app origin and
- * authDomain identical, which sidesteps the problem entirely.
+ * So we use the page's OWN hostname as the authDomain whenever that host is
+ * known-good, making the whole flow same-origin and immune to partitioning.
  *
- * kpbooks-91c48.web.app CANNOT be used as authDomain until
- * https://kpbooks-91c48.web.app/__/auth/handler is added to the OAuth client's
- * authorized redirect URIs in Google Cloud Console — Google currently rejects
- * that redirect_uri, which would break sign-in everywhere.
+ * A host only belongs in this set once BOTH are true:
+ *   1. it serves /__/auth/handler (Firebase Hosting does this for sites in the
+ *      project — verify with a 200 that is not the SPA fallback), and
+ *   2. https://<host>/__/auth/handler is an authorized redirect URI on the
+ *      OAuth client, or Google rejects the flow with redirect_uri_mismatch.
+ * web.app was added 2026-08-19 after (2) was granted and verified.
  */
-const SAME_ORIGIN_AUTH_DOMAINS = new Set(['kpbooks-91c48.firebaseapp.com']);
+const SAME_ORIGIN_AUTH_DOMAINS = new Set([
+  'kpbooks-91c48.web.app',
+  'kpbooks-91c48.firebaseapp.com',
+]);
 
 function resolveAuthDomain(fallback: string): string {
   if (typeof window === 'undefined') return fallback;
