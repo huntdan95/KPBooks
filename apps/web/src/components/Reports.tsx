@@ -29,6 +29,14 @@ type ReportView =
   | 'tax-rates';
 
 // Module-level constant, so it stores the translation key and t() runs at render.
+/**
+ * Report tabs hidden alongside the features that feed them: A/R aging needs
+ * invoices, and the payroll reports need pay runs. Both are switched off for
+ * this practice (see HIDDEN_VIEWS in Sidebar.tsx). The reports themselves
+ * still exist and still work; they are only unlisted.
+ */
+const HIDDEN_REPORTS = new Set<ReportView>(['ar-aging', 'payroll-register', 'workers-comp']);
+
 const SUB_TABS: ReadonlyArray<{ id: ReportView; labelKey: string }> = [
   { id: 'trial-balance', labelKey: 'tabs.trialBalance' },
   { id: 'pnl', labelKey: 'tabs.pnl' },
@@ -81,7 +89,7 @@ export function Reports() {
     <div className="space-y-4">
       <div className="flex items-center justify-between border-b border-slate-200">
         <div className="flex gap-1">
-          {SUB_TABS.map((tab) => {
+          {SUB_TABS.filter((tab) => !HIDDEN_REPORTS.has(tab.id)).map((tab) => {
             const isActive = view === tab.id;
             return (
               <button

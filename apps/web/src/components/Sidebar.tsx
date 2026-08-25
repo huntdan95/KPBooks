@@ -50,6 +50,31 @@ interface NavSection {
   items: NavItem[];
 }
 
+/**
+ * Views hidden for this practice.
+ *
+ * The office does journal-entry bookkeeping: expenses are charted directly,
+ * and each 1099 contractor is its own expense sub-account rather than a
+ * vendor with bills and payments. Their QuickBooks customer list is month
+ * buckets ("Abril 2019"), not real A/R, and payroll is handled outside the
+ * software.
+ *
+ * NOTHING IS DELETED. Every page, route and table still exists and works, so
+ * re-enabling a feature is deleting one id from this set. Keep it that way
+ * until the office has lived in the app long enough to be sure.
+ */
+const HIDDEN_VIEWS = new Set<View>([
+  // A/R: no real customers or invoices in their books.
+  'estimates',
+  'invoices',
+  'customers',
+  'items',
+  // Payroll: run outside the app.
+  'workers',
+  'time-entries',
+  'payroll-runs',
+]);
+
 const SECTIONS: NavSection[] = [
   {
     labelKey: null,
@@ -65,13 +90,13 @@ const SECTIONS: NavSection[] = [
       { id: 'invoices', labelKey: 'nav.items.invoices', icon: 'file-stack' },
       { id: 'customers', labelKey: 'nav.items.customers', icon: 'users' },
       { id: 'items', labelKey: 'nav.items.items', icon: 'package' },
-      { id: 'payments', labelKey: 'nav.items.payments', icon: 'credit-card' },
     ],
   },
   {
     labelKey: 'nav.sections.expenses',
     items: [
       { id: 'bills', labelKey: 'nav.items.bills', icon: 'receipt' },
+      { id: 'payments', labelKey: 'nav.items.payments', icon: 'credit-card' },
       { id: 'vendors', labelKey: 'nav.items.vendors', icon: 'building-2' },
       { id: 'mileage', labelKey: 'nav.items.mileage', icon: 'car' },
     ],
@@ -144,7 +169,13 @@ export function Sidebar({
         </div>
       </div>
 
-      {SECTIONS.map((section, sIdx) => (
+      {SECTIONS.map((section) => ({
+        ...section,
+        items: section.items.filter((i) => !HIDDEN_VIEWS.has(i.id)),
+      }))
+        // A section whose every item is hidden must not leave a stray heading.
+        .filter((section) => section.items.length > 0)
+        .map((section, sIdx) => (
         <div key={sIdx} className="mb-1">
           {section.labelKey && (
             <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -186,7 +217,7 @@ export function Sidebar({
             })}
           </ul>
         </div>
-      ))}
+        ))}
 
       {/* Footer */}
       <div className="mt-auto pt-4">
