@@ -18,7 +18,8 @@ import { useTranslation } from 'react-i18next';
 import { ApiError, api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney, csvSide } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney, csvSide } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
 type NormalBalance = 'debit' | 'credit';
@@ -267,6 +268,18 @@ export function AccountDetail({
     return out;
   }
 
+  // The row count is NOT in here: this is built before the export refetches
+  // the full range, so only csvRows() knows how many rows the file ended up
+  // with. It writes that line itself, as the first row of the body.
+  const meta: ReportMeta = {
+    title: t('accountDetail.title'),
+    ...(data ? { start: data.start, end: data.end } : {}),
+    extra: [
+      [t('common:account'), account?.code ?? '', account?.name ?? ''],
+      ...(target.cashBasis ? [[t('accountDetail.accrualNotice')] as CsvRow] : []),
+    ],
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -329,20 +342,9 @@ export function AccountDetail({
                 className={inputClass}
               />
             </Field>
-            <ExportCsvButton
+            <ReportExportButtons
               filename={reportFilename('account-detail', account?.code, data?.start, data?.end)}
-              meta={{
-                title: t('accountDetail.title'),
-                ...(data ? { start: data.start, end: data.end } : {}),
-                // The row count is NOT here: this block is built before the
-                // export refetches the full range, so only csvRows() knows how
-                // many rows the file actually ended up with. It writes that
-                // line itself, as the first row of the body.
-                extra: [
-                  [t('common:account'), account?.code ?? '', account?.name ?? ''],
-                  ...(target.cashBasis ? [[t('accountDetail.accrualNotice')] as CsvRow] : []),
-                ],
-              }}
+              meta={meta}
               rows={csvRows}
               disabled={query.isLoading || !data || data.rowCount === 0}
             />
@@ -385,6 +387,7 @@ export function AccountDetail({
 
       {data && data.rowCount > 0 && (
         <>
+          <ReportHeader meta={meta} variant="card" />
           <div className="max-h-[70vh] overflow-auto rounded-md border border-slate-200 bg-white">
             <table className="kpb-sticky-thead w-full text-sm">
               <thead className="text-xs uppercase tracking-wider text-slate-500">
@@ -608,6 +611,13 @@ export function GeneralLedger({
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('generalLedger.title'),
+    ...(data ? { start: data.start, end: data.end } : {}),
+    // Which accounts the picker was narrowed to, or "All accounts".
+    extra: [[t('common:account'), accountLabel]],
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -658,14 +668,9 @@ export function GeneralLedger({
             ))}
           </select>
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('general-ledger', data?.start, data?.end)}
-          meta={{
-            title: t('generalLedger.title'),
-            ...(data ? { start: data.start, end: data.end } : {}),
-            // Which accounts the picker was narrowed to, or "All accounts".
-            extra: [[t('common:account'), accountLabel]],
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data || data.accounts.length === 0}
         />
@@ -700,6 +705,7 @@ export function GeneralLedger({
 
       {data && data.accounts.length > 0 && (
         <>
+          <ReportHeader meta={meta} variant="card" />
           <p className="text-xs text-slate-500">
             {t('generalLedger.summary', { count: data.totals.accountCount })}
           </p>

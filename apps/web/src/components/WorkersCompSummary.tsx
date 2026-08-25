@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface WorkersCompSummaryRow {
   workersCompClass: string | null;
@@ -88,6 +89,11 @@ export function WorkersCompSummary() {
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('reports:tabs.workersComp'),
+    ...(data ? { start: data.from, end: data.to } : {}),
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -107,12 +113,9 @@ export function WorkersCompSummary() {
             className={inputClass}
           />
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('workers-comp-summary', data?.from, data?.to)}
-          meta={{
-            title: t('reports:tabs.workersComp'),
-            ...(data ? { start: data.from, end: data.to } : {}),
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data || data.rows.length === 0}
         />
@@ -133,6 +136,8 @@ export function WorkersCompSummary() {
 
       {data && (
         <>
+          <ReportHeader meta={meta} variant="card" />
+
           {unclassifiedRow && unclassifiedRow.workerCount > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               <strong>{unclassifiedRow.workerCount}</strong>{' '}

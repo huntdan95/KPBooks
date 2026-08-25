@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useRef, type DragEvent, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiError, api, getApiBase, getIdToken } from '../lib/api';
+import { ApiError, api, getApiBase, getIdToken, apiUpload, type UploadProgress } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { EmptyState } from './ui/EmptyState';
 import { Icon, type IconName } from './ui/Icon';
+import { ProgressBar } from './ui/ProgressBar';
 
 type Category =
   | 'tax_return'
@@ -339,11 +340,23 @@ function UploadZone({
   const { companyId } = useCurrentCompany();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState<string[]>([]); // filenames
+  // Per-file byte progress for the current upload, plus how far through the
+  // batch we are. Null when nothing is in flight.
+  const [progress, setProgress] = useState<{
+    filename: string;
+    fileIndex: number;
+    fileCount: number;
+    phase: UploadProgress['phase'];
+    percent: number;
+  } | null>(null);
   const [errors, setErrors] = useState<Array<{ filename: string; message: string }>>([]);
   const [successCount, setSuccessCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function uploadOne(file: File): Promise<void> {
+  async function uploadOne(
+    file: File,
+    onProgress?: (p: UploadProgress) => void,
+  ): Promise<void> {
     if (file.size === 0) {
       throw new Error(t('documents.errors.emptyFile'));
     }
@@ -358,7 +371,12 @@ function UploadZone({
       category: defaultCategory,
     };
     if (defaultTaxYear) body.taxYear = Number(defaultTaxYear);
-    await api('/documents', { method: 'POST', companyId, body });
+    await apiUpload('/documents', {
+      method: 'POST',
+      companyId,
+      body,
+      ...(onProgress ? { onProgress } : {}),
+    });
   }
 
   async function handleFiles(files: FileList | File[]) {
@@ -369,9 +387,24 @@ function UploadZone({
     setUploading(list.map((f) => f.name));
     let okCount = 0;
     const errs: Array<{ filename: string; message: string }> = [];
-    for (const file of list) {
+    for (const [i, file] of list.entries()) {
       try {
-        await uploadOne(file);
+        setProgress({
+          filename: file.name,
+          fileIndex: i,
+          fileCount: list.length,
+          phase: 'uploading',
+          percent: 0,
+        });
+        await uploadOne(file, (pr) =>
+          setProgress({
+            filename: file.name,
+            fileIndex: i,
+            fileCount: list.length,
+            phase: pr.phase,
+            percent: pr.percent,
+          }),
+        );
         okCount++;
       } catch (err) {
         errs.push({
@@ -386,6 +419,7 @@ function UploadZone({
       }
     }
     setUploading([]);
+    setProgress(null);
     setSuccessCount(okCount);
     setErrors(errs);
     if (okCount > 0) onUploaded();
@@ -474,7 +508,29 @@ function UploadZone({
         />
       </div>
 
-      {uploading.length > 0 && (
+      {progress && (
+        <div className="mt-3 space-y-1">
+          <ProgressBar
+            percent={progress.percent}
+            indeterminate={progress.phase === 'processing'}
+            label={
+              progress.phase === 'processing'
+                ? t('documents.progress.processing', { name: progress.filename })
+                : t('documents.progress.uploadingFile', { name: progress.filename })
+            }
+            sublabel={`${progress.percent}%`}
+          />
+          {progress.fileCount > 1 && (
+            <p className="text-xs text-slate-500">
+              {t('documents.progress.overall', {
+                done: progress.fileIndex + 1,
+                total: progress.fileCount,
+              })}
+            </p>
+          )}
+        </div>
+      )}
+      {!progress && uploading.length > 0 && (
         <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
           {t('documents.uploading', { count: uploading.length })}
         </div>

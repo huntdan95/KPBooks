@@ -229,7 +229,11 @@
     "importAnother": "Importar otro archivo",
     "detailFallbackPath": "solicitud",
     "detailFallbackMessage": "inválido",
-    "andMoreDetails": " (+{{n}} más)"
+    "andMoreDetails": " (+{{n}} más)",
+    "progress": {
+      "uploading": "Subiendo el archivo…",
+      "processing": "Leyendo el archivo; puede tardar un momento si la exportación es grande…"
+    }
   },
   "mileage": {
     "title": "Millaje",

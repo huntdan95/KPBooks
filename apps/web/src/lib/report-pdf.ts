@@ -58,7 +58,17 @@ const BAND: [number, number, number] = [241, 245, 249];
 
 type Cell = { content: string; colSpan?: number; styles?: Record<string, unknown> };
 
+/** Builds the document and hands it to the browser as a download. */
 export async function downloadReportPdf(input: ReportPdfInput): Promise<void> {
+  const doc = await buildReportPdf(input);
+  doc.save(input.filename.endsWith('.pdf') ? input.filename : `${input.filename}.pdf`);
+}
+
+/**
+ * The document itself, separated from saving it so the layout can be built and
+ * inspected outside a browser.
+ */
+export async function buildReportPdf(input: ReportPdfInput) {
   const [{ jsPDF }, { default: autoTable }] = await Promise.all([
     import('jspdf'),
     import('jspdf-autotable'),
@@ -158,7 +168,7 @@ export async function downloadReportPdf(input: ReportPdfInput): Promise<void> {
     });
   }
 
-  doc.save(input.filename.endsWith('.pdf') ? input.filename : `${input.filename}.pdf`);
+  return doc;
 }
 
 /**
@@ -193,21 +203,30 @@ function splitRows(
   return { summary, head: rows[headIndex] ?? null, body: rows.slice(headIndex + 1) };
 }
 
-/** A column is numeric only if every filled cell in it is a number. */
+/**
+ * The columns to set as figures: right-aligned and digit-grouped.
+ *
+ * Every filled cell has to be a number, and at least one of them has to carry a
+ * decimal point. That second condition is what keeps the Code column off the
+ * list — account codes are as numeric as anything in the file, and a column of
+ * codes ranged right against the account names reads as money that lost its
+ * cents. Amounts all arrive through csvMoney and always have theirs.
+ */
 function findNumericColumns(body: CsvRow[], width: number): Set<number> {
   const numeric = new Set<number>();
   for (let col = 0; col < width; col += 1) {
-    let sawNumber = false;
+    let sawDecimal = false;
     let sawText = false;
     for (const row of body) {
       // Short rows are section headings and notes; they get a vote on nothing.
       if (row.length !== width) continue;
       const value = row[col];
-      if (String(value ?? '') === '') continue;
-      if (isNumericCell(value)) sawNumber = true;
-      else sawText = true;
+      const text = String(value ?? '');
+      if (text === '') continue;
+      if (!isNumericCell(value)) sawText = true;
+      else if (text.includes('.')) sawDecimal = true;
     }
-    if (sawNumber && !sawText) numeric.add(col);
+    if (sawDecimal && !sawText) numeric.add(col);
   }
   return numeric;
 }

@@ -608,7 +608,12 @@
     "confirmDelete": "¿Eliminar este documento? Pasa a un estado de eliminación lógica y deja de aparecer en las listas. El registro de auditoría conserva la constancia.",
     "deleting": "Eliminando…",
     "saving": "Guardando…",
-    "saveChanges": "Guardar cambios"
+    "saveChanges": "Guardar cambios",
+    "progress": {
+      "uploadingFile": "Subiendo {{name}}",
+      "processing": "Procesando {{name}}…",
+      "overall": "Archivo {{done}} de {{total}}"
+    }
   },
   "fixedAssets": {
     "title": "Activos fijos",

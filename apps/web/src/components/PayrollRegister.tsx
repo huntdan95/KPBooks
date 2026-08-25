@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 type WorkerType = 'contractor' | 'employee' | 'subcontractor' | 'not_a_worker';
 
@@ -146,6 +147,14 @@ export function PayrollRegister() {
     return out;
   }
 
+  // The classification filter decides which workers are below, so it rides
+  // along in the masthead and in every export.
+  const meta: ReportMeta = {
+    title: t('reports:tabs.payrollRegister'),
+    ...(data ? { start: data.from, end: data.to } : {}),
+    extra: [[t('register.classification'), workerTypeLabel]],
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -179,15 +188,9 @@ export function PayrollRegister() {
             <option value="subcontractor">{t('register.filter.subcontractors')}</option>
           </select>
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('payroll-register', data?.from, data?.to)}
-          meta={{
-            title: t('reports:tabs.payrollRegister'),
-            ...(data ? { start: data.from, end: data.to } : {}),
-            // The classification filter decides which workers are below, so it
-            // has to ride along in the file.
-            extra: [[t('register.classification'), workerTypeLabel]],
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data || data.rows.length === 0}
         />
@@ -207,6 +210,8 @@ export function PayrollRegister() {
 
       {data && (
         <>
+          <ReportHeader meta={meta} variant="card" />
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Tile
               label={t('register.totalPayroll')}

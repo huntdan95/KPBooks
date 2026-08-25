@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface AgingRow {
   counterpartyId: string;
@@ -107,6 +108,11 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t(`tabs.${mode}Aging`),
+    asOf: data?.asOf ?? asOf,
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -118,9 +124,9 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
             className={inputClass}
           />
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename(`${mode}-aging`, data?.asOf ?? asOf)}
-          meta={{ title: t(`tabs.${mode}Aging`), asOf: data?.asOf ?? asOf }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data || data.rows.length === 0}
         />
@@ -138,71 +144,76 @@ export function Aging({ mode }: { mode: 'ar' | 'ap' }) {
       )}
 
       {data && data.rows.length > 0 && (
-        <div className="max-h-[70vh] overflow-auto rounded-md border border-slate-200 bg-white">
-          <table className="kpb-sticky-thead w-full text-sm">
-            <thead className="text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">{counterpartyLabel}</th>
-                <th className="px-4 py-2 text-right font-medium">{t('aging.current')}</th>
-                <th className="px-4 py-2 text-right font-medium">1–30</th>
-                <th className="px-4 py-2 text-right font-medium">31–60</th>
-                <th className="px-4 py-2 text-right font-medium">61–90</th>
-                <th className="px-4 py-2 text-right font-medium">90+</th>
-                <th className="px-4 py-2 text-right font-medium">{t('common:total')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {data.rows.map((r) => (
-                <tr key={r.counterpartyId}>
-                  <td className="px-4 py-2 text-slate-900">{r.counterpartyName}</td>
-                  <td className="px-4 py-2 text-right font-mono text-slate-700">
-                    {formatUsd(r.current)}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono text-slate-700">
-                    {formatUsd(r.days1to30)}
-                  </td>
-                  <td
-                    className={
-                      'px-4 py-2 text-right font-mono ' +
-                      (Number(r.days31to60) > 0 ? 'text-amber-700' : 'text-slate-700')
-                    }
-                  >
-                    {formatUsd(r.days31to60)}
-                  </td>
-                  <td
-                    className={
-                      'px-4 py-2 text-right font-mono ' +
-                      (Number(r.days61to90) > 0 ? 'text-orange-700' : 'text-slate-700')
-                    }
-                  >
-                    {formatUsd(r.days61to90)}
-                  </td>
-                  <td
-                    className={
-                      'px-4 py-2 text-right font-mono ' +
-                      (Number(r.days91plus) > 0 ? 'text-rose-700 font-semibold' : 'text-slate-700')
-                    }
-                  >
-                    {formatUsd(r.days91plus)}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono font-medium text-slate-900">
-                    {formatTotal(r.total)}
-                  </td>
+        <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+          {/* Outside the scroller, so the company and the as-of date stay put
+              while the counterparties scroll under them. */}
+          <ReportHeader meta={meta} />
+          <div className="max-h-[70vh] overflow-auto">
+            <table className="kpb-sticky-thead w-full text-sm">
+              <thead className="text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">{counterpartyLabel}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('aging.current')}</th>
+                  <th className="px-4 py-2 text-right font-medium">1–30</th>
+                  <th className="px-4 py-2 text-right font-medium">31–60</th>
+                  <th className="px-4 py-2 text-right font-medium">61–90</th>
+                  <th className="px-4 py-2 text-right font-medium">90+</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('common:total')}</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-slate-100 text-sm font-semibold">
-              <tr>
-                <td className="px-4 py-2 text-right text-slate-900">{t('totals')}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.current)}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days1to30)}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days31to60)}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days61to90)}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days91plus)}</td>
-                <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.total)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {data.rows.map((r) => (
+                  <tr key={r.counterpartyId}>
+                    <td className="px-4 py-2 text-slate-900">{r.counterpartyName}</td>
+                    <td className="px-4 py-2 text-right font-mono text-slate-700">
+                      {formatUsd(r.current)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono text-slate-700">
+                      {formatUsd(r.days1to30)}
+                    </td>
+                    <td
+                      className={
+                        'px-4 py-2 text-right font-mono ' +
+                        (Number(r.days31to60) > 0 ? 'text-amber-700' : 'text-slate-700')
+                      }
+                    >
+                      {formatUsd(r.days31to60)}
+                    </td>
+                    <td
+                      className={
+                        'px-4 py-2 text-right font-mono ' +
+                        (Number(r.days61to90) > 0 ? 'text-orange-700' : 'text-slate-700')
+                      }
+                    >
+                      {formatUsd(r.days61to90)}
+                    </td>
+                    <td
+                      className={
+                        'px-4 py-2 text-right font-mono ' +
+                        (Number(r.days91plus) > 0 ? 'text-rose-700 font-semibold' : 'text-slate-700')
+                      }
+                    >
+                      {formatUsd(r.days91plus)}
+                    </td>
+                    <td className="px-4 py-2 text-right font-mono font-medium text-slate-900">
+                      {formatTotal(r.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-100 text-sm font-semibold">
+                <tr>
+                  <td className="px-4 py-2 text-right text-slate-900">{t('totals')}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.current)}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days1to30)}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days31to60)}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days61to90)}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.days91plus)}</td>
+                  <td className="px-4 py-2 text-right font-mono">{formatTotal(data.totals.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       )}
     </div>

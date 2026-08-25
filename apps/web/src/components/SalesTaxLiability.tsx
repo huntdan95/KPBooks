@@ -4,7 +4,8 @@ import { Trans, useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface RateRow {
   taxRateId: string;
@@ -141,6 +142,11 @@ export function SalesTaxLiability() {
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('tabs.salesTaxLiability'),
+    ...(data ? { start: data.from, end: data.to } : {}),
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -160,12 +166,9 @@ export function SalesTaxLiability() {
             className={inputClass}
           />
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('sales-tax-liability', data?.from, data?.to)}
-          meta={{
-            title: t('tabs.salesTaxLiability'),
-            ...(data ? { start: data.from, end: data.to } : {}),
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data}
         />
@@ -190,6 +193,8 @@ export function SalesTaxLiability() {
 
       {data && (
         <>
+          <ReportHeader meta={meta} variant="card" />
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Tile
               label={t('salesTax.tiles.collected')}

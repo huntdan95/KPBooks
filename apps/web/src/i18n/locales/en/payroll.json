@@ -608,7 +608,12 @@
     "confirmDelete": "Delete this document? It moves to a soft-deleted state and stops appearing in lists. The audit log keeps a record.",
     "deleting": "Deleting…",
     "saving": "Saving…",
-    "saveChanges": "Save changes"
+    "saveChanges": "Save changes",
+    "progress": {
+      "uploadingFile": "Uploading {{name}}",
+      "processing": "Processing {{name}}…",
+      "overall": "File {{done}} of {{total}}"
+    }
   },
   "fixedAssets": {
     "title": "Fixed assets",

@@ -80,12 +80,31 @@ export function useReportHeading(meta: ReportMeta): ReportHeading {
  * Renders the heading. Drop it directly above a report's table, inside the same
  * card, so a copy-paste or a screenshot of the card carries the identification
  * with it.
+ *
+ * `variant="card"` is for the reports whose body is not simply one table — a
+ * tabbed forecast, a ledger of per-account blocks, anything that leads with
+ * summary tiles. There the heading has no single card to sit inside, and gets
+ * its own at the top rather than turning up underneath the first block of
+ * numbers it is supposed to introduce.
  */
-export function ReportHeader({ meta }: { meta: ReportMeta }) {
+export function ReportHeader({
+  meta,
+  variant = 'attached',
+}: {
+  meta: ReportMeta;
+  variant?: 'attached' | 'card';
+}) {
   const heading = useReportHeading(meta);
 
   return (
-    <header className="border-b border-slate-200 bg-white px-4 py-5 text-center">
+    <header
+      className={
+        'bg-white px-4 py-5 text-center ' +
+        (variant === 'card'
+          ? 'rounded-md border border-slate-200'
+          : 'border-b border-slate-200')
+      }
+    >
       {heading.name && (
         <p className="text-lg font-semibold tracking-tight text-slate-900">{heading.name}</p>
       )}

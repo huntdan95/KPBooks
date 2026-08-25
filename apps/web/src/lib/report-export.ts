@@ -106,14 +106,19 @@ export function isNumericCell(value: unknown): boolean {
  * exactly as the caller wrote it, so a 2-dp money string stays money and a
  * 4-dp tax rate stays a rate. No currency symbol: like QuickBooks' own PDFs,
  * the column heading says what the number is.
+ *
+ * Whole numbers are left alone on purpose. Every figure in this app arrives
+ * through csvMoney and therefore carries cents, so anything without a decimal
+ * point is an identifier or a count — and an account code separated into
+ * "4,000" is simply wrong.
  */
 export function groupDigits(value: string | number): string {
   const s = String(value);
-  if (!isNumericCell(s)) return s;
+  if (!isNumericCell(s) || !s.includes('.')) return s;
   const negative = s.startsWith('-');
-  const [whole = '0', frac] = (negative ? s.slice(1) : s).split('.');
+  const [whole = '0', frac = ''] = (negative ? s.slice(1) : s).split('.');
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${negative ? '-' : ''}${grouped}${frac === undefined ? '' : `.${frac}`}`;
+  return `${negative ? '-' : ''}${grouped}.${frac}`;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { getApiBase } from '../lib/api';
+import { getApiBase , ApiError, apiUpload, type UploadProgress } from '../lib/api';
+import { ProgressBar } from './ui/ProgressBar';
 
 /**
  * Public (no auth) page for contractors to upload their W-9.
@@ -58,6 +59,12 @@ export function W9UploadPage({ token }: { token: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Contractors upload phone photos of a W-9 over cell data, where a few MB
+  // is slow enough that a silent spinner looks broken.
+  const [progress, setProgress] = useState<{
+    phase: UploadProgress['phase'];
+    percent: number;
+  } | null>(null);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -109,28 +116,35 @@ export function W9UploadPage({ token }: { token: string }) {
     setUploading(true);
     try {
       const fileBase64 = await fileToBase64(file, t('w9Upload.readFailed'));
-      const res = await fetch(`${getApiBase()}/w9-upload/${token}/upload`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          fileBase64,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const msg =
-          (body && typeof body === 'object' && 'message' in body
-            ? String((body as { message?: string }).message)
-            : '') || t('w9Upload.uploadFailedHttp', { status: res.status });
-        throw new Error(msg);
+      try {
+        await apiUpload(`/w9-upload/${token}/upload`, {
+          method: 'POST',
+          body: {
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            fileBase64,
+          },
+          onProgress: (pr) => setProgress({ phase: pr.phase, percent: pr.percent }),
+        });
+      } catch (err) {
+        // Same precedence as before: the server message wins, then a
+        // status-based fallback.
+        if (err instanceof ApiError) {
+          const body = err.body;
+          const msg =
+            (body && typeof body === 'object' && 'message' in body
+              ? String((body as { message?: string }).message)
+              : '') || t('w9Upload.uploadFailedHttp', { status: err.status });
+          throw new Error(msg);
+        }
+        throw err;
       }
       setDone(true);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : t('w9Upload.uploadFailed'));
     } finally {
       setUploading(false);
+      setProgress(null);
     }
   }
 
@@ -229,6 +243,19 @@ export function W9UploadPage({ token }: { token: string }) {
               >
                 {uploading ? t('w9Upload.uploading') : t('w9Upload.uploadCta')}
               </button>
+
+              {progress && (
+                <ProgressBar
+                  percent={progress.percent}
+                  indeterminate={progress.phase === 'processing'}
+                  label={
+                    progress.phase === 'processing'
+                      ? t('w9Upload.progress.processing')
+                      : t('w9Upload.progress.uploading')
+                  }
+                  sublabel={`${progress.percent}%`}
+                />
+              )}
 
               {uploadError && (
                 <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">

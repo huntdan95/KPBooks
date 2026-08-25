@@ -2,8 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, apiUpload, type UploadProgress } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
+import { ProgressBar } from './ui/ProgressBar';
 import { checkIifFileMeta, decodeIifBuffer } from '../lib/decode-iif';
 import {
   type PartialCommitProgress,
@@ -165,6 +166,13 @@ export function Imports() {
   // active at Confirm time would import one client's books into another's.
   const [previewCompanyId, setPreviewCompanyId] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  // Byte-level progress for the file being sent to the preview endpoint.
+  // A multi-MB QuickBooks export spends real time on the wire, and before
+  // this the UI showed only a static "Parsing…" label the whole time.
+  const [uploadProgress, setUploadProgress] = useState<{
+    phase: UploadProgress['phase'];
+    percent: number;
+  } | null>(null);
   const [committed, setCommitted] = useState<CommitResult | null>(null);
   const [committedTxns, setCommittedTxns] = useState<TransactionCommitResult | null>(null);
   // What actually landed when the chunked commit fails partway. The commit
@@ -196,11 +204,13 @@ export function Imports() {
       endpoint: string;
       body: Record<string, unknown>;
     }) =>
-      api<IifPreview>(vars.endpoint, {
+      apiUpload<IifPreview>(vars.endpoint, {
         method: 'POST',
         companyId: vars.companyId,
         body: vars.body,
+        onProgress: (pr) => setUploadProgress({ phase: pr.phase, percent: pr.percent }),
       }),
+    onSettled: () => setUploadProgress(null),
     onSuccess: (data, vars) => {
       setPreviewCompanyId(vars.companyId);
       setPreview(data);
@@ -548,6 +558,20 @@ export function Imports() {
               {previewMutation.isPending ? t('imports.parsing') : t('imports.chooseFile')}
             </button>
             {fileName && <p className="text-xs text-slate-500">{fileName}</p>}
+            {uploadProgress && (
+              <div className="w-full max-w-sm">
+                <ProgressBar
+                  percent={uploadProgress.percent}
+                  indeterminate={uploadProgress.phase === 'processing'}
+                  label={
+                    uploadProgress.phase === 'processing'
+                      ? t('imports.progress.processing')
+                      : t('imports.progress.uploading')
+                  }
+                  sublabel={`${uploadProgress.percent}%`}
+                />
+              </div>
+            )}
             {parseError && <p className="text-sm text-rose-600">{parseError}</p>}
           </div>
         </div>

@@ -5,7 +5,8 @@ import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
 import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface PnlSection {
   accountId: string;
@@ -111,6 +112,14 @@ export function ProfitAndLoss({
     return out;
   }
 
+  // One description of the report, shared by the on-screen masthead, the CSV
+  // header block and the PDF. Basis reads off data.basis — what the server
+  // actually computed — not the select, which may already have moved on.
+  const meta: ReportMeta = {
+    title: t('pnl.reportTitle'),
+    ...(data ? { start: data.start, end: data.end, basis: t(`pnl.basisBadge.${data.basis}`) } : {}),
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -140,15 +149,9 @@ export function ProfitAndLoss({
             <option value="cash">{t('pnl.basisCash')}</option>
           </select>
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('profit-and-loss', data?.start, data?.end)}
-          meta={{
-            title: t('pnl.reportTitle'),
-            ...(data ? { start: data.start, end: data.end } : {}),
-            // Reads off data.basis — what the server actually computed — not
-            // the select, which may already have moved on.
-            ...(data ? { basis: t(`pnl.basisBadge.${data.basis}`) } : {}),
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data}
         />
@@ -164,30 +167,11 @@ export function ProfitAndLoss({
 
       {data && (
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
-          {/* The report header sits INSIDE the card, not up in the toolbar: the
-              basis has to survive a print, a PDF or a copy-paste of the table,
-              where the control that set it is nowhere to be seen. It reads off
-              data.basis (what the server actually computed), not the select. */}
-          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 px-4 py-3">
-            <div>
-              <h3 className="text-base font-semibold tracking-tight text-slate-900">
-                {t('pnl.reportTitle')}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {t('pnl.period', { start: data.start, end: data.end })}
-              </p>
-            </div>
-            <span
-              className={
-                'rounded px-2 py-1 text-xs font-semibold uppercase tracking-wider ring-1 ring-inset ' +
-                (data.basis === 'cash'
-                  ? 'bg-sky-50 text-sky-800 ring-sky-600/30'
-                  : 'bg-slate-100 text-slate-700 ring-slate-400/40')
-              }
-            >
-              {t(`pnl.basisBadge.${data.basis}`)}
-            </span>
-          </div>
+          {/* The masthead sits INSIDE the card, not up in the toolbar: the
+              company, the period and the basis all have to survive a print, a
+              PDF or a copy-paste of the table, where the controls that set them
+              are nowhere to be seen. */}
+          <ReportHeader meta={meta} />
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>

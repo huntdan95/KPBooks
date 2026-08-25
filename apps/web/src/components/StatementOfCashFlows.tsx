@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface ScfLine {
   accountId: string;
@@ -107,6 +108,11 @@ export function StatementOfCashFlows() {
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('cashFlows.reportTitle'),
+    ...(data ? { start: data.start, end: data.end } : {}),
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -126,12 +132,9 @@ export function StatementOfCashFlows() {
             className={inputClass}
           />
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('statement-of-cash-flows', data?.start, data?.end)}
-          meta={{
-            title: t('cashFlows.reportTitle'),
-            ...(data ? { start: data.start, end: data.end } : {}),
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data}
         />
@@ -163,6 +166,7 @@ export function StatementOfCashFlows() {
           )}
 
           <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+            <ReportHeader meta={meta} />
             <table className="w-full text-sm">
               <tbody className="divide-y divide-slate-200">
                 <SectionHeader>{t('cashFlows.operating')}</SectionHeader>

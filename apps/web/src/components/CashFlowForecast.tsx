@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface CashAccountRow {
   accountId: string;
@@ -286,6 +287,17 @@ export function CashFlowForecast() {
     return out;
   }
 
+  // The horizon and the open sub-tab both decide what is below, so they ride
+  // along in the masthead and in every export.
+  const meta: ReportMeta = {
+    title: t('forecast.title'),
+    asOf: data?.asOf ?? asOf,
+    extra: [
+      [t('forecast.horizon'), t('forecast.horizonOption', { days: horizonDays })],
+      [t('export.meta.section'), tabLabels[tab]],
+    ],
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -317,16 +329,9 @@ export function CashFlowForecast() {
             ))}
           </select>
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('cash-flow-forecast', tab, data?.asOf ?? asOf)}
-          meta={{
-            title: t('forecast.title'),
-            asOf: data?.asOf ?? asOf,
-            extra: [
-              [t('forecast.horizon'), t('forecast.horizonOption', { days: horizonDays })],
-              [t('export.meta.section'), tabLabels[tab]],
-            ],
-          }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data}
         />
@@ -341,6 +346,11 @@ export function CashFlowForecast() {
 
       {data && (
         <>
+          {/* The forecast body is four sub-tabs' worth of tables, so the
+              masthead gets its own card above them all rather than living
+              inside whichever one happens to be open. */}
+          <ReportHeader meta={meta} variant="card" />
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <Tile
               label={t('forecast.tiles.starting')}

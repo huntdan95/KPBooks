@@ -411,7 +411,11 @@
     "privacy": "Su archivo se envía por una conexión cifrada y se almacena únicamente en la cuenta de <strong>{{company}}</strong>. Este enlace es de un solo uso: una vez que lo suba, no se podrá volver a usar.",
     "thanks": "✓ Gracias: su W-9 se subió correctamente.",
     "onFileNow": "<strong>{{company}}</strong> ya lo tiene en archivo. Puede cerrar esta pestaña.",
-    "poweredBy": "Con tecnología de KPBooks · Una plataforma contable para contadores y pequeñas empresas"
+    "poweredBy": "Con tecnología de KPBooks · Una plataforma contable para contadores y pequeñas empresas",
+    "progress": {
+      "uploading": "Subiendo…",
+      "processing": "Guardando su W-9…"
+    }
   },
   "merge": {
     "kind": {

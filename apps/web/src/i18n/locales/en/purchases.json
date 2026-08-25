@@ -411,7 +411,11 @@
     "privacy": "Your file is sent over an encrypted connection and stored only on <strong>{{company}}</strong>'s account. This link is single-use — once you upload, it can't be used again.",
     "thanks": "✓ Thanks — your W-9 is uploaded.",
     "onFileNow": "<strong>{{company}}</strong> has it on file now. You can close this tab.",
-    "poweredBy": "Powered by KPBooks · An accounting platform for accountants and small businesses"
+    "poweredBy": "Powered by KPBooks · An accounting platform for accountants and small businesses",
+    "progress": {
+      "uploading": "Uploading…",
+      "processing": "Saving your W-9…"
+    }
   },
   "merge": {
     "kind": {

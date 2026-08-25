@@ -5,7 +5,8 @@ import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
 import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
-import { type CsvRow, ExportCsvButton, csvMoney, csvSide } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney, csvSide } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface TrialBalanceRow {
   accountId: string;
@@ -121,6 +122,11 @@ export function TrialBalance({
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('trialBalance.title'),
+    asOf: query.data?.asOf ?? asOf,
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -137,9 +143,9 @@ export function TrialBalance({
               className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-slate-900 focus:outline-none"
             />
           </label>
-          <ExportCsvButton
+          <ReportExportButtons
             filename={reportFilename('trial-balance', query.data?.asOf ?? asOf)}
-            meta={{ title: t('trialBalance.title'), asOf: query.data?.asOf ?? asOf }}
+            meta={meta}
             rows={csvRows}
             disabled={query.isLoading || rows.length === 0}
           />
@@ -158,96 +164,101 @@ export function TrialBalance({
       )}
 
       {rows.length > 0 && (
-        <div className="max-h-[70vh] overflow-auto rounded-md border border-slate-200 bg-white">
-          <table className="kpb-sticky-thead w-full text-sm">
-            <thead className="text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
-                <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
-                <th className="px-4 py-2 text-right font-medium">{t('common:debit')}</th>
-                <th className="px-4 py-2 text-right font-medium">{t('common:credit')}</th>
-                <th className="px-4 py-2 text-right font-medium">{t('common:balance')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {ORDER.flatMap((type) => {
-                const group = grouped[type];
-                if (!group?.length) return [];
-                return [
-                  <tr key={`hdr-${type}`} className="bg-slate-50">
-                    <td colSpan={5} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                      {t(`accountTypes.${type}`)}
-                    </td>
-                  </tr>,
-                  ...group.map((r) => {
-                    // The whole row is a mouse target so the amounts QuickZoom
-                    // like they do in QuickBooks; the account name is a real
-                    // <button> so the same drill-down is reachable — and
-                    // announced — from the keyboard.
-                    const open = onOpenAccount
-                      ? () =>
-                          onOpenAccount({
-                            accountId: r.accountId,
-                            start: yearStartOf(asOf),
-                            end: asOf,
-                          })
-                      : undefined;
-                    return (
-                      <tr
-                        key={r.accountId}
-                        className={open ? drillRowClass : undefined}
-                        onClick={open}
-                      >
-                        <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
-                        <td className="px-4 py-2 text-slate-900">
-                          {open ? (
-                            <button
-                              type="button"
-                              className={drillButtonClass}
-                              aria-label={t('drill.openAccount', { code: r.code, name: r.name })}
-                              onClick={(e) => {
-                                // Stop the bubble, or one click would run the
-                                // row handler too.
-                                e.stopPropagation();
-                                open();
-                              }}
-                            >
-                              {r.name}
-                            </button>
-                          ) : (
-                            r.name
-                          )}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-slate-900">
-                          {Number(r.debit) > 0 ? formatUsd(r.debit) : ''}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-slate-900">
-                          {Number(r.credit) > 0 ? formatUsd(r.credit) : ''}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-slate-700">
-                          {formatUsd(r.balance)}
-                        </td>
-                      </tr>
-                    );
-                  }),
-                ];
-              })}
-            </tbody>
-            <tfoot className="bg-slate-50 text-sm font-medium">
-              <tr>
-                <td colSpan={2} className="px-4 py-2 text-right text-slate-600">
-                  {t('totals')}
-                </td>
-                <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.debit)}</td>
-                <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.credit)}</td>
-                <td className="px-4 py-2 text-right">
-                  <span className={balanced ? 'text-emerald-600' : 'text-rose-600'}>
-                    {balanced ? t('trialBalance.balanced') : t('trialBalance.unbalanced')}
-                  </span>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+        <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+          {/* Outside the scroller, so the company and the as-of date stay put
+              while the accounts scroll under them. */}
+          <ReportHeader meta={meta} />
+          <div className="max-h-[70vh] overflow-auto">
+            <table className="kpb-sticky-thead w-full text-sm">
+              <thead className="text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">{t('code')}</th>
+                  <th className="px-4 py-2 text-left font-medium">{t('common:account')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('common:debit')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('common:credit')}</th>
+                  <th className="px-4 py-2 text-right font-medium">{t('common:balance')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {ORDER.flatMap((type) => {
+                  const group = grouped[type];
+                  if (!group?.length) return [];
+                  return [
+                    <tr key={`hdr-${type}`} className="bg-slate-50">
+                      <td colSpan={5} className="px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+                        {t(`accountTypes.${type}`)}
+                      </td>
+                    </tr>,
+                    ...group.map((r) => {
+                      // The whole row is a mouse target so the amounts QuickZoom
+                      // like they do in QuickBooks; the account name is a real
+                      // <button> so the same drill-down is reachable — and
+                      // announced — from the keyboard.
+                      const open = onOpenAccount
+                        ? () =>
+                            onOpenAccount({
+                              accountId: r.accountId,
+                              start: yearStartOf(asOf),
+                              end: asOf,
+                            })
+                        : undefined;
+                      return (
+                        <tr
+                          key={r.accountId}
+                          className={open ? drillRowClass : undefined}
+                          onClick={open}
+                        >
+                          <td className="px-4 py-2 font-mono text-slate-500">{r.code}</td>
+                          <td className="px-4 py-2 text-slate-900">
+                            {open ? (
+                              <button
+                                type="button"
+                                className={drillButtonClass}
+                                aria-label={t('drill.openAccount', { code: r.code, name: r.name })}
+                                onClick={(e) => {
+                                  // Stop the bubble, or one click would run the
+                                  // row handler too.
+                                  e.stopPropagation();
+                                  open();
+                                }}
+                              >
+                                {r.name}
+                              </button>
+                            ) : (
+                              r.name
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-slate-900">
+                            {Number(r.debit) > 0 ? formatUsd(r.debit) : ''}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-slate-900">
+                            {Number(r.credit) > 0 ? formatUsd(r.credit) : ''}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-slate-700">
+                            {formatUsd(r.balance)}
+                          </td>
+                        </tr>
+                      );
+                    }),
+                  ];
+                })}
+              </tbody>
+              <tfoot className="bg-slate-50 text-sm font-medium">
+                <tr>
+                  <td colSpan={2} className="px-4 py-2 text-right text-slate-600">
+                    {t('totals')}
+                  </td>
+                  <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.debit)}</td>
+                  <td className="px-4 py-2 text-right font-mono text-slate-900">{formatUsd(totals.credit)}</td>
+                  <td className="px-4 py-2 text-right">
+                    <span className={balanced ? 'text-emerald-600' : 'text-rose-600'}>
+                      {balanced ? t('trialBalance.balanced') : t('trialBalance.unbalanced')}
+                    </span>
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       )}
     </div>

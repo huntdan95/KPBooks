@@ -5,7 +5,8 @@ import { api } from '../lib/api';
 import { useCurrentCompany } from '../lib/current-company';
 import { reportFilename } from '../lib/report-export';
 import { type AccountDrillTarget, drillButtonClass, drillRowClass } from './AccountDetail';
-import { type CsvRow, ExportCsvButton, csvMoney } from './ReportExport';
+import { type CsvRow, type ReportMeta, ReportExportButtons, csvMoney } from './ReportExport';
+import { ReportHeader } from './ReportHeader';
 
 interface Section {
   accountId: string;
@@ -113,6 +114,11 @@ export function BalanceSheet({
     return out;
   }
 
+  const meta: ReportMeta = {
+    title: t('tabs.balanceSheet'),
+    asOf: data?.asOf ?? asOf,
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -124,9 +130,9 @@ export function BalanceSheet({
             className={inputClass}
           />
         </Field>
-        <ExportCsvButton
+        <ReportExportButtons
           filename={reportFilename('balance-sheet', data?.asOf ?? asOf)}
-          meta={{ title: t('tabs.balanceSheet'), asOf: data?.asOf ?? asOf }}
+          meta={meta}
           rows={csvRows}
           disabled={query.isLoading || !data}
         />
@@ -141,6 +147,7 @@ export function BalanceSheet({
 
       {data && (
         <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+          <ReportHeader meta={meta} />
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
               <tr>
