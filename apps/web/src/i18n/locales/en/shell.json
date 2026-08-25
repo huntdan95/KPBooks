@@ -104,7 +104,7 @@
       "new-entry": "New journal entry",
       "recurring": "Recurring",
       "fixed-assets": "Fixed assets",
-      "import": "Import from QuickBooks",
+      "import": "Import (.iif)",
       "reports": "All reports",
       "activity": "Activity log",
       "documents": "Documents",
@@ -171,7 +171,7 @@
     },
     "import": {
       "title": "Import from QuickBooks",
-      "subtitle": "Drop an .iif list export or a Journal report (.xlsx / .csv)"
+      "subtitle": "Drop an .iif file to seed your books"
     },
     "reports": {
       "title": "Reports",

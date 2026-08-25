@@ -104,7 +104,7 @@
       "new-entry": "Nuevo asiento contable",
       "recurring": "Transacciones recurrentes",
       "fixed-assets": "Activos fijos",
-      "import": "Importar desde QuickBooks",
+      "import": "Importar (.iif)",
       "reports": "Todos los informes",
       "activity": "Registro de actividad",
       "documents": "Documentos",
@@ -171,7 +171,7 @@
     },
     "import": {
       "title": "Importar desde QuickBooks",
-      "subtitle": "Suelte una exportación de listas .iif o un informe Journal (.xlsx o .csv)"
+      "subtitle": "Suelte un archivo .iif para inicializar sus libros"
     },
     "reports": {
       "title": "Informes",

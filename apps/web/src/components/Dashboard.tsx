@@ -135,6 +135,12 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       ),
   });
 
+  const ar = useQuery({
+    queryKey: ['dashboard-ar-aging', companyId, today],
+    enabled: Boolean(companyId),
+    queryFn: () =>
+      api<AgingResponse>(`/ledger/reports/ar-aging?asOf=${today}`, { companyId }),
+  });
 
   const ap = useQuery({
     queryKey: ['dashboard-ap-aging', companyId, today],
@@ -143,6 +149,11 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       api<AgingResponse>(`/ledger/reports/ap-aging?asOf=${today}`, { companyId }),
   });
 
+  const invoices = useQuery({
+    queryKey: ['dashboard-invoices', companyId],
+    enabled: Boolean(companyId),
+    queryFn: () => api<{ invoices: InvoiceListRow[] }>('/invoices?status=open', { companyId }),
+  });
 
   const bills = useQuery({
     queryKey: ['dashboard-bills', companyId],
@@ -179,7 +190,14 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       api<ActivityResp>(`/activity?from=${sevenDaysAgo}&to=${today}&limit=8`, { companyId }),
   });
 
+  const recentInvoices = useMemo(() => (invoices.data?.invoices ?? []).slice(0, 5), [invoices.data]);
   const recentBills = useMemo(() => (bills.data?.bills ?? []).slice(0, 5), [bills.data]);
+  const overdueInvoices = useMemo(
+    () =>
+      (invoices.data?.invoices ?? []).filter((i) => i.dueDate < today && Number(i.balanceDue) > 0)
+        .length,
+    [invoices.data, today],
+  );
   const overdueBills = useMemo(
     () =>
       (bills.data?.bills ?? []).filter((b) => b.dueDate < today && Number(b.balanceDue) > 0).length,
@@ -215,9 +233,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
       {expiringCount > 0 && (
         <button
           type="button"
-          // Workers is hidden for this practice; the expiry data it showed
-          // lives on vendor records, which are still reachable.
-          onClick={() => onNavigate?.('vendors')}
+          onClick={() => onNavigate?.('workers')}
           className={
             'flex w-full items-start gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all ' +
             (alreadyExpired > 0
@@ -285,7 +301,22 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
             onClick={() => onNavigate?.('reports:pnl')}
           />
         )}
-
+        {ar.isLoading ? (
+          <SkeletonStat />
+        ) : (
+          <Tile
+            icon="arrow-down-right"
+            label={t('dashboard.tiles.arOutstanding')}
+            sub={
+              overdueInvoices > 0
+                ? t('dashboard.tiles.overdueInvoices', { count: overdueInvoices })
+                : t('dashboard.tiles.allCurrent')
+            }
+            value={ar.data ? formatUsd(ar.data.totals.total) : '—'}
+            tone={overdueInvoices > 0 ? 'amber' : 'slate'}
+            onClick={() => onNavigate?.('reports:ar-aging')}
+          />
+        )}
         {ap.isLoading ? (
           <SkeletonStat />
         ) : (
@@ -304,8 +335,23 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: string) => void 
         )}
       </div>
 
-      {/* ----------- Recent open bills ------------- */}
-      <div className="grid grid-cols-1 gap-4">
+      {/* ----------- Recent open invoices + bills ------------- */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <RecentList
+          title={t('dashboard.recentInvoices.title')}
+          icon="file-stack"
+          empty={t('dashboard.recentInvoices.empty')}
+          isLoading={invoices.isLoading}
+          rows={recentInvoices.map((i) => ({
+            id: i.id,
+            primary: i.customerName,
+            secondary: t('dashboard.dueLine', { number: i.invoiceNumber, date: i.dueDate }),
+            amount: i.balanceDue,
+            status: i.status,
+          }))}
+          actionLabel={t('dashboard.viewAll')}
+          onAction={() => onNavigate?.('invoices')}
+        />
         <RecentList
           title={t('dashboard.recentBills.title')}
           icon="receipt"
