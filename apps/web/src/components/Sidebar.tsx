@@ -5,6 +5,7 @@
  * app is currently single-route SPA (no router).
  */
 
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Icon, type IconName } from './ui/Icon';
 
@@ -85,13 +86,10 @@ const SECTIONS: NavSection[] = [
     ],
   },
   {
-    labelKey: 'nav.sections.banking',
-    items: [{ id: 'banking', labelKey: 'nav.items.banking', icon: 'banknote' }],
-  },
-  {
     labelKey: 'nav.sections.accounting',
     items: [
       { id: 'accounts', labelKey: 'nav.items.accounts', icon: 'book-open' },
+      { id: 'banking', labelKey: 'nav.items.banking', icon: 'banknote' },
       { id: 'new-entry', labelKey: 'nav.items.new-entry', icon: 'plus-square' },
       { id: 'recurring', labelKey: 'nav.items.recurring', icon: 'repeat' },
       { id: 'fixed-assets', labelKey: 'nav.items.fixed-assets', icon: 'truck' },
@@ -103,11 +101,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { id: 'reports', labelKey: 'nav.items.reports', icon: 'bar-chart' },
       { id: 'activity', labelKey: 'nav.items.activity', icon: 'history' },
+      { id: 'documents', labelKey: 'nav.items.documents', icon: 'file-stack' },
     ],
-  },
-  {
-    labelKey: 'nav.sections.files',
-    items: [{ id: 'documents', labelKey: 'nav.items.documents', icon: 'file-stack' }],
   },
   {
     labelKey: 'nav.sections.taxes',
@@ -118,6 +113,17 @@ const SECTIONS: NavSection[] = [
   },
 ];
 
+const COLLAPSE_KEY = 'kpb:nav-collapsed';
+
+function loadCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    // Private-mode or corrupted value: start expanded rather than blowing up.
+    return new Set();
+  }
+}
 export function Sidebar({
   activeView,
   onSelect,
@@ -126,6 +132,21 @@ export function Sidebar({
   onSelect: (v: View) => void;
 }) {
   const { t } = useTranslation('shell');
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+
+  function toggleSection(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+      } catch {
+        // Not worth failing a click over; the rail just forgets next reload.
+      }
+      return next;
+    });
+  }
 
   return (
     <nav className="flex h-full flex-col overflow-y-auto bg-gradient-to-b from-slate-900 to-slate-950 px-3 py-4 text-sm text-slate-200">
@@ -144,14 +165,31 @@ export function Sidebar({
         </div>
       </div>
 
-      {SECTIONS.map((section, sIdx) => (
-        <div key={sIdx} className="mb-1">
-          {section.labelKey && (
-            <div className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-              {t(section.labelKey)}
-            </div>
-          )}
-          <ul className="space-y-0.5">
+      {SECTIONS.map((section, sIdx) => {
+        const key = section.labelKey ?? `section-${sIdx}`;
+        // The section holding the current page always stays open, so
+        // navigating from somewhere else (a dashboard tile, the 1099 page)
+        // can never land the user on a highlighted item they cannot see.
+        const holdsActive = section.items.some((i) => i.id === activeView);
+        const isCollapsed = section.labelKey !== null && collapsed.has(key) && !holdsActive;
+        return (
+          <div key={sIdx} className="mb-1">
+            {section.labelKey && (
+              <button
+                type="button"
+                onClick={() => toggleSection(key)}
+                aria-expanded={!isCollapsed}
+                className="flex w-full items-center gap-1 rounded px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 transition-colors hover:text-slate-300"
+              >
+                <Icon
+                  name={isCollapsed ? 'chevron-right' : 'chevron-down'}
+                  className="h-3 w-3 shrink-0"
+                />
+                <span>{t(section.labelKey)}</span>
+              </button>
+            )}
+            {!isCollapsed && (
+            <ul className="space-y-0.5">
             {section.items.map((item) => {
               const isActive = item.id === activeView;
               return (
@@ -184,9 +222,11 @@ export function Sidebar({
                 </li>
               );
             })}
-          </ul>
-        </div>
-      ))}
+            </ul>
+            )}
+          </div>
+        );
+      })}
 
       {/* Footer */}
       <div className="mt-auto pt-4">
