@@ -10,6 +10,11 @@ import {
   parseIif,
   warnInactiveAccountRefs,
 } from '../modules/imports/iif.js';
+import {
+  parseJournalCsv,
+  resolveLeafAccountNames,
+} from '../modules/imports/journal-report.js';
+import { parseJournalXlsx } from '../modules/imports/journal-xlsx.js';
 
 /**
  * Multi-year QBD transaction exports routinely run 5-12 MB, so the cap sits
@@ -29,6 +34,21 @@ export const PreviewBody = z.object({
         'since an earlier import posts again, and the commit warns when it detects that)',
     ),
 });
+
+/**
+ * Journal-report preview accepts either the .xlsx QuickBooks' "Export to
+ * Excel" produces (base64, since it is binary) or a .csv the user saved
+ * instead. Base64 inflates by ~4/3, hence the larger cap on that field.
+ */
+export const JournalPreviewBody = z
+  .object({
+    fileBase64: z.string().min(1).max(16_000_000).optional(),
+    text: z.string().min(1).max(12_000_000).optional(),
+    dateOrder: z.enum(['mdy', 'dmy']).optional(),
+  })
+  .refine((b) => Boolean(b.fileBase64 || b.text), {
+    message: 'provide either fileBase64 (.xlsx) or text (.csv)',
+  });
 
 export const importsRoutes: FastifyPluginAsync = async (app) => {
   app.addHook('preHandler', async (req) => {
@@ -60,6 +80,42 @@ export const importsRoutes: FastifyPluginAsync = async (app) => {
     // file that references them previews clean while every block touching
     // them would die per-row at commit. Disclose it now, while the user can
     // still plan around it.
+    warnInactiveAccountRefs(parsed, inactiveNames);
+    return parsed;
+  });
+
+  /**
+   * QuickBooks cannot export transactions to IIF, so a full-history migration
+   * comes from the Journal report instead. It parses to the same preview shape
+   * as an IIF transactions file, which lets it reuse
+   * /imports/iif/commit-transactions unchanged — including the duplicate
+   * fingerprinting that makes a re-import safe.
+   */
+  app.post('/imports/journal/preview', async (req) => {
+    const body = JournalPreviewBody.parse(req.body);
+    const parsed = body.fileBase64
+      ? await parseJournalXlsx(Buffer.from(body.fileBase64, 'base64'), {
+          ...(body.dateOrder ? { dateOrder: body.dateOrder } : {}),
+        })
+      : parseJournalCsv(body.text!, {
+          ...(body.dateOrder ? { dateOrder: body.dateOrder } : {}),
+        });
+
+    const { existingNames, inactiveNames } = await req.withTenantTx(async (tx) => {
+      const rows = await tx
+        .select({ name: accounts.name, isActive: accounts.isActive })
+        .from(accounts);
+      return {
+        existingNames: new Set(rows.map((r) => r.name)),
+        inactiveNames: new Set(rows.filter((r) => !r.isActive).map((r) => r.name)),
+      };
+    });
+
+    // Must run BEFORE buildMissingAccounts: the report prints only a
+    // sub-account's leaf name, so without this every sub-account would look
+    // missing and be offered as a new top-level duplicate.
+    resolveLeafAccountNames(parsed, existingNames);
+    parsed.missingAccounts = buildMissingAccounts(parsed, existingNames);
     warnInactiveAccountRefs(parsed, inactiveNames);
     return parsed;
   });

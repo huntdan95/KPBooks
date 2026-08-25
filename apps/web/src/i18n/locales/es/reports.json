@@ -14,7 +14,16 @@
       "section": "Sección",
       "rows": "Filas",
       "generated": "Generado"
-    }
+    },
+    "pdf": "Descargar PDF",
+    "pdfBusy": "Generando PDF…"
+  },
+  "header": {
+    "period": "Del {{start}} al {{end}}",
+    "asOf": "Al {{date}}",
+    "ein": "EIN",
+    "continued": "{{title}} (continuación)",
+    "page": "Página {{page}} de {{pages}}"
   },
   "tabs": {
     "trialBalance": "Balanza de comprobación",

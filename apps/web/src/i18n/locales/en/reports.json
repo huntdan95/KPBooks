@@ -14,7 +14,16 @@
       "section": "Section",
       "rows": "Rows",
       "generated": "Generated"
-    }
+    },
+    "pdf": "Download PDF",
+    "pdfBusy": "Building PDF…"
+  },
+  "header": {
+    "period": "{{start}} through {{end}}",
+    "asOf": "As of {{date}}",
+    "ein": "EIN",
+    "continued": "{{title}} (continued)",
+    "page": "Page {{page}} of {{pages}}"
   },
   "tabs": {
     "trialBalance": "Trial Balance",

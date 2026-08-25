@@ -62,3 +62,73 @@ export function reportFilename(base: string, ...parts: Array<string | undefined>
     .replace(/[^A-Za-z0-9_.-]+/g, '-')
     .replace(/-+/g, '-');
 }
+
+/* ------------------------------------------------------------------ *
+ * Shared report shapes + display formatting
+ *
+ * These live here rather than in ReportExport.tsx so the PDF writer can
+ * reach them without importing a React component — the CSV and the PDF
+ * are two renderings of the same rows and the same header block, and
+ * neither should own the definitions.
+ * ------------------------------------------------------------------ */
+
+/** One report line. Numbers stay unformatted so Excel can sum the column. */
+export type CsvRow = Array<string | number | null | undefined>;
+
+export interface ReportMeta {
+  /** Already-translated report name. */
+  title: string;
+  /** Range reports pass both; as-of reports pass `asOf` instead. */
+  start?: string;
+  end?: string;
+  asOf?: string;
+  /** Already-translated basis label. Omitted where a report has no basis. */
+  basis?: string;
+  /**
+   * Extra label/value context lines — an account filter, a horizon, a
+   * classification filter. Anything that changes which rows are below and
+   * would otherwise be invisible in the file.
+   */
+  extra?: CsvRow[];
+}
+
+/**
+ * True for a bare decimal literal. Drives right-alignment and digit grouping
+ * in the PDF: a cell that is a number gets the number treatment, and a cell
+ * that merely contains digits ("31–60", "1099-NEC") does not.
+ */
+export function isNumericCell(value: unknown): boolean {
+  return typeof value === 'number' || PLAIN_NUMBER.test(String(value ?? ''));
+}
+
+/**
+ * "1234.00" → "1,234.00". Groups the integer part and leaves the fraction
+ * exactly as the caller wrote it, so a 2-dp money string stays money and a
+ * 4-dp tax rate stays a rate. No currency symbol: like QuickBooks' own PDFs,
+ * the column heading says what the number is.
+ */
+export function groupDigits(value: string | number): string {
+  const s = String(value);
+  if (!isNumericCell(s)) return s;
+  const negative = s.startsWith('-');
+  const [whole = '0', frac] = (negative ? s.slice(1) : s).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return `${negative ? '-' : ''}${grouped}${frac === undefined ? '' : `.${frac}`}`;
+}
+
+/**
+ * "2026-08-25" → "August 25, 2026" (or "25 de agosto de 2026"). Parsed as UTC
+ * so a date-only string never slips a day backwards west of Greenwich, and
+ * handed back unchanged if it is not a plain ISO date.
+ */
+export function formatLongDate(iso: string | undefined, language: string): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso ?? '';
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat(language, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC',
+  }).format(d);
+}

@@ -191,11 +191,15 @@ export function Imports() {
     // preview to the company it was actually parsed against -- reading the
     // hook value in onSuccess would race a company switch made while the
     // parse request was in flight.
-    mutationFn: async (vars: { text: string; companyId: string | null }) =>
-      api<IifPreview>('/imports/iif/preview', {
+    mutationFn: async (vars: {
+      companyId: string | null;
+      endpoint: string;
+      body: Record<string, unknown>;
+    }) =>
+      api<IifPreview>(vars.endpoint, {
         method: 'POST',
         companyId: vars.companyId,
-        body: { text: vars.text },
+        body: vars.body,
       }),
     onSuccess: (data, vars) => {
       setPreviewCompanyId(vars.companyId);
@@ -359,9 +363,65 @@ export function Imports() {
     );
   }
 
+  /** Base64 in chunks: apply() over a whole multi-MB file overflows the stack. */
+  function toBase64(buffer: ArrayBuffer): string {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+  }
+
   async function handleFile(file: File) {
     setFileName(file.name);
     setParseError(null);
+
+    // QuickBooks cannot export transactions to IIF, so full history arrives
+    // as a Journal report instead: .xlsx from "Export to Excel", or .csv if
+    // the user picked that. Those take a different endpoint; .iif keeps the
+    // original path with its encoding sniffing and size checks.
+    const lower = file.name.toLowerCase();
+    const isJournal =
+      lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv');
+    if (isJournal) {
+      let buf: ArrayBuffer;
+      try {
+        buf = await file.arrayBuffer();
+      } catch (err) {
+        setParseError(
+          t('imports.readFailed', {
+            name: file.name,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        return;
+      }
+      if (buf.byteLength === 0) {
+        setParseError(t('imports.fileEmpty'));
+        return;
+      }
+      if (lower.endsWith('.csv')) {
+        const decoded = decodeIifBuffer(buf);
+        if ('error' in decoded) {
+          setParseError(decoded.error);
+          return;
+        }
+        previewMutation.mutate({
+          companyId,
+          endpoint: '/imports/journal/preview',
+          body: { text: decoded.text },
+        });
+      } else {
+        previewMutation.mutate({
+          companyId,
+          endpoint: '/imports/journal/preview',
+          body: { fileBase64: toBase64(buf) },
+        });
+      }
+      return;
+    }
     // Name/size are judged BEFORE the read: the post-decode checks below only
     // fire once the whole file has been materialised as an ArrayBuffer and
     // decoded again as text, so a company-file backup dragged in by mistake
@@ -414,7 +474,7 @@ export function Imports() {
       setParseError(t('imports.fileTooLarge', { size: (text.length / 1e6).toFixed(1) }));
       return;
     }
-    previewMutation.mutate({ text, companyId });
+    previewMutation.mutate({ companyId, endpoint: '/imports/iif/preview', body: { text } });
   }
 
   // Blocks excluded at parse time for data errors. They never reach the
@@ -461,7 +521,7 @@ export function Imports() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".iif,text/plain"
+            accept=".iif,.csv,.xlsx,.xls,text/plain"
             className="hidden"
             // Clear before the picker opens, or re-selecting the SAME path
             // fires no change event and nothing happens: every failure path

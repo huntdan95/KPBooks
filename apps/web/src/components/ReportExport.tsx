@@ -1,39 +1,23 @@
 /**
- * The Export CSV control every report carries.
+ * The export controls every report carries: CSV for a spreadsheet, PDF for a
+ * page someone will read.
  *
  * One component, so all eleven reports look and behave alike and — more to the
  * point — so the header block is written once. A bare grid of numbers is
  * useless to whoever opens the file a month later: every export leads with what
- * report it is, whose books, over what dates, and on which basis.
+ * report it is, whose books, over what dates, and on which basis. The PDF gets
+ * the same facts as the printed masthead the screen already shows.
  *
  * Rows are built on click rather than on every render: a general ledger export
- * is thousands of rows and nobody has asked for it until the button is pressed.
+ * is thousands of rows and nobody has asked for it until a button is pressed.
  */
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { api } from '../lib/api';
-import { useCurrentCompany } from '../lib/current-company';
-import { downloadCsv } from '../lib/report-export';
+import { type CsvRow, type ReportMeta, downloadCsv, formatLongDate } from '../lib/report-export';
+import { downloadReportPdf } from '../lib/report-pdf';
+import { useReportHeading } from './ReportHeader';
 
-/** One CSV line. Numbers stay unformatted so Excel can sum the column. */
-export type CsvRow = Array<string | number | null | undefined>;
-
-export interface ReportMeta {
-  /** Already-translated report name. */
-  title: string;
-  /** Range reports pass both; as-of reports pass `asOf` instead. */
-  start?: string;
-  end?: string;
-  asOf?: string;
-  /** Already-translated basis label. Omitted where a report has no basis. */
-  basis?: string;
-  /**
-   * Extra label/value context lines — an account filter, a horizon, a
-   * classification filter. Anything that changes which rows are below and
-   * would otherwise be invisible in the file.
-   */
-  extra?: CsvRow[];
-}
+export type { CsvRow, ReportMeta };
 
 /**
  * Money for a spreadsheet cell: the server's own decimal string, cut to cents,
@@ -53,13 +37,13 @@ export function csvSide(value: string | null | undefined): string {
   return Number(value) > 0 ? csvMoney(value) : '';
 }
 
-export function ExportCsvButton({
+export function ReportExportButtons({
   filename,
   meta,
   rows,
   disabled,
 }: {
-  /** Stem from reportFilename(); the .csv suffix is added for you. */
+  /** Stem from reportFilename(); the .csv / .pdf suffix is added for you. */
   filename: string;
   meta: ReportMeta;
   /**
@@ -71,66 +55,77 @@ export function ExportCsvButton({
   /** True while the report is loading or has nothing to export. */
   disabled: boolean;
 }) {
-  const { t } = useTranslation('reports');
-  const { companyId } = useCurrentCompany();
-  const queryClient = useQueryClient();
-  // Same query key Period Close and Mileage use, so this reads their cached
-  // company instead of firing a request of its own.
-  const companyQuery = useQuery({
-    queryKey: ['company-current', companyId],
-    enabled: Boolean(companyId),
-    queryFn: () => api<{ name: string }>('/companies/current', { companyId }),
-  });
+  const { t, i18n } = useTranslation('reports');
+  const heading = useReportHeading(meta);
+  // The PDF has to pull in jsPDF before it can write anything, so the button
+  // says so rather than looking dead for the length of a chunk download.
+  const [busy, setBusy] = useState(false);
 
-  /**
-   * Whose books this is. /companies/current is the better source but nothing
-   * waits on it — the button unlocks as soon as the REPORT resolves, and a 4xx
-   * on that request never retries — so falling back on it alone ships files
-   * whose Company line is blank, which is the one thing the header block exists
-   * to prevent. The membership list is guaranteed: the whole shell is gated on
-   * ['me'] before any report can render.
-   */
-  function companyName(): string {
-    const current = companyQuery.data?.name;
-    if (current) return current;
-    const me = queryClient.getQueryData<{
-      memberships?: Array<{ companyId: string; companyName: string }>;
-    }>(['me']);
-    return me?.memberships?.find((m) => m.companyId === companyId)?.companyName ?? '';
-  }
+  const today = new Date().toISOString().slice(0, 10);
 
-  async function onExport() {
+  async function onExportCsv() {
     const header: CsvRow[] = [
       [t('export.meta.report'), meta.title],
-      [t('export.meta.company'), companyName()],
+      [t('export.meta.company'), heading.name],
     ];
     if (meta.asOf) {
       header.push([t('export.meta.asOf'), meta.asOf]);
     } else {
       // Start and end get their own cells rather than one "a through b"
-      // string: a CPA sorting or filtering the file needs real dates.
+      // string: a CPA sorting or filtering the file needs real dates. Same
+      // reason they stay ISO here while the PDF spells them out.
       header.push([t('export.meta.period'), meta.start ?? '', meta.end ?? '']);
     }
     if (meta.basis) header.push([t('export.meta.basis'), meta.basis]);
     if (meta.extra) header.push(...meta.extra);
-    header.push([t('export.meta.generated'), new Date().toISOString().slice(0, 10)]);
+    header.push([t('export.meta.generated'), today]);
     header.push([]);
     downloadCsv(filename, [...header, ...(await rows())]);
   }
 
+  async function onExportPdf() {
+    setBusy(true);
+    try {
+      await downloadReportPdf({
+        filename,
+        masthead: { name: heading.name, lines: heading.lines },
+        title: heading.title,
+        subtitle: heading.subtitle,
+        qualifier: heading.qualifier,
+        context: heading.context,
+        generated: t('export.meta.generated') + ' ' + formatLongDate(today, i18n.language),
+        pageLabel: (page, pages) => t('header.page', { page, pages }),
+        continued: t('header.continued', { title: heading.title }),
+        rows: await rows(),
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => void onExport()}
-      disabled={disabled}
-      className={exportButtonClass}
-    >
-      {t('export.csv')}
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => void onExportCsv()}
+        disabled={disabled}
+        className={exportButtonClass}
+      >
+        {t('export.csv')}
+      </button>
+      <button
+        type="button"
+        onClick={() => void onExportPdf()}
+        disabled={disabled || busy}
+        className={exportButtonClass}
+      >
+        {busy ? t('export.pdfBusy') : t('export.pdf')}
+      </button>
+    </div>
   );
 }
 
-// Same shape as the ledger pager buttons, so the control reads as part of the
+// Same shape as the ledger pager buttons, so the controls read as part of the
 // report toolbar rather than a call to action.
 const exportButtonClass =
   'rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white';
