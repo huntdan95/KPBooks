@@ -355,16 +355,36 @@ async function loadFormContext(
     .where(eq(companies.id, companyId));
   if (!company) return null;
 
-  // Year total of posted vendor_sent payments (matches reports.service 1099 query).
+  // MUST mirror nineteenNinetyNineSummary in reports.service.ts. The prep
+  // list and the printed form have to show the same number, so the same
+  // rule decides it: an expense account named for this contractor wins,
+  // otherwise their posted vendor payments. Summing both would double-count
+  // books that enter a bill and then pay it.
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
   const totalRows = await tx.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM payments
-    WHERE vendor_id = ${vendorId}
-      AND payment_type = 'vendor_sent'
-      AND status = 'posted'
-      AND payment_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
+    WITH account_total AS (
+      SELECT SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)) AS total
+      FROM accounts a
+      JOIN journal_lines jl   ON jl.account_id = a.id
+      JOIN journal_entries je ON je.id = jl.entry_id
+                             AND je.entry_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
+      WHERE a.type = 'expense'
+        AND lower(btrim(regexp_replace(a.name, '^.*:', ''))) = lower(btrim(${vendor.displayName}))
+    ),
+    payment_total AS (
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM payments
+      WHERE vendor_id = ${vendorId}
+        AND payment_type = 'vendor_sent'
+        AND status = 'posted'
+        AND payment_date BETWEEN ${yearStart}::date AND ${yearEnd}::date
+    )
+    SELECT COALESCE(
+      (SELECT total FROM account_total),
+      (SELECT total FROM payment_total),
+      0
+    ) AS total
   `);
   const totalRow = (totalRows as unknown as PaymentSumRow[])[0];
   const yearTotal = String(totalRow?.total ?? '0');

@@ -10,6 +10,9 @@ interface NinetyNineRow {
   vendorId: string;
   displayName: string;
   taxId: string | null;
+  source: 'account' | 'payments';
+  sourceAccountName: string | null;
+  ambiguousAccount: boolean;
   mailingAddress: Record<string, unknown> | null;
   total: string;
   meetsThreshold: boolean;
@@ -162,6 +165,16 @@ export function NinetyNinePrep() {
                     >
                       <td className="px-4 py-2 text-slate-900">
                         <div className="font-medium">{r.displayName}</div>
+                        {r.sourceAccountName && (
+                          <div className="text-xs text-slate-500">
+                            {t('ninetyNine.fromAccount', { account: r.sourceAccountName })}
+                            {r.ambiguousAccount && (
+                              <span className="ml-1 text-amber-700">
+                                {t('ninetyNine.multipleAccounts')}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {!r.meetsThreshold && (
                           <div className="text-xs text-slate-500">
                             {t('ninetyNine.belowThreshold')}

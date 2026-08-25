@@ -1100,13 +1100,28 @@ function summarise(asOf: string, rows: Array<Record<string, unknown>>): AgingRep
 
 // ─── 1099-NEC year-end summary ────────────────────────────────────────────
 
+/** Where a contractor year-total came from. See nineteenNinetyNineSummary. */
+export type NinetyNineSource = 'account' | 'payments';
+
 export interface NinetyNineRow {
   vendorId: string;
   displayName: string;
   taxId: string | null;
   mailingAddress: Record<string, unknown> | null;
-  /** Total non-voided posted payments (vendor_sent) in the calendar year. */
+  /** Amount to report for the calendar year. */
   total: string;
+  /**
+   * 'account' when the figure came from an expense account named after this
+   * contractor; 'payments' when it came from posted vendor payments.
+   */
+  source: NinetyNineSource;
+  /** The expense account the total was read from, when source is account. */
+  sourceAccountName: string | null;
+  /**
+   * True when more than one expense account matches this contractor name, so
+   * the total is a sum across them and worth eyeballing before filing.
+   */
+  ambiguousAccount: boolean;
   /** True when total >= $600 (current IRS 1099-NEC threshold). */
   meetsThreshold: boolean;
   /** True when the vendor is missing the TIN/EIN required for the form. */
@@ -1133,24 +1148,56 @@ export async function nineteenNinetyNineSummary(
 ): Promise<NinetyNineReport> {
   const start = `${year}-01-01`;
   const end = `${year}-12-31`;
+  // Two charting styles have to work here.
+  //
+  // This practice gives every 1099 contractor their own expense sub-account
+  // ("Subcontractors:Carlos Arana") and posts journal entries straight to it;
+  // there are no vendor bills or payments to total. Other books pay vendors
+  // through the payments table in the usual way.
+  //
+  // Summing BOTH would double-count any book that does both -- entering a
+  // bill debits the expense account, and paying it writes a payments row for
+  // the same money. So each contractor resolves to exactly one source: the
+  // expense account when a matching one exists, otherwise their payments.
+  //
+  // Matching is on the LEAF of the account path, because the account is named
+  // for the contractor but nested under a parent like "Subcontractors".
   const rows = await db.execute(sql`
+    WITH account_totals AS (
+      SELECT
+        lower(btrim(regexp_replace(a.name, '^.*:', ''))) AS leaf,
+        SUM(COALESCE(jl.debit, 0) - COALESCE(jl.credit, 0)) AS total,
+        COUNT(DISTINCT a.id)                               AS account_count,
+        MIN(a.name)                                        AS account_name
+      FROM accounts a
+      JOIN journal_lines jl   ON jl.account_id = a.id
+      JOIN journal_entries je ON je.id = jl.entry_id
+                             AND je.entry_date BETWEEN ${start}::date AND ${end}::date
+      WHERE a.type = 'expense'
+      GROUP BY 1
+    ),
+    payment_totals AS (
+      SELECT p.vendor_id, SUM(p.amount) AS total
+      FROM payments p
+      WHERE p.payment_type = 'vendor_sent'
+        AND p.status = 'posted'
+        AND p.payment_date BETWEEN ${start}::date AND ${end}::date
+      GROUP BY p.vendor_id
+    )
     SELECT
-      v.id            AS vendor_id,
-      v.display_name  AS display_name,
-      v.tax_id        AS tax_id,
+      v.id              AS vendor_id,
+      v.display_name    AS display_name,
+      v.tax_id          AS tax_id,
       v.mailing_address AS mailing_address,
-      COALESCE(
-        SUM(CASE WHEN p.status = 'posted' THEN p.amount ELSE 0 END),
-        0
-      )               AS total
+      at.total          AS account_total,
+      at.account_name   AS account_name,
+      at.account_count  AS account_count,
+      COALESCE(pt.total, 0) AS payment_total
     FROM vendors v
-    LEFT JOIN payments p
-           ON p.vendor_id = v.id
-          AND p.payment_type = 'vendor_sent'
-          AND p.payment_date BETWEEN ${start}::date AND ${end}::date
+    LEFT JOIN account_totals at ON at.leaf = lower(btrim(v.display_name))
+    LEFT JOIN payment_totals pt ON pt.vendor_id = v.id
     WHERE v.is_1099_vendor = true
-    GROUP BY v.id, v.display_name, v.tax_id, v.mailing_address
-    ORDER BY total DESC, v.display_name
+    ORDER BY COALESCE(at.total, pt.total, 0) DESC, v.display_name
   `);
 
   const SCALE = 10000n;
@@ -1160,7 +1207,12 @@ export async function nineteenNinetyNineSummary(
   const SIX_HUNDRED = 6000000n; // $600.0000 in 4dp micros
 
   const out: NinetyNineRow[] = (rows as unknown as Array<Record<string, unknown>>).map((r) => {
-    const total = String(r.total ?? '0');
+    // A matching expense account wins even when it nets to zero: that is a
+    // real answer about how this contractor is charted, and falling through
+    // to payments would mix the two bases for one contractor.
+    const hasAccount = r.account_total !== null && r.account_total !== undefined;
+    const source: NinetyNineSource = hasAccount ? 'account' : 'payments';
+    const total = String((hasAccount ? r.account_total : r.payment_total) ?? '0');
     const minor = decimalToMinor(total, SCALE);
     grandTotal += minor;
     const meets = minor >= SIX_HUNDRED;
@@ -1173,6 +1225,9 @@ export async function nineteenNinetyNineSummary(
       taxId: r.tax_id ? String(r.tax_id) : null,
       mailingAddress: (r.mailing_address as Record<string, unknown> | null) ?? null,
       total,
+      source,
+      sourceAccountName: hasAccount && r.account_name ? String(r.account_name) : null,
+      ambiguousAccount: hasAccount && Number(r.account_count ?? 1) > 1,
       meetsThreshold: meets,
       missingTaxId: missing,
     };

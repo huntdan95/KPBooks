@@ -261,7 +261,9 @@
     "generateTitle": "Generate 1099-NEC PDF",
     "belowThresholdTitle": "Below $600 threshold",
     "footerPre": "Click",
-    "footerPost": "on any vendor to download Copies B (recipient) + C (payer) as PDFs. Copy A must be e-filed via the IRS FIRE system or printed onto the official red-ink scannable form."
+    "footerPost": "on any vendor to download Copies B (recipient) + C (payer) as PDFs. Copy A must be e-filed via the IRS FIRE system or printed onto the official red-ink scannable form.",
+    "fromAccount": "from {{account}}",
+    "multipleAccounts": "(several accounts match this name — check before filing)"
   },
   "generate1099": {
     "title": "Generate Form {{form}}",

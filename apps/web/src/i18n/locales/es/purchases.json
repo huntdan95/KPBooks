@@ -261,7 +261,9 @@
     "generateTitle": "Generar el PDF del 1099-NEC",
     "belowThresholdTitle": "Por debajo del umbral de $600",
     "footerPre": "Haga clic en",
-    "footerPost": "en cualquier proveedor para descargar las Copias B (destinatario) y C (pagador) en PDF. La Copia A debe presentarse electrónicamente mediante el sistema FIRE del IRS o imprimirse en el formulario oficial escaneable de tinta roja."
+    "footerPost": "en cualquier proveedor para descargar las Copias B (destinatario) y C (pagador) en PDF. La Copia A debe presentarse electrónicamente mediante el sistema FIRE del IRS o imprimirse en el formulario oficial escaneable de tinta roja.",
+    "fromAccount": "de {{account}}",
+    "multipleAccounts": "(varias cuentas coinciden con este nombre; verifique antes de presentar)"
   },
   "generate1099": {
     "title": "Generar el Formulario {{form}}",
